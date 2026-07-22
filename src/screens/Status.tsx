@@ -10,10 +10,14 @@ const STEPS = [
 ]
 
 export function Status() {
-  const { state, dispatch } = useStore()
-  const me = state.me
-  if (!me) return null
-  const sentLines = state.lines.filter(l => l.sent)
+  const { patch, me, snap } = useStore()
+  if (!me || !snap) return null
+
+  const sentOwn = snap.lines.filter(l => l.sent && !l.shared)
+  const sentShared = snap.lines.filter(l => l.sent && l.shared)
+  const nameOf = (pid: string) => snap.personas.find(p => p.id === pid)?.name ?? '?'
+  const animalOf = (pid: string) => snap.personas.find(p => p.id === pid)?.animal ?? 'fox'
+  const stillChoosing = snap.personas.filter(p => snap.lines.some(l => !l.sent && l.personaId === p.id))
 
   return (
     <div className="ep-screen">
@@ -66,17 +70,22 @@ export function Status() {
         </div>
 
         <Card style={{ padding: '6px 16px', marginBottom: 14 }}>
-          {sentLines.filter(l => !l.shared).map(l => {
-            const d = findDish(l.dishId)!
+          {sentOwn.map(l => {
+            const d = findDish(l.dishId)
+            if (!d) return null
+            const mine = l.personaId === me.id
             return (
               <div key={l.uid} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '13px 0', borderBottom: '1px solid #F2F2F4' }}>
-                <Avatar animal={me.animal} size={32} />
+                <Avatar animal={animalOf(l.personaId)} size={32} />
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontWeight: 540, fontSize: 14.5 }}>
                     {d.name}
                     {l.qty > 1 ? ` ×${l.qty}` : ''}
                   </div>
-                  <div style={{ fontSize: 12, color: '#9A9AA4' }}>{me.name} · своё</div>
+                  <div style={{ fontSize: 12, color: '#9A9AA4' }}>
+                    {nameOf(l.personaId)}
+                    {mine ? ' · своё' : ''}
+                  </div>
                 </div>
                 <span style={{ fontFamily: 'ui-monospace, monospace', fontSize: 9.5, textTransform: 'uppercase', padding: '4px 9px', borderRadius: 50, background: '#FFF2DA', color: '#B07A12' }}>
                   Готовится
@@ -84,29 +93,39 @@ export function Status() {
               </div>
             )
           })}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '13px 0' }}>
-            <SharedIcon size={32} />
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontWeight: 540, fontSize: 14.5 }}>Общие блюда</div>
-              <div style={{ fontSize: 12, color: '#9A9AA4' }}>Спринг-роллы, лимонад, пицца</div>
+          {sentShared.length > 0 && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '13px 0' }}>
+              <SharedIcon size={32} />
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontWeight: 540, fontSize: 14.5 }}>Общие блюда</div>
+                <div style={{ fontSize: 12, color: '#9A9AA4', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {sentShared.map(l => findDish(l.dishId)?.name ?? '?').join(', ')}
+                </div>
+              </div>
+              <span style={{ fontFamily: 'ui-monospace, monospace', fontSize: 9.5, textTransform: 'uppercase', padding: '4px 9px', borderRadius: 50, background: '#F2F2F4', color: '#8A8A92' }}>
+                Принято
+              </span>
             </div>
-            <span style={{ fontFamily: 'ui-monospace, monospace', fontSize: 9.5, textTransform: 'uppercase', padding: '4px 9px', borderRadius: 50, background: '#F2F2F4', color: '#8A8A92' }}>
-              Принято
-            </span>
-          </div>
+          )}
+          {sentOwn.length === 0 && sentShared.length === 0 && (
+            <div style={{ padding: '16px 0', fontSize: 14, color: '#9A9AA4' }}>На кухню пока ничего не отправлено</div>
+          )}
         </Card>
 
-        <WarnBanner>
-          <Avatar animal="bear" size={26} />
-          <span style={{ fontSize: 13, color: '#7A5A12' }}>
-            <b style={{ fontWeight: 620 }}>Дима</b> ещё дозаказывает десерт
-          </span>
-        </WarnBanner>
+        {stillChoosing.length > 0 && (
+          <WarnBanner>
+            <Avatar animal={stillChoosing[0].animal} size={26} />
+            <span style={{ fontSize: 13, color: '#7A5A12' }}>
+              <b style={{ fontWeight: 620 }}>{stillChoosing.map(p => p.name).join(', ')}</b> ещё{' '}
+              {stillChoosing.length === 1 ? 'выбирает' : 'выбирают'} блюда
+            </span>
+          </WarnBanner>
+        )}
       </div>
 
       <StickyFooter>
-        <GhostButton onClick={() => dispatch({ type: 'patch', patch: { screen: 'menu' } })}>Дозаказать</GhostButton>
-        <PrimaryButton onClick={() => dispatch({ type: 'patch', patch: { screen: 'payment', payStage: 'form' } })}>
+        <GhostButton onClick={() => patch({ screen: 'menu' })}>Дозаказать</GhostButton>
+        <PrimaryButton onClick={() => patch({ screen: 'payment', payStage: 'form' })}>
           Оплатить, когда будете готовы
         </PrimaryButton>
       </StickyFooter>

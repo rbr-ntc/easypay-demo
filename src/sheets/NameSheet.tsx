@@ -1,27 +1,39 @@
 import { useState } from 'react'
-import { BOTS, findDish } from '../data'
+import { findDish } from '../data'
 import type { Animal } from '../data'
 import { ANIMAL_LIST, Avatar } from '../avatars'
 import { BottomSheet, PrimaryButton } from '../ui'
 import { useStore } from '../store'
 
 export function NameSheet() {
-  const { state, dispatch, toast } = useStore()
-  const [name, setName] = useState('Аня')
+  const { ui, patch, snap, join, addLine, toast } = useStore()
+  const [name, setName] = useState('')
   const [animal, setAnimal] = useState<Animal>('fox')
+  const [busy, setBusy] = useState(false)
+  const others = snap?.personas ?? []
+  // Не предлагаем зверя, которого уже выбрали за столом
+  const taken = new Set(others.map(p => p.animal))
+  const free = ANIMAL_LIST.filter(a => !taken.has(a))
+  const effectiveAnimal = taken.has(animal) ? (free[0] ?? animal) : animal
 
-  const close = () => dispatch({ type: 'patch', patch: { sheet: null, currentDishId: null } })
+  const close = () => patch({ sheet: null, currentDishId: null, pendingAdd: null })
 
-  const confirm = () => {
-    const finalName = name.trim() || 'Гость'
-    dispatch({ type: 'patch', patch: { me: { name: finalName, animal } } })
-    // Блюдо, ради которого спросили имя, НЕ теряется — добавляем сразу
-    const dish = state.currentDishId ? findDish(state.currentDishId) : undefined
-    if (dish) {
-      dispatch({ type: 'addLine', dishId: dish.id, qty: 1, shared: false })
-      toast(`${dish.name} — добавлено за ${finalName}`)
+  const confirm = async () => {
+    if (busy) return
+    setBusy(true)
+    const persona = await join(name.trim() || `Гость ${others.length + 1}`, effectiveAnimal)
+    if (!persona) {
+      setBusy(false)
+      return
     }
-    dispatch({ type: 'patch', patch: { sheet: null, currentDishId: null } })
+    // Блюдо, ради которого спросили имя, НЕ теряется — добавляем сразу
+    const pending = ui.pendingAdd
+    patch({ sheet: null, currentDishId: null, pendingAdd: null })
+    if (pending) {
+      const dish = findDish(pending.dishId)
+      await addLine(pending.dishId, pending.qty, pending.shared, persona.id)
+      if (dish) toast(pending.shared ? `${dish.name} → общее на стол` : `${dish.name} → ${persona.name}`)
+    }
   }
 
   return (
@@ -33,20 +45,24 @@ export function NameSheet() {
         </div>
 
         <div style={{ display: 'flex', gap: 11, overflowX: 'auto', padding: '4px 2px 14px' }}>
-          {ANIMAL_LIST.map(a => (
-            <div
-              key={a}
-              onClick={() => setAnimal(a)}
-              style={{
-                borderRadius: '50%',
-                cursor: 'pointer',
-                boxShadow: a === animal ? '0 0 0 2px #fff, 0 0 0 4px #1F1D3D' : 'none',
-                transition: 'box-shadow 120ms'
-              }}
-            >
-              <Avatar animal={a} size={60} />
-            </div>
-          ))}
+          {ANIMAL_LIST.map(a => {
+            const disabled = taken.has(a)
+            return (
+              <div
+                key={a}
+                onClick={() => !disabled && setAnimal(a)}
+                style={{
+                  borderRadius: '50%',
+                  cursor: disabled ? 'not-allowed' : 'pointer',
+                  opacity: disabled ? 0.35 : 1,
+                  boxShadow: a === effectiveAnimal ? '0 0 0 2px #fff, 0 0 0 4px #1F1D3D' : 'none',
+                  transition: 'box-shadow 120ms'
+                }}
+              >
+                <Avatar animal={a} size={60} />
+              </div>
+            )
+          })}
         </div>
 
         <div style={{ background: '#F7F7F9', border: '1px solid #ECECEF', borderRadius: 14, padding: '14px 16px', marginBottom: 14 }}>
@@ -58,12 +74,17 @@ export function NameSheet() {
           />
         </div>
 
-        <div style={{ fontSize: 12.5, color: '#9A9AA4', marginBottom: 18 }}>
-          За столом уже: {BOTS.map(b => b.name).join(' · ')}
-        </div>
+        {others.length > 0 && (
+          <div style={{ fontSize: 12.5, color: '#9A9AA4', marginBottom: 18 }}>
+            За столом уже: {others.map(p => p.name).join(' · ')}
+          </div>
+        )}
+        {others.length === 0 && (
+          <div style={{ fontSize: 12.5, color: '#9A9AA4', marginBottom: 18 }}>Вы первый за этим столом</div>
+        )}
 
-        <PrimaryButton onClick={confirm} style={{ minHeight: 54 }}>
-          Готово
+        <PrimaryButton onClick={() => void confirm()} disabled={busy} style={{ minHeight: 54 }}>
+          {busy ? 'Секунду…' : 'Готово'}
         </PrimaryButton>
       </div>
     </BottomSheet>

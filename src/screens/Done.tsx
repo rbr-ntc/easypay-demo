@@ -1,5 +1,5 @@
 import { WAITER_NAME } from '../data'
-import { Avatar } from '../avatars'
+import { SharedIcon } from '../avatars'
 import { Card, GhostButton, PrimaryButton, StickyFooter, WarnBanner } from '../ui'
 import { useStore, tipAmount } from '../store'
 import { fmt } from '../format'
@@ -7,8 +7,8 @@ import { fmt } from '../format'
 const CHIPS = ['Вкусно', 'Быстро', 'Уютно']
 
 export function Done() {
-  const { state, dispatch, totals } = useStore()
-  const tip = tipAmount(state, state.paidAmount)
+  const { ui, patch, totals, resetDemo } = useStore()
+  const tip = tipAmount(ui)
   const remaining = totals.remaining
 
   return (
@@ -19,7 +19,7 @@ export function Done() {
             ✓
           </div>
           <div style={{ fontWeight: 300, fontSize: 18, color: '#5C5C66' }}>Оплачено</div>
-          <div style={{ fontWeight: 300, fontSize: 44, letterSpacing: '-1.6px', lineHeight: 1 }}>{fmt(state.paidAmount)}</div>
+          <div style={{ fontWeight: 300, fontSize: 44, letterSpacing: '-1.6px', lineHeight: 1 }}>{fmt(ui.lastPaid)}</div>
           {tip > 0 && (
             <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, marginTop: 12, background: '#EDE7FD', color: '#7C5CFC', borderRadius: 50, padding: '6px 13px', fontSize: 13, fontWeight: 540 }}>
               + {fmt(tip)} чаевых официанту {WAITER_NAME}у
@@ -27,10 +27,10 @@ export function Done() {
           )}
         </div>
 
-        {remaining > 0.01 && state.me && (
+        {remaining > 0.01 && (
           <div style={{ marginBottom: 14 }}>
             <WarnBanner>
-              <Avatar animal={state.me.animal} size={26} />
+              <SharedIcon size={26} />
               <span style={{ flex: 1, fontSize: 13, color: '#7A5A12', lineHeight: 1.4 }}>
                 Ваша часть оплачена. По столу осталось <b style={{ fontWeight: 640 }}>{fmt(remaining)}</b>
               </span>
@@ -61,8 +61,8 @@ export function Done() {
             {[1, 2, 3, 4, 5].map(n => (
               <button
                 key={n}
-                onClick={() => dispatch({ type: 'patch', patch: { rating: n } })}
-                style={{ border: 'none', background: 'transparent', cursor: 'pointer', fontSize: 34, lineHeight: 1, color: n <= state.rating ? '#F4B400' : '#DADADE' }}
+                onClick={() => patch({ rating: n })}
+                style={{ border: 'none', background: 'transparent', cursor: 'pointer', fontSize: 34, lineHeight: 1, color: n <= ui.rating ? '#F4B400' : '#DADADE' }}
               >
                 ★
               </button>
@@ -80,10 +80,10 @@ export function Done() {
 
       <StickyFooter>
         <div style={{ display: 'flex', gap: 10 }}>
-          <GhostButton style={{ flex: 1 }} onClick={() => dispatch({ type: 'patch', patch: { screen: 'menu' } })}>
+          <GhostButton style={{ flex: 1 }} onClick={() => patch({ screen: 'menu' })}>
             Заказать ещё
           </GhostButton>
-          <PrimaryButton style={{ flex: 1 }} onClick={() => dispatch({ type: 'reset' })}>
+          <PrimaryButton style={{ flex: 1 }} onClick={() => patch({ screen: 'welcome' })}>
             Готово
           </PrimaryButton>
         </div>

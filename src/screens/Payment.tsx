@@ -1,15 +1,10 @@
 import { useEffect, useState } from 'react'
-import { NAVY, PARTICIPANTS, SBP_GRADIENT } from '../data'
-import { Mono, PrimaryButton, StickyFooter } from '../ui'
+import { NAVY, SBP_GRADIENT } from '../data'
+import { Avatar } from '../avatars'
+import { Mono, PrimaryButton, StickyFooter, WarnBanner } from '../ui'
 import { useStore } from '../store'
 import type { PayScope, PayMethod } from '../store'
 import { fmt } from '../format'
-
-const SCOPES: { id: PayScope; label: string; subOf: (mine: string, table: string) => string }[] = [
-  { id: 'own', label: 'Оплатить своё', subOf: mine => mine },
-  { id: 'equal', label: 'Разделить поровну', subOf: (_m, table) => `остаток ${table} на ${PARTICIPANTS} гостей` },
-  { id: 'full', label: 'Оплатить весь стол', subOf: (_m, table) => `весь неоплаченный остаток` }
-]
 
 const METHODS: { id: PayMethod; label: string; glyph: string }[] = [
   { id: 'card', label: 'Банковская карта', glyph: '▭' },
@@ -65,18 +60,36 @@ function QrStage({ amount, onBack, onPaid }: { amount: number; onBack: () => voi
 }
 
 export function Payment() {
-  const { state, dispatch, totals } = useStore()
-  const amount = totals.scopeAmount(state.payScope)
-  const sbp = state.payMethod === 'sbp'
+  const { ui, patch, me, snap, totals, pay } = useStore()
+  if (!me || !snap) return null
+  const amount = totals.scopeAmount(ui.payScope)
+  const sbp = ui.payMethod === 'sbp'
 
-  const pay = () => {
-    dispatch({ type: 'patch', patch: { payStage: 'processing' } })
-    setTimeout(() => {
-      dispatch({ type: 'patch', patch: { paidAmount: state.paidAmount + amount, payStage: 'form', screen: 'tips' } })
-    }, 1700)
+  // Кто уже оплатил (реальные платежи других гостей)
+  const otherPayments = snap.payments.filter(p => p.personaId !== me.id)
+
+  const SCOPES: { id: PayScope; label: string; sub: string; disabled?: boolean }[] = [
+    {
+      id: 'own',
+      label: 'Оплатить своё',
+      sub: `${fmt(totals.myOwn)} ваше + ${fmt(totals.myShare)} доля общего`,
+      disabled: totals.scopeAmount('own') <= 0
+    },
+    { id: 'equal', label: 'Разделить поровну', sub: `${fmt(totals.tableTotal)} на ${totals.participants} гостей` },
+    { id: 'full', label: 'Оплатить весь стол', sub: 'весь неоплаченный остаток' }
+  ]
+
+  const doPay = async () => {
+    patch({ payStage: 'processing' })
+    const paid = await pay(ui.payScope)
+    if (paid > 0) {
+      setTimeout(() => patch({ payStage: 'form', screen: 'tips' }), 1400)
+    } else {
+      patch({ payStage: 'form' })
+    }
   }
 
-  if (state.payStage === 'processing') {
+  if (ui.payStage === 'processing') {
     return (
       <div className="ep-screen" style={{ alignItems: 'center', justifyContent: 'center', gap: 22 }}>
         <div className="ep-spin" style={{ width: 62, height: 62, borderRadius: '50%', border: `5px solid #ECECEF`, borderTopColor: NAVY }} />
@@ -88,10 +101,10 @@ export function Payment() {
     )
   }
 
-  if (state.payStage === 'qr') {
+  if (ui.payStage === 'qr') {
     return (
       <div className="ep-screen">
-        <QrStage amount={amount} onBack={() => dispatch({ type: 'patch', patch: { payStage: 'form' } })} onPaid={pay} />
+        <QrStage amount={amount} onBack={() => patch({ payStage: 'form' })} onPaid={() => void doPay()} />
       </div>
     )
   }
@@ -101,22 +114,37 @@ export function Payment() {
       <div className="ep-scroll" style={{ padding: '14px 20px 20px' }}>
         <div style={{ fontWeight: 700, fontSize: 24, letterSpacing: '-0.6px', marginBottom: 16 }}>Оплата</div>
 
+        {otherPayments.length > 0 && (
+          <div style={{ marginBottom: 16 }}>
+            <WarnBanner>
+              <Avatar animal={snap.personas.find(p => p.id === otherPayments[0].personaId)?.animal ?? 'fox'} size={26} />
+              <span style={{ fontSize: 13, lineHeight: 1.45, color: '#7A5A12' }}>
+                {otherPayments
+                  .map(p => `${snap.personas.find(x => x.id === p.personaId)?.name ?? '?'} — ${fmt(p.amount)}`)
+                  .join(', ')}{' '}
+                уже оплачено. Осталось <b style={{ fontWeight: 640 }}>{fmt(totals.remaining)}</b>
+              </span>
+            </WarnBanner>
+          </div>
+        )}
+
         <Mono style={{ marginBottom: 9 }}>Что оплачиваем</Mono>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 9, marginBottom: 22 }}>
           {SCOPES.map(o => {
-            const active = o.id === state.payScope
+            const active = o.id === ui.payScope
             const amt = totals.scopeAmount(o.id)
             return (
               <div
                 key={o.id}
-                onClick={() => dispatch({ type: 'patch', patch: { payScope: o.id } })}
+                onClick={() => !o.disabled && patch({ payScope: o.id })}
                 style={{
                   display: 'flex',
                   alignItems: 'center',
                   gap: 12,
                   padding: '13px 14px',
                   borderRadius: 16,
-                  cursor: 'pointer',
+                  cursor: o.disabled ? 'not-allowed' : 'pointer',
+                  opacity: o.disabled ? 0.45 : 1,
                   background: '#fff',
                   border: active ? `2px solid ${NAVY}` : '1px solid #ECECEF'
                 }}
@@ -124,11 +152,7 @@ export function Payment() {
                 <div style={{ width: 20, height: 20, borderRadius: '50%', flexShrink: 0, border: active ? `6px solid ${NAVY}` : '2px solid #CFCFD6', background: '#fff', boxSizing: 'border-box' }} />
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontWeight: 600, fontSize: 15 }}>{o.label}</div>
-                  <div style={{ fontSize: 12, color: '#8A8A92', marginTop: 2 }}>
-                    {o.id === 'own'
-                      ? `${fmt(totals.myOwn)} ваше + ${fmt(totals.myShare)} доля общего`
-                      : o.subOf(fmt(totals.myTotal), fmt(totals.remaining))}
-                  </div>
+                  <div style={{ fontSize: 12, color: '#8A8A92', marginTop: 2 }}>{o.disabled ? 'уже оплачено' : o.sub}</div>
                 </div>
                 <span style={{ fontWeight: 660, fontSize: 16 }}>{fmt(amt)}</span>
               </div>
@@ -138,7 +162,7 @@ export function Payment() {
 
         <Mono style={{ marginBottom: 9 }}>Способ оплаты</Mono>
         <div
-          onClick={() => dispatch({ type: 'patch', patch: { payMethod: 'sbp' } })}
+          onClick={() => patch({ payMethod: 'sbp' })}
           style={{
             display: 'flex',
             alignItems: 'center',
@@ -173,14 +197,14 @@ export function Payment() {
           {METHODS.map(m => (
             <div
               key={m.id}
-              onClick={() => dispatch({ type: 'patch', patch: { payMethod: m.id } })}
+              onClick={() => patch({ payMethod: m.id })}
               style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '13px 14px', borderRadius: 16, background: '#fff', border: '1px solid #ECECEF', cursor: 'pointer' }}
             >
               <div style={{ width: 34, height: 34, borderRadius: 9, background: '#F2F2F4', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 600, fontSize: 14, color: '#5C5C66', flexShrink: 0 }}>
                 {m.glyph}
               </div>
               <span style={{ flex: 1, fontWeight: 520, fontSize: 14.5 }}>{m.label}</span>
-              <div style={{ width: 18, height: 18, borderRadius: '50%', flexShrink: 0, border: state.payMethod === m.id ? `5px solid ${NAVY}` : '2px solid #CFCFD6', background: '#fff', boxSizing: 'border-box' }} />
+              <div style={{ width: 18, height: 18, borderRadius: '50%', flexShrink: 0, border: ui.payMethod === m.id ? `5px solid ${NAVY}` : '2px solid #CFCFD6', background: '#fff', boxSizing: 'border-box' }} />
             </div>
           ))}
         </div>
@@ -188,7 +212,8 @@ export function Payment() {
 
       <StickyFooter>
         <PrimaryButton
-          onClick={() => (sbp ? dispatch({ type: 'patch', patch: { payStage: 'qr' } }) : pay())}
+          disabled={amount <= 0}
+          onClick={() => (sbp ? patch({ payStage: 'qr' }) : void doPay())}
           style={{ background: sbp ? SBP_GRADIENT : NAVY, fontSize: 17 }}
         >
           {sbp ? `Оплатить по СБП · ${fmt(amount)}` : `Оплатить ${fmt(amount)}`}

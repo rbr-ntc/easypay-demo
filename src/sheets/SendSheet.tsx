@@ -1,37 +1,43 @@
 import { useState } from 'react'
-import { NAVY } from '../data'
+import { NAVY, findDish } from '../data'
 import { Avatar } from '../avatars'
 import { BottomSheet, PrimaryButton, WarnBanner } from '../ui'
 import { useStore } from '../store'
 import { fmt } from '../format'
 
 export function SendSheet() {
-  const { state, dispatch, totals } = useStore()
+  const { ui, patch, me, snap, sendWave } = useStore()
   const [sending, setSending] = useState(false)
-  const me = state.me
-  if (!me) return null
+  if (!me || !snap) return null
 
-  const unsentCount = state.lines.filter(l => !l.sent).length
-  const close = () => dispatch({ type: 'patch', patch: { sheet: null } })
-  const scope = state.sendScope
-  const checked = state.sendChecked
-  const gated = scope === 'all' && !checked
+  const price = (l: { dishId: string; qty: number }) => (findDish(l.dishId)?.price ?? 0) * l.qty
+  const unsentMine = snap.lines.filter(l => !l.sent && l.personaId === me.id)
+  const unsentAll = snap.lines.filter(l => !l.sent)
+  const unsentOthers = unsentAll.filter(l => l.personaId !== me.id)
+  // Кто ещё не отправил свои блюда (реальные гости, не боты)
+  const stillChoosing = snap.personas.filter(p => p.id !== me.id && unsentOthers.some(l => l.personaId === p.id))
 
-  const send = () => {
+  const close = () => patch({ sheet: null })
+  const scope = ui.sendScope
+  const checked = ui.sendChecked
+  const gated = scope === 'all' && stillChoosing.length > 0 && !checked
+
+  const send = async () => {
     setSending(true)
+    await sendWave(scope)
     setTimeout(() => {
-      dispatch({ type: 'sendWave' })
-      dispatch({ type: 'patch', patch: { sheet: null, screen: 'status' } })
-    }, 1400)
+      patch({ sheet: null, screen: 'status' })
+    }, 1200)
   }
 
-  const rowStyle = (active: boolean): React.CSSProperties => ({
+  const rowStyle = (active: boolean, disabled = false): React.CSSProperties => ({
     display: 'flex',
     alignItems: 'center',
     gap: 12,
     padding: '13px 14px',
     borderRadius: 16,
-    cursor: 'pointer',
+    cursor: disabled ? 'not-allowed' : 'pointer',
+    opacity: disabled ? 0.45 : 1,
     background: '#fff',
     border: active ? `2px solid ${NAVY}` : '1px solid #ECECEF'
   })
@@ -60,37 +66,43 @@ export function SendSheet() {
         <div style={{ fontWeight: 680, fontSize: 22, letterSpacing: '-0.5px', marginBottom: 16 }}>Отправить заказ на кухню?</div>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 9, marginBottom: 14 }}>
-          <div style={rowStyle(scope === 'mine')} onClick={() => dispatch({ type: 'patch', patch: { sendScope: 'mine' } })}>
+          <div
+            style={rowStyle(scope === 'mine', unsentMine.length === 0)}
+            onClick={() => unsentMine.length > 0 && patch({ sendScope: 'mine' })}
+          >
             <div style={dotStyle(scope === 'mine')} />
             <div style={{ flex: 1 }}>
               <div style={{ fontWeight: 600, fontSize: 15 }}>Отправить мой заказ</div>
               <div style={{ fontSize: 12, color: '#8A8A92', marginTop: 2 }}>
-                {me.name} · {unsentCount} поз. · {fmt(totals.myOwn + totals.myShare)}
+                {me.name} · {unsentMine.length} поз. · {fmt(unsentMine.reduce((s, l) => s + price(l), 0))}
               </div>
             </div>
           </div>
-          <div style={rowStyle(scope === 'all')} onClick={() => dispatch({ type: 'patch', patch: { sendScope: 'all' } })}>
+          <div style={rowStyle(scope === 'all')} onClick={() => patch({ sendScope: 'all' })}>
             <div style={dotStyle(scope === 'all')} />
             <div style={{ flex: 1 }}>
               <div style={{ fontWeight: 600, fontSize: 15 }}>Отправить за весь стол</div>
-              <div style={{ fontSize: 12, color: '#8A8A92', marginTop: 2 }}>все позиции + общие · {fmt(totals.tableTotal)}</div>
+              <div style={{ fontSize: 12, color: '#8A8A92', marginTop: 2 }}>
+                {unsentAll.length} поз. · {fmt(unsentAll.reduce((s, l) => s + price(l), 0))}
+              </div>
             </div>
           </div>
         </div>
 
-        {scope === 'all' && (
+        {scope === 'all' && stillChoosing.length > 0 && (
           <div style={{ marginBottom: 14 }}>
             <WarnBanner>
-              <Avatar animal="bear" size={26} />
+              <Avatar animal={stillChoosing[0].animal} size={26} />
               <span style={{ fontSize: 13, color: '#7A5A12', lineHeight: 1.4 }}>
-                <b style={{ fontWeight: 640 }}>Дима</b> ещё дозаказывает. Все точно выбрали?
+                <b style={{ fontWeight: 640 }}>{stillChoosing.map(p => p.name).join(', ')}</b> ещё{' '}
+                {stillChoosing.length === 1 ? 'выбирает' : 'выбирают'}. Все точно готовы?
               </span>
             </WarnBanner>
           </div>
         )}
 
-        {scope === 'all' && (
-          <div onClick={() => dispatch({ type: 'patch', patch: { sendChecked: !checked } })} style={{ display: 'flex', alignItems: 'center', gap: 11, marginBottom: 18, cursor: 'pointer' }}>
+        {scope === 'all' && stillChoosing.length > 0 && (
+          <div onClick={() => patch({ sendChecked: !checked })} style={{ display: 'flex', alignItems: 'center', gap: 11, marginBottom: 18, cursor: 'pointer' }}>
             <div
               style={{
                 width: 22,
@@ -113,7 +125,7 @@ export function SendSheet() {
           </div>
         )}
 
-        <PrimaryButton onClick={send} disabled={gated} style={{ minHeight: 54, marginBottom: 8 }}>
+        <PrimaryButton onClick={() => void send()} disabled={gated || unsentAll.length === 0} style={{ minHeight: 54, marginBottom: 8 }}>
           Отправить
         </PrimaryButton>
         <button onClick={close} style={{ width: '100%', minHeight: 44, border: 'none', background: 'transparent', color: '#8A8A92', fontWeight: 520, fontSize: 15, cursor: 'pointer' }}>

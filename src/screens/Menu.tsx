@@ -1,4 +1,5 @@
-import { CATEGORIES, MENU, NAVY, TABLE_LABEL, HALL_LABEL } from '../data'
+import { CATEGORIES, MENU, NAVY, HALL_LABEL } from '../data'
+import { tableId } from '../api'
 import { Avatar } from '../avatars'
 import { PrimaryButton } from '../ui'
 import { useStore } from '../store'
@@ -30,32 +31,32 @@ function DishPhoto({ name, size, radius }: { name: string; size: number; radius:
 export { DishPhoto }
 
 export function Menu() {
-  const { state, dispatch, totals } = useStore()
-  const items = MENU[state.menuCat] ?? []
-  const hasCart = state.lines.length > 0
+  const { ui, patch, me, snap, totals } = useStore()
+  const items = MENU[ui.menuCat] ?? []
+  const hasCart = !!me && (snap?.lines ?? []).some(l => l.personaId === me.id)
 
   return (
     <div className="ep-screen">
       <div style={{ flexShrink: 0, background: '#fff', borderBottom: '1px solid #ECECEF', padding: '12px 20px' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-          {state.me ? (
+          {me ? (
             <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
-              <Avatar animal={state.me.animal} size={32} />
+              <Avatar animal={me.animal} size={32} />
               <div>
-                <div style={{ fontSize: 11, color: '#8A8A92' }}>Заказ · {TABLE_LABEL}</div>
-                <div style={{ fontWeight: 600, fontSize: 14.5, lineHeight: 1.1 }}>{state.me.name}</div>
+                <div style={{ fontSize: 11, color: '#8A8A92' }}>Заказ · Стол №{tableId}</div>
+                <div style={{ fontWeight: 600, fontSize: 14.5, lineHeight: 1.1 }}>{me.name}</div>
               </div>
             </div>
           ) : (
             <div>
               <div style={{ fontWeight: 700, fontSize: 17, letterSpacing: '-0.3px' }}>Меню</div>
               <div style={{ fontSize: 12, color: '#8A8A92' }}>
-                {TABLE_LABEL} · {HALL_LABEL}
+                Стол №{tableId} · {HALL_LABEL}
               </div>
             </div>
           )}
           <button
-            onClick={() => hasCart && dispatch({ type: 'patch', patch: { screen: 'cart' } })}
+            onClick={() => hasCart && patch({ screen: 'cart' })}
             style={{
               width: 42,
               height: 42,
@@ -76,17 +77,17 @@ export function Menu() {
           {CATEGORIES.map(c => (
             <button
               key={c}
-              onClick={() => dispatch({ type: 'patch', patch: { menuCat: c } })}
+              onClick={() => patch({ menuCat: c })}
               style={{
                 fontSize: 14,
-                fontWeight: c === state.menuCat ? 600 : 440,
+                fontWeight: c === ui.menuCat ? 600 : 440,
                 padding: '8px 15px',
                 borderRadius: 50,
                 cursor: 'pointer',
                 whiteSpace: 'nowrap',
                 border: 'none',
-                background: c === state.menuCat ? NAVY : '#F2F2F4',
-                color: c === state.menuCat ? '#fff' : '#5C5C66'
+                background: c === ui.menuCat ? NAVY : '#F2F2F4',
+                color: c === ui.menuCat ? '#fff' : '#5C5C66'
               }}
             >
               {c}
@@ -140,7 +141,7 @@ export function Menu() {
               <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', marginTop: 'auto' }}>
                 <span style={{ fontWeight: 620, fontSize: 15 }}>{fmt(it.price)}</span>
                 <button
-                  onClick={() => !it.stop && dispatch({ type: 'patch', patch: { sheet: 'dish', currentDishId: it.id } })}
+                  onClick={() => !it.stop && patch({ sheet: 'dish', currentDishId: it.id })}
                   style={{
                     width: 34,
                     height: 34,
@@ -166,11 +167,11 @@ export function Menu() {
 
       {hasCart && (
         <div style={{ padding: '12px 20px', paddingBottom: 'calc(20px + env(safe-area-inset-bottom))' }}>
-          <PrimaryButton onClick={() => dispatch({ type: 'patch', patch: { screen: 'cart' } })}>
+          <PrimaryButton onClick={() => patch({ screen: 'cart' })}>
             <span style={{ background: 'rgba(255,255,255,.2)', padding: '3px 10px', borderRadius: 50, fontSize: 14, marginRight: 10 }}>
               Корзина
             </span>
-            {fmt(totals.myOwn + totals.myShare)} →
+            {fmt(totals.myTotal)} →
           </PrimaryButton>
         </div>
       )}

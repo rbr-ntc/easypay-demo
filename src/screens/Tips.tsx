@@ -11,9 +11,9 @@ const PRESETS: { v: '0' | '5' | '10' | '15' | 'custom'; label: string; popular?:
 ]
 
 export function Tips() {
-  const { state, dispatch } = useStore()
-  const paidNow = state.paidAmount
-  const tip = tipAmount(state, paidNow)
+  const { ui, patch } = useStore()
+  const paidNow = ui.lastPaid
+  const tip = tipAmount(ui)
 
   return (
     <div className="ep-screen">
@@ -53,7 +53,7 @@ export function Tips() {
           {PRESETS.map(p => (
             <button
               key={p.v}
-              onClick={() => dispatch({ type: 'patch', patch: { tip: p.v } })}
+              onClick={() => patch({ tip: p.v })}
               style={{
                 position: 'relative',
                 flex: 1,
@@ -61,10 +61,10 @@ export function Tips() {
                 padding: '15px 6px',
                 borderRadius: 16,
                 cursor: 'pointer',
-                fontWeight: state.tip === p.v ? 600 : 480,
+                fontWeight: ui.tip === p.v ? 600 : 480,
                 fontSize: 16,
-                background: state.tip === p.v ? NAVY : '#F2F2F4',
-                color: state.tip === p.v ? '#fff' : '#3A3A42',
+                background: ui.tip === p.v ? NAVY : '#F2F2F4',
+                color: ui.tip === p.v ? '#fff' : '#3A3A42',
                 border: 'none'
               }}
             >
@@ -78,13 +78,13 @@ export function Tips() {
           ))}
         </div>
 
-        {state.tip === 'custom' && (
+        {ui.tip === 'custom' && (
           <div style={{ background: '#fff', border: '1px solid #ECECEF', borderRadius: 16, padding: '14px 16px', display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16 }}>
             <input
               placeholder="Введите сумму"
               inputMode="numeric"
-              value={state.tipCustom || ''}
-              onChange={e => dispatch({ type: 'patch', patch: { tipCustom: Number(e.target.value.replace(/\D/g, '')) || 0 } })}
+              value={ui.tipCustom || ''}
+              onChange={e => patch({ tipCustom: Number(e.target.value.replace(/\D/g, '')) || 0 })}
               style={{ flex: 1, border: 'none', outline: 'none', fontSize: 18, fontWeight: 540, color: '#1F1D3D' }}
             />
             <span style={{ fontSize: 18, color: '#9A9AA4' }}>₽</span>
@@ -97,11 +97,11 @@ export function Tips() {
       </div>
 
       <StickyFooter>
-        <PrimaryButton onClick={() => dispatch({ type: 'patch', patch: { screen: 'done' } })} style={{ fontSize: 17 }}>
+        <PrimaryButton onClick={() => patch({ screen: 'done' })} style={{ fontSize: 17 }}>
           {tip > 0 ? `Оставить ${fmt(tip)}` : 'Оставить чаевые'}
         </PrimaryButton>
         <button
-          onClick={() => dispatch({ type: 'patch', patch: { tip: '0', screen: 'done' } })}
+          onClick={() => patch({ tip: '0', screen: 'done' })}
           style={{ width: '100%', minHeight: 44, border: 'none', background: 'transparent', color: '#8A8A92', fontWeight: 520, fontSize: 15, cursor: 'pointer' }}
         >
           Пропустить

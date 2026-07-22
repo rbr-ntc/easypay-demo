@@ -5,23 +5,24 @@ import { useStore } from '../store'
 import { fmt } from '../format'
 
 export function DishSheet() {
-  const { state, dispatch, toast } = useStore()
+  const { ui, patch, me, totals, addLine, toast } = useStore()
   const [qty, setQty] = useState(1)
   const [target, setTarget] = useState<'me' | 'table'>('me')
-  const dish = state.currentDishId ? findDish(state.currentDishId) : undefined
+  const dish = ui.currentDishId ? findDish(ui.currentDishId) : undefined
   if (!dish) return null
 
-  const close = () => dispatch({ type: 'patch', patch: { sheet: null, currentDishId: null } })
+  const close = () => patch({ sheet: null, currentDishId: null, pendingAdd: null })
 
-  const add = () => {
-    if (!state.me) {
+  const add = async () => {
+    const shared = target === 'table'
+    if (!me) {
       // Имя спрашиваем ровно в момент первой надобности; блюдо НЕ теряется
-      dispatch({ type: 'patch', patch: { sheet: 'name' } })
+      patch({ sheet: 'name', pendingAdd: { dishId: dish.id, qty, shared } })
       return
     }
-    dispatch({ type: 'addLine', dishId: dish.id, qty, shared: target === 'table' })
-    dispatch({ type: 'patch', patch: { sheet: null, currentDishId: null } })
-    toast(target === 'table' ? `${dish.name} — добавлено на весь стол` : `${dish.name} — добавлено за ${state.me.name}`)
+    patch({ sheet: null, currentDishId: null })
+    await addLine(dish.id, qty, shared)
+    toast(shared ? `${dish.name} → общее на стол` : `${dish.name} → ${me.name}`)
   }
 
   const segStyle = (active: boolean): React.CSSProperties => ({
@@ -62,10 +63,10 @@ export function DishSheet() {
         <div style={{ fontWeight: 600, fontSize: 15, marginBottom: 8 }}>Кому</div>
         <div style={{ display: 'flex', gap: 4, background: '#F2F2F4', borderRadius: 50, padding: 4, marginBottom: 18 }}>
           <button style={segStyle(target === 'me')} onClick={() => setTarget('me')}>
-            {state.me ? `За ${state.me.name === 'Аня' ? 'Аню' : state.me.name}` : 'Себе'}
+            {me ? me.name : 'Себе'}
           </button>
           <button style={segStyle(target === 'table')} onClick={() => setTarget('table')}>
-            Общее на стол ÷3
+            Общее на стол{totals.participants > 1 ? ` ÷${totals.participants}` : ''}
           </button>
         </div>
 
@@ -87,7 +88,7 @@ export function DishSheet() {
             +
           </span>
         </div>
-        <PrimaryButton onClick={add} style={{ flex: 1, minHeight: 52, fontSize: 14.5 }}>
+        <PrimaryButton onClick={() => void add()} style={{ flex: 1, minHeight: 52, fontSize: 14.5 }}>
           Добавить · {fmt(dish.price * qty)}
         </PrimaryButton>
       </div>

@@ -1,11 +1,12 @@
-import { HALL_LABEL, RESTAURANT, TABLE_LABEL } from '../data'
+import { HALL_LABEL, RESTAURANT } from '../data'
 import { Avatar } from '../avatars'
 import { PrimaryButton, Mono } from '../ui'
 import { useStore } from '../store'
+import { tableId } from '../api'
 
 export function Welcome() {
-  const { state, dispatch } = useStore()
-  const returning = state.me !== null
+  const { patch, me, snap, resetDemo, forgetMe } = useStore()
+  const personas = snap?.personas ?? []
 
   return (
     <div className="ep-screen" style={{ background: '#fff' }}>
@@ -19,16 +20,31 @@ export function Welcome() {
         </div>
 
         <Mono style={{ marginBottom: 6 }}>Ваш стол</Mono>
-        <div style={{ fontWeight: 300, fontSize: 46, lineHeight: 1, letterSpacing: '-1.8px', marginBottom: 22 }}>
-          {TABLE_LABEL}
+        <div style={{ fontWeight: 300, fontSize: 46, lineHeight: 1, letterSpacing: '-1.8px', marginBottom: 18 }}>
+          Стол №{tableId}
           <br />
           <span style={{ fontSize: 30, color: '#7A7A84' }}>{HALL_LABEL}</span>
         </div>
 
+        {personas.length > 0 && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 18 }}>
+            <div style={{ display: 'flex' }}>
+              {personas.slice(0, 5).map((p, i) => (
+                <div key={p.id} style={{ marginLeft: i === 0 ? 0 : -8 }}>
+                  <Avatar animal={p.animal} size={28} />
+                </div>
+              ))}
+            </div>
+            <span style={{ fontSize: 13.5, color: '#7A7A84' }}>
+              За столом: {personas.map(p => p.name).join(', ')}
+            </span>
+          </div>
+        )}
+
         <div
           style={{
             width: '100%',
-            height: 210,
+            height: 190,
             borderRadius: 24,
             marginBottom: 22,
             background: 'linear-gradient(135deg, #1F1D3D 0%, #3A3458 55%, #7C5CFC 130%)',
@@ -42,11 +58,17 @@ export function Welcome() {
           Фото зала · Терраса
         </div>
 
-        {returning ? (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 8 }}>
-            <Avatar animal={state.me!.animal} size={44} />
-            <div style={{ fontWeight: 540, fontSize: 24, letterSpacing: '-0.7px' }}>
-              С возвращением, {state.me!.name}!
+        {me ? (
+          <div style={{ marginBottom: 8 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              <Avatar animal={me.animal} size={44} />
+              <div style={{ fontWeight: 540, fontSize: 24, letterSpacing: '-0.7px' }}>С возвращением, {me.name}!</div>
+            </div>
+            <div
+              onClick={forgetMe}
+              style={{ fontSize: 13, color: '#7C5CFC', marginTop: 6, cursor: 'pointer', textDecoration: 'underline' }}
+            >
+              Я другой гость — начать со своим именем
             </div>
           </div>
         ) : (
@@ -82,14 +104,14 @@ export function Welcome() {
       </div>
 
       <div style={{ padding: '14px 22px', paddingBottom: 'calc(24px + env(safe-area-inset-bottom))', borderTop: '1px solid #F0F0F2' }}>
-        <PrimaryButton onClick={() => dispatch({ type: 'patch', patch: { screen: 'menu' } })} style={{ fontSize: 17 }}>
-          {returning ? 'Продолжить заказ' : 'Открыть меню'}
+        <PrimaryButton onClick={() => patch({ screen: 'menu' })} style={{ fontSize: 17 }}>
+          {me ? 'Продолжить заказ' : 'Открыть меню'}
         </PrimaryButton>
         <div style={{ textAlign: 'center', fontSize: 11.5, color: '#A0A0A8', marginTop: 11, lineHeight: 1.45 }}>
           Продолжая, вы соглашаетесь на обработку данных по <span style={{ textDecoration: 'underline' }}>152-ФЗ</span>
           {' · '}
-          <span style={{ textDecoration: 'underline', cursor: 'pointer' }} onClick={() => dispatch({ type: 'reset' })}>
-            сбросить демо
+          <span style={{ textDecoration: 'underline', cursor: 'pointer' }} onClick={() => void resetDemo()}>
+            сбросить стол
           </span>
         </div>
       </div>

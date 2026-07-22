@@ -141,7 +141,7 @@ export function Toast({ msg }: { msg: string }) {
         position: 'fixed',
         left: 20,
         right: 20,
-        bottom: 'calc(24px + env(safe-area-inset-bottom))',
+        top: 'calc(14px + env(safe-area-inset-top))',
         zIndex: 60,
         background: NAVY,
         color: '#fff',

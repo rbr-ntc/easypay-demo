@@ -1,6 +1,18 @@
-import { createContext, useContext, useEffect, useMemo, useReducer } from 'react'
+import { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
-import { BOTS, PARTICIPANTS, SHARED_SEED, findDish } from './data'
+import {
+  apiAddLine,
+  apiClose,
+  apiJoin,
+  apiPay,
+  apiRemoveLine,
+  apiReset,
+  apiSend,
+  subscribe,
+  tableId
+} from './api'
+import type { ServerPersona, Snapshot } from './api'
+import { findDish } from './data'
 import type { Animal } from './data'
 
 export type Screen = 'welcome' | 'menu' | 'cart' | 'status' | 'payment' | 'tips' | 'done'
@@ -9,25 +21,22 @@ export type PayStage = 'form' | 'qr' | 'processing'
 export type PayScope = 'own' | 'equal' | 'full'
 export type PayMethod = 'sbp' | 'card' | 'tpay' | 'sber' | 'mir'
 
-export interface CartLine {
-  uid: number
+export interface PendingAdd {
   dishId: string
   qty: number
-  shared: boolean // общее на стол (делится на всех)
-  sent: boolean // уже отправлено на кухню (лочится в корзине)
+  shared: boolean
 }
 
-export interface State {
+export interface UiState {
   screen: Screen
   sheet: Sheet
   currentDishId: string | null
-  me: { name: string; animal: Animal } | null
-  lines: CartLine[]
+  pendingAdd: PendingAdd | null
   menuCat: string
   payScope: PayScope
   payMethod: PayMethod
   payStage: PayStage
-  paidAmount: number // сколько гость уже оплатил
+  lastPaid: number
   tip: '0' | '5' | '10' | '15' | 'custom'
   tipCustom: number
   rating: number
@@ -36,17 +45,16 @@ export interface State {
   toast: string | null
 }
 
-const initial: State = {
+const initialUi: UiState = {
   screen: 'welcome',
   sheet: null,
   currentDishId: null,
-  me: null,
-  lines: [],
+  pendingAdd: null,
   menuCat: 'Основное',
   payScope: 'own',
   payMethod: 'sbp',
   payStage: 'form',
-  paidAmount: 0,
+  lastPaid: 0,
   tip: '10',
   tipCustom: 0,
   rating: 0,
@@ -55,134 +63,222 @@ const initial: State = {
   toast: null
 }
 
-export type Action =
-  | { type: 'patch'; patch: Partial<State> }
-  | { type: 'addLine'; dishId: string; qty: number; shared: boolean }
-  | { type: 'removeLine'; uid: number }
-  | { type: 'sendWave' }
-  | { type: 'reset' }
+const ID_KEY = `easypay-identity-${tableId}`
 
-let uidSeq = 1
-
-function reducer(state: State, action: Action): State {
-  switch (action.type) {
-    case 'patch':
-      return { ...state, ...action.patch }
-    case 'addLine':
-      return {
-        ...state,
-        lines: [
-          ...state.lines,
-          { uid: uidSeq++, dishId: action.dishId, qty: action.qty, shared: action.shared, sent: false }
-        ]
-      }
-    case 'removeLine':
-      return { ...state, lines: state.lines.filter(l => l.uid !== uid(action)) }
-    case 'sendWave':
-      return { ...state, lines: state.lines.map(l => ({ ...l, sent: true })) }
-    case 'reset':
-      return { ...initial }
-    default:
-      return state
-  }
+interface Identity {
+  sessionId: string
+  personaId: string
 }
 
-function uid(a: { uid: number }): number {
-  return a.uid
-}
-
-const STORAGE_KEY = 'easypay-demo-v1'
-
-function load(): State {
+function loadIdentity(): Identity | null {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY)
-    if (!raw) return initial
-    const saved = JSON.parse(raw) as State
-    // Отбрасываем строки с блюдами, которых больше нет в меню (смена меню между версиями)
-    saved.lines = (saved.lines ?? []).filter(l => findDish(l.dishId))
-    uidSeq = Math.max(1, ...saved.lines.map(l => l.uid + 1))
-    // Никогда не восстанавливаем в промежуточных стадиях платежа
-    return { ...initial, ...saved, sheet: null, payStage: 'form', toast: null }
+    const raw = localStorage.getItem(ID_KEY)
+    if (!raw) return null
+    const parsed = JSON.parse(raw) as Identity
+    return parsed.sessionId && parsed.personaId ? parsed : null
   } catch {
-    return initial
+    return null
   }
 }
 
-// Производные суммы — всё считается от состояния, никаких хардкодов
 export interface Totals {
-  myOwn: number
+  participants: number
   sharedTotal: number
+  myOwn: number
   myShare: number
   myTotal: number
-  botsTotal: number
   tableTotal: number
-  remaining: number // неоплаченный остаток по столу
-  myRemaining: number // моя неоплаченная часть
+  paidTotal: number
+  remaining: number
+  myPaid: number
+  myRemaining: number
   scopeAmount: (scope: PayScope) => number
+  personaOwn: (pid: string) => number
+  personaPaid: (pid: string) => number
 }
 
-export function computeTotals(state: State): Totals {
-  const myOwn = state.lines
-    .filter(l => !l.shared)
-    .reduce((sum, l) => sum + (findDish(l.dishId)?.price ?? 0) * l.qty, 0)
-  const mySharedAdded = state.lines
-    .filter(l => l.shared)
-    .reduce((sum, l) => sum + (findDish(l.dishId)?.price ?? 0) * l.qty, 0)
-  const sharedTotal = SHARED_SEED.reduce((s, x) => s + x.price, 0) + mySharedAdded
-  const myShare = sharedTotal / PARTICIPANTS
+export function computeTotals(snap: Snapshot | null, myId: string | null): Totals {
+  const personas = snap?.personas ?? []
+  const lines = snap?.lines ?? []
+  const payments = snap?.payments ?? []
+  const participants = Math.max(1, personas.length)
+  const price = (l: { dishId: string; qty: number }) => (findDish(l.dishId)?.price ?? 0) * l.qty
+  const sharedTotal = lines.filter(l => l.shared).reduce((s, l) => s + price(l), 0)
+  const personaOwn = (pid: string) =>
+    lines.filter(l => !l.shared && l.personaId === pid).reduce((s, l) => s + price(l), 0)
+  const ownAll = lines.filter(l => !l.shared).reduce((s, l) => s + price(l), 0)
+  const myShare = sharedTotal / participants
+  const myOwn = myId ? personaOwn(myId) : 0
   const myTotal = myOwn + myShare
-  const botsTotal = BOTS.reduce((s, b) => s + b.sum, 0)
-  const tableTotal = myOwn + botsTotal + sharedTotal
-  const remaining = Math.max(0, tableTotal - state.paidAmount)
-  const myRemaining = Math.max(0, myTotal - state.paidAmount)
+  const tableTotal = ownAll + sharedTotal
+  const paidTotal = payments.reduce((s, p) => s + p.amount, 0)
+  const remaining = Math.max(0, tableTotal - paidTotal)
+  const personaPaid = (pid: string) => payments.filter(p => p.personaId === pid).reduce((s, p) => s + p.amount, 0)
+  const myPaid = myId ? personaPaid(myId) : 0
+  const myRemaining = Math.max(0, myTotal - myPaid)
   const scopeAmount = (scope: PayScope) => {
-    // Все опции считаются от НЕОПЛАЧЕННОГО остатка — защита от двойной оплаты
-    if (scope === 'own') return Math.min(myRemaining, remaining)
-    if (scope === 'equal') return remaining / PARTICIPANTS
-    return remaining
+    if (scope === 'full') return remaining
+    if (scope === 'equal') return Math.min(remaining, tableTotal / participants)
+    return Math.min(myRemaining, remaining)
   }
-  return { myOwn, sharedTotal, myShare, myTotal, botsTotal, tableTotal, remaining, myRemaining, scopeAmount }
+  return {
+    participants,
+    sharedTotal,
+    myOwn,
+    myShare,
+    myTotal,
+    tableTotal,
+    paidTotal,
+    remaining,
+    myPaid,
+    myRemaining,
+    scopeAmount,
+    personaOwn,
+    personaPaid
+  }
 }
 
-export function tipAmount(state: State, paidNow: number): number {
-  if (state.tip === 'custom') return state.tipCustom
-  if (state.tip === '0') return 0
-  const pct = Number(state.tip)
-  // Чаевые считаются от фактически оплаченной суммы
-  return Math.round((paidNow * pct) / 100)
+export function tipAmount(ui: UiState): number {
+  if (ui.tip === 'custom') return ui.tipCustom
+  if (ui.tip === '0') return 0
+  return Math.round((ui.lastPaid * Number(ui.tip)) / 100)
 }
 
 interface Ctx {
-  state: State
-  dispatch: (a: Action) => void
+  ui: UiState
+  patch: (p: Partial<UiState>) => void
+  snap: Snapshot | null
+  connected: boolean
+  me: ServerPersona | null
   totals: Totals
   toast: (msg: string) => void
+  // server actions
+  join: (name: string, animal: Animal) => Promise<ServerPersona | null>
+  addLine: (dishId: string, qty: number, shared: boolean, asPersonaId?: string) => Promise<void>
+  removeLine: (uid: number) => Promise<void>
+  sendWave: (scope: 'mine' | 'all') => Promise<void>
+  pay: (scope: PayScope) => Promise<number>
+  closeTable: () => Promise<void>
+  resetDemo: () => Promise<void>
+  forgetMe: () => void // «Я другой гость» — телефон передали новому человеку
 }
 
 const StoreCtx = createContext<Ctx | null>(null)
 
-let toastTimer: ReturnType<typeof setTimeout> | undefined
-
 export function StoreProvider({ children }: { children: ReactNode }) {
-  const [state, dispatch] = useReducer(reducer, undefined, load)
+  const [ui, setUi] = useState<UiState>(initialUi)
+  const [snap, setSnap] = useState<Snapshot | null>(null)
+  const [connected, setConnected] = useState(false)
+  const [identity, setIdentity] = useState<Identity | null>(loadIdentity)
+  const personaId = identity?.personaId ?? null
+  const toastTimer = useRef<ReturnType<typeof setTimeout>>()
 
+  useEffect(() => subscribe(setSnap, setConnected), [])
+
+  const me = useMemo(
+    () => snap?.personas.find(p => p.id === personaId) ?? null,
+    [snap, personaId]
+  )
+
+  // Сессия сменилась (стол закрыли/сбросили) — локальная личность устарела
   useEffect(() => {
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(state))
-    } catch (err) {
-      // приватный режим Safari и т.п. — демо работает без персиста
+    if (!snap || !identity) return
+    if (snap.sessionId !== identity.sessionId || !me) {
+      localStorage.removeItem(ID_KEY)
+      setIdentity(null)
     }
-  }, [state])
+  }, [snap, identity, me])
 
-  const totals = useMemo(() => computeTotals(state), [state])
+  // Стол закрыли, пока гость был в потоке — мягко возвращаем на приветствие
+  useEffect(() => {
+    if (snap?.status === 'closed' && ui.screen !== 'welcome' && ui.screen !== 'done') {
+      setUi(prev => ({ ...initialUi, toast: prev.toast }))
+      toastRef.current?.('Стол закрыт. Спасибо, что были с нами!')
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [snap?.status])
+
+  const patch = (p: Partial<UiState>) => setUi(prev => ({ ...prev, ...p }))
 
   const toast = (msg: string) => {
-    dispatch({ type: 'patch', patch: { toast: msg } })
-    clearTimeout(toastTimer)
-    toastTimer = setTimeout(() => dispatch({ type: 'patch', patch: { toast: null } }), 2200)
+    patch({ toast: msg })
+    clearTimeout(toastTimer.current)
+    toastTimer.current = setTimeout(() => patch({ toast: null }), 2200)
+  }
+  const toastRef = useRef<typeof toast>()
+  toastRef.current = toast
+
+  const totals = useMemo(() => computeTotals(snap, personaId), [snap, personaId])
+
+  const guard = async <T,>(fn: () => Promise<T>, fallback: T): Promise<T> => {
+    try {
+      return await fn()
+    } catch (err) {
+      console.error('api error:', err)
+      toast('Не получилось — проверьте связь и попробуйте ещё раз')
+      return fallback
+    }
   }
 
-  return <StoreCtx.Provider value={{ state, dispatch, totals, toast }}>{children}</StoreCtx.Provider>
+  const ctx: Ctx = {
+    ui,
+    patch,
+    snap,
+    connected,
+    me,
+    totals,
+    toast,
+    join: (name, animal) =>
+      guard(async () => {
+        const r = await apiJoin(name, animal)
+        const id: Identity = { sessionId: r.snapshot.sessionId ?? '', personaId: r.personaId }
+        localStorage.setItem(ID_KEY, JSON.stringify(id))
+        setIdentity(id)
+        setSnap(r.snapshot)
+        return r.snapshot.personas.find(p => p.id === r.personaId) ?? null
+      }, null),
+    addLine: (dishId, qty, shared, asPersonaId) =>
+      guard(async () => {
+        const pid = asPersonaId ?? personaId
+        if (!pid) return
+        await apiAddLine(pid, dishId, qty, shared)
+      }, undefined),
+    removeLine: uid =>
+      guard(async () => {
+        if (!personaId) return
+        await apiRemoveLine(personaId, uid)
+      }, undefined),
+    sendWave: scope =>
+      guard(async () => {
+        if (!personaId) return
+        await apiSend(personaId, scope)
+      }, undefined),
+    pay: scope =>
+      guard(async () => {
+        if (!personaId) return 0
+        const r = await apiPay(personaId, scope)
+        patch({ lastPaid: r.amount })
+        return r.amount
+      }, 0),
+    closeTable: () =>
+      guard(async () => {
+        await apiClose()
+      }, undefined),
+    resetDemo: () =>
+      guard(async () => {
+        await apiReset()
+        localStorage.removeItem(ID_KEY)
+        setIdentity(null)
+        setUi(initialUi)
+      }, undefined),
+    forgetMe: () => {
+      localStorage.removeItem(ID_KEY)
+      setIdentity(null)
+      setUi(initialUi)
+    }
+  }
+
+  return <StoreCtx.Provider value={ctx}>{children}</StoreCtx.Provider>
 }
 
 export function useStore(): Ctx {
