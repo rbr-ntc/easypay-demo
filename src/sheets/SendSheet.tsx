@@ -18,8 +18,9 @@ export function SendSheet() {
   // Кто ещё не отправил свои блюда (реальные гости, не боты)
   const stillChoosing = snap.personas.filter(p => p.id !== me.id && unsentOthers.some(l => l.personaId === p.id))
 
+  const alone = snap.personas.length <= 1
   const close = () => patch({ sheet: null })
-  const scope = ui.sendScope
+  const scope: 'mine' | 'all' = alone ? 'mine' : ui.sendScope
   const checked = ui.sendChecked
   const gated = scope === 'all' && stillChoosing.length > 0 && !checked
 
@@ -66,6 +67,17 @@ export function SendSheet() {
       <div style={{ padding: '0 22px', paddingBottom: 'calc(26px + env(safe-area-inset-bottom))' }}>
         <div style={{ fontWeight: 680, fontSize: 22, letterSpacing: '-0.5px', marginBottom: 16 }}>Отправить заказ на кухню?</div>
 
+        {alone && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '13px 14px', borderRadius: 16, background: '#fff', border: '1px solid #ECECEF', marginBottom: 14 }}>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontWeight: 600, fontSize: 15 }}>Ваш заказ</div>
+              <div style={{ fontSize: 12, color: '#8A8A92', marginTop: 2 }}>
+                {unsentMine.length} поз. · {fmt(unsentMine.reduce((s, l) => s + price(l), 0))}
+              </div>
+            </div>
+          </div>
+        )}
+        {!alone && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 9, marginBottom: 14 }}>
           <div
             style={rowStyle(scope === 'mine', unsentMine.length === 0)}
@@ -89,6 +101,7 @@ export function SendSheet() {
             </div>
           </div>
         </div>
+        )}
 
         {scope === 'all' && stillChoosing.length > 0 && (
           <div style={{ marginBottom: 14 }}>

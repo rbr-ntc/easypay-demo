@@ -59,7 +59,9 @@ export function Waiter() {
   const lastServedAt = servedAts.length ? Math.max(...servedAts) : null
   const lastPayAt = payments.length ? Math.max(...payments.map(p => p.at)) : null
   const payWait = fullyPaid && lastServedAt && lastPayAt ? Math.max(0, lastPayAt - lastServedAt) : null
-  const revPerHour = tableDur && tableDur > 30_000 ? totals.paidTotal / (tableDur / 3_600_000) : null
+  // Темп выручки осмыслен только на подросшей сессии: иначе экстраполяция даёт дикие ₽/ч
+  const revReady = tableDur !== null && (snap?.status === 'closed' || tableDur >= 10 * 60_000)
+  const revPerHour = revReady && tableDur ? totals.paidTotal / (tableDur / 3_600_000) : null
   const perGuest = personas.length ? totals.tableTotal / personas.length : null
 
   const personaCards = personas.map(p => {
@@ -159,7 +161,7 @@ export function Waiter() {
           <Metric
             label="Темп выручки"
             value={revPerHour ? `${Math.round(revPerHour).toLocaleString('ru-RU')} ₽/ч` : '—'}
-            hint="оплачено / время стола"
+            hint={revPerHour ? 'оплачено / время стола' : 'считаем после 10 минут'}
           />
           <Metric label="Чек на гостя" value={perGuest ? fmt(perGuest) : '—'} hint={`счёт / ${personas.length || 0} гост.`} />
         </div>
