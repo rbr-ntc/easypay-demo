@@ -3,6 +3,7 @@ import type { ReactNode } from 'react'
 import {
   apiAddLine,
   apiClose,
+  apiServe,
   apiJoin,
   apiPay,
   apiRemoveLine,
@@ -158,6 +159,7 @@ interface Ctx {
   removeLine: (uid: number) => Promise<void>
   sendWave: (scope: 'mine' | 'all') => Promise<void>
   pay: (scope: PayScope) => Promise<number>
+  serveLine: (uid: number) => Promise<void>
   closeTable: () => Promise<void>
   resetDemo: () => Promise<void>
   forgetMe: () => void // «Я другой гость» — телефон передали новому человеку
@@ -260,6 +262,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         patch({ lastPaid: r.amount })
         return r.amount
       }, 0),
+    serveLine: uid =>
+      guard(async () => {
+        await apiServe(uid)
+      }, undefined),
     closeTable: () =>
       guard(async () => {
         await apiClose()

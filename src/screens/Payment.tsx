@@ -68,16 +68,26 @@ export function Payment() {
   // Кто уже оплатил (реальные платежи других гостей)
   const otherPayments = snap.payments.filter(p => p.personaId !== me.id)
 
-  const SCOPES: { id: PayScope; label: string; sub: string; disabled?: boolean }[] = [
-    {
-      id: 'own',
-      label: 'Оплатить своё',
-      sub: `${fmt(totals.myOwn)} ваше + ${fmt(totals.myShare)} доля общего`,
-      disabled: totals.scopeAmount('own') <= 0
-    },
-    { id: 'equal', label: 'Разделить поровну', sub: `${fmt(totals.tableTotal)} на ${totals.participants} гостей` },
-    { id: 'full', label: 'Оплатить весь стол', sub: 'весь неоплаченный остаток' }
-  ]
+  const alone = totals.participants <= 1
+  const SCOPES: { id: PayScope; label: string; sub: string; disabled?: boolean }[] = alone
+    ? [
+        {
+          id: 'own',
+          label: 'Ваш заказ',
+          sub: totals.sharedTotal > 0 ? `${fmt(totals.myOwn)} блюда + ${fmt(totals.myShare)} общие` : 'вы один за столом',
+          disabled: totals.scopeAmount('own') <= 0
+        }
+      ]
+    : [
+        {
+          id: 'own',
+          label: 'Оплатить своё',
+          sub: `${fmt(totals.myOwn)} ваше + ${fmt(totals.myShare)} доля общего`,
+          disabled: totals.scopeAmount('own') <= 0
+        },
+        { id: 'equal', label: 'Разделить поровну', sub: `${fmt(totals.tableTotal)} на ${totals.participants} гостей` },
+        { id: 'full', label: 'Оплатить весь стол', sub: 'весь неоплаченный остаток' }
+      ]
 
   const doPay = async () => {
     patch({ payStage: 'processing' })

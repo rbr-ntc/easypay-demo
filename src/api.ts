@@ -18,6 +18,7 @@ export interface ServerLine {
   shared: boolean
   personaId: string
   sent: boolean
+  served: boolean
 }
 
 export interface ServerPayment {
@@ -61,6 +62,8 @@ export const apiSend = (personaId: string, scope: 'mine' | 'all') => post<{ ok: 
 
 export const apiPay = (personaId: string, scope: 'own' | 'equal' | 'full') =>
   post<{ ok: true; amount: number }>('pay', { personaId, scope })
+
+export const apiServe = (uid: number) => post<{ ok: true }>('serve', { uid })
 
 export const apiClose = () => post<{ ok: true }>('close', {})
 

@@ -10,6 +10,10 @@ export interface Dish {
   name: string
   desc: string
   price: number
+  serving?: string
+  kcal?: number
+  tags?: string[]
+  photo?: boolean
   stop?: boolean
 }
 

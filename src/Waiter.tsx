@@ -6,7 +6,7 @@ import { fmt } from './format'
 
 // Экран менеджера/официанта: живой снапшот стола со всех телефонов.
 export function Waiter() {
-  const { snap, connected, totals, closeTable } = useStore()
+  const { snap, connected, totals, closeTable, serveLine } = useStore()
   const personas = snap?.personas ?? []
   const lines = snap?.lines ?? []
   const payments = snap?.payments ?? []
@@ -21,9 +21,10 @@ export function Waiter() {
     const total = own + totals.sharedTotal / totals.participants
     const paid = totals.personaPaid(p.id)
     const hasUnsent = lines.some(l => !l.sent && l.personaId === p.id)
-    const hasSent = lines.some(l => l.sent && l.personaId === p.id)
+    const sentLines = lines.filter(l => l.sent && l.personaId === p.id)
+    const allServed = sentLines.length > 0 && sentLines.every(l => l.served)
     const payLabel = paid >= total - 0.01 && total > 0 ? 'Оплачено' : paid > 0 ? 'Частично' : 'Ожидает'
-    const orderLabel = hasUnsent ? 'Выбирает' : hasSent ? 'Готовится' : 'Смотрит меню'
+    const orderLabel = hasUnsent ? 'Выбирает' : allServed ? 'Подано' : sentLines.length ? 'Готовится' : 'Смотрит меню'
     return { p, total, paid, payLabel, orderLabel }
   })
 
@@ -172,19 +173,23 @@ export function Waiter() {
                       {l.shared ? `общее на стол · добавил(а) ${nameOf(l.personaId)}` : `${nameOf(l.personaId)} · своё`}
                     </div>
                   </div>
-                  <span
-                    style={{
-                      fontFamily: 'ui-monospace, monospace',
-                      fontSize: 10,
-                      padding: '4px 9px',
-                      borderRadius: 50,
-                      background: l.sent ? '#FFF2DA' : '#EFEFF2',
-                      color: l.sent ? '#B07A12' : '#7A7A84',
-                      marginRight: 6
-                    }}
-                  >
-                    {l.sent ? 'ГОТОВИТСЯ' : 'ЧЕРНОВИК'}
-                  </span>
+                  {l.served ? (
+                    <span style={{ fontFamily: 'ui-monospace, monospace', fontSize: 10, padding: '4px 9px', borderRadius: 50, background: '#E4F6EA', color: '#1F9D55', marginRight: 6 }}>
+                      ПОДАНО
+                    </span>
+                  ) : l.sent ? (
+                    <button
+                      onClick={() => void serveLine(l.uid)}
+                      title="Отметить поданным"
+                      style={{ fontFamily: 'ui-monospace, monospace', fontSize: 10, padding: '5px 10px', borderRadius: 50, background: '#FFF2DA', color: '#B07A12', border: '1px dashed #E8C87A', cursor: 'pointer', marginRight: 6 }}
+                    >
+                      ГОТОВИТСЯ → ПОДАТЬ ✓
+                    </button>
+                  ) : (
+                    <span style={{ fontFamily: 'ui-monospace, monospace', fontSize: 10, padding: '4px 9px', borderRadius: 50, background: '#EFEFF2', color: '#7A7A84', marginRight: 6 }}>
+                      ЧЕРНОВИК
+                    </span>
+                  )}
                   <span style={{ fontWeight: 620, fontSize: 15 }}>{fmt(d.price * l.qty)}</span>
                 </div>
               )

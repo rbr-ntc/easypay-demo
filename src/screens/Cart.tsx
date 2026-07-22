@@ -154,6 +154,12 @@ export function Cart() {
       </div>
 
       <StickyFooter>
+        <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', padding: '0 4px' }}>
+          <div style={{ fontSize: 13, color: '#7A7A84' }}>
+            Мой итог: {fmt(totals.myOwn)} своё{totals.sharedTotal > 0 ? ` + ${fmt(totals.myShare)} доля общего` : ''}
+          </div>
+          <div style={{ fontWeight: 700, fontSize: 20, letterSpacing: '-0.5px' }}>{fmt(totals.myTotal)}</div>
+        </div>
         <div style={{ display: 'flex', gap: 10 }}>
           <GhostButton style={{ flex: 1 }} onClick={() => patch({ screen: 'menu' })}>
             Дозаказать

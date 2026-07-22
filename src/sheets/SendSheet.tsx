@@ -12,6 +12,7 @@ export function SendSheet() {
 
   const price = (l: { dishId: string; qty: number }) => (findDish(l.dishId)?.price ?? 0) * l.qty
   const unsentMine = snap.lines.filter(l => !l.sent && l.personaId === me.id)
+  const alreadySent = snap.lines.filter(l => l.sent)
   const unsentAll = snap.lines.filter(l => !l.sent)
   const unsentOthers = unsentAll.filter(l => l.personaId !== me.id)
   // Кто ещё не отправил свои блюда (реальные гости, не боты)
@@ -122,6 +123,13 @@ export function SendSheet() {
               ✓
             </div>
             <span style={{ fontSize: 14.5 }}>Я всё выбрал(а), отправляем за всех</span>
+          </div>
+        )}
+
+        {alreadySent.length > 0 && (
+          <div style={{ fontSize: 12.5, color: '#9A9AA4', marginBottom: 14 }}>
+            Уже на кухне (не отправится повторно):{' '}
+            {alreadySent.map(l => findDish(l.dishId)?.name ?? '?').join(', ')}
           </div>
         )}
 

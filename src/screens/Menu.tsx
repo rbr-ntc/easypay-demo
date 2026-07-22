@@ -5,10 +5,20 @@ import { PrimaryButton } from '../ui'
 import { useStore } from '../store'
 import { fmt } from '../format'
 
-function DishPhoto({ name, size, radius }: { name: string; size: number; radius: number }) {
-  // Детерминированный градиент-заглушка вместо фото
+function DishPhoto({ id, name, hasPhoto, size, radius }: { id: string; name: string; hasPhoto?: boolean; size: number; radius: number }) {
+  // Реальное фото из public/dishes; для блюд без фото — градиент-заглушка
   let hash = 0
   for (const ch of name) hash = (hash * 31 + ch.charCodeAt(0)) % 360
+  if (hasPhoto) {
+    return (
+      <img
+        src={`./dishes/${id}.jpg`}
+        alt={name}
+        loading="lazy"
+        style={{ width: size, height: size, flexShrink: 0, borderRadius: radius, objectFit: 'cover', background: '#F2F2F4' }}
+      />
+    )
+  }
   return (
     <div
       style={{
@@ -16,14 +26,14 @@ function DishPhoto({ name, size, radius }: { name: string; size: number; radius:
         height: size,
         flexShrink: 0,
         borderRadius: radius,
-        background: `linear-gradient(135deg, hsl(${hash} 45% 88%), hsl(${(hash + 40) % 360} 50% 74%))`,
+        background: `linear-gradient(135deg, hsl(${hash} 55% 86%), hsl(${(hash + 40) % 360} 60% 70%))`,
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
         fontSize: size * 0.38
       }}
     >
-      🍽
+      🍋
     </div>
   )
 }
@@ -116,10 +126,13 @@ export function Menu() {
               opacity: it.stop ? 0.55 : 1
             }}
           >
-            <DishPhoto name={it.name} size={74} radius={14} />
+            <DishPhoto id={it.id} name={it.name} hasPhoto={it.photo} size={74} radius={14} />
             <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap' }}>
-                <span style={{ fontWeight: 600, fontSize: 15 }}>{it.name}</span>
+                <span style={{ fontWeight: 600, fontSize: 15 }}>
+                  {it.name}
+                  {it.tags?.includes('острое') ? ' 🌶' : ''}
+                </span>
                 {it.stop && (
                   <span
                     style={{
@@ -137,7 +150,12 @@ export function Menu() {
                   </span>
                 )}
               </div>
-              <div style={{ fontSize: 12.5, color: '#7A7A84', lineHeight: 1.4, margin: '3px 0 8px' }}>{it.desc}</div>
+              <div style={{ fontSize: 12.5, color: '#7A7A84', lineHeight: 1.4, margin: '3px 0 4px' }}>{it.desc}</div>
+              {(it.serving || it.kcal) && (
+                <div style={{ fontSize: 11.5, color: '#A6A6AE', marginBottom: 8 }}>
+                  {[it.serving, it.kcal ? `${it.kcal} ккал` : null].filter(Boolean).join(' · ')}
+                </div>
+              )}
               <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', marginTop: 'auto' }}>
                 <span style={{ fontWeight: 620, fontSize: 15 }}>{fmt(it.price)}</span>
                 <button

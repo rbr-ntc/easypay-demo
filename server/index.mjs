@@ -238,6 +238,15 @@ async function handleApi(req, res, url) {
     return json(res, 200, { personaId: persona.id, snapshot: snapshot(tableId) })
   }
 
+  if (action === 'serve') {
+    // Официант отмечает блюдо поданным (менеджерское действие, без persona)
+    const line = t.lines.find(l => l.uid === Number(body.uid))
+    if (!line || !line.sent) return json(res, 400, { error: 'not sent yet' })
+    line.served = true
+    broadcast(tableId)
+    return json(res, 200, { ok: true })
+  }
+
   if (action === 'close') {
     // Менеджер закрывает стол: сессия замораживается, следующий join откроет новую
     t.status = 'closed'
@@ -261,7 +270,8 @@ async function handleApi(req, res, url) {
       qty,
       shared: !!body.shared,
       personaId: persona.id,
-      sent: false
+      sent: false,
+      served: false
     })
     broadcast(tableId)
     return json(res, 200, { ok: true })

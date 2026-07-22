@@ -3,11 +3,7 @@ import { Avatar, SharedIcon } from '../avatars'
 import { Card, GhostButton, PrimaryButton, StickyFooter, WarnBanner } from '../ui'
 import { useStore } from '../store'
 
-const STEPS = [
-  { label: 'Принят', st: 'done' as const },
-  { label: 'Готовится', st: 'active' as const },
-  { label: 'Подано', st: 'todo' as const }
-]
+const STEP_LABELS = ['Принят', 'Готовится', 'Подано']
 
 export function Status() {
   const { patch, me, snap } = useStore()
@@ -15,6 +11,12 @@ export function Status() {
 
   const sentOwn = snap.lines.filter(l => l.sent && !l.shared)
   const sentShared = snap.lines.filter(l => l.sent && l.shared)
+  const allSent = snap.lines.filter(l => l.sent)
+  const allServed = allSent.length > 0 && allSent.every(l => l.served)
+  const steps = STEP_LABELS.map((label, i) => ({
+    label,
+    st: allServed ? ('done' as const) : i === 0 ? ('done' as const) : i === 1 ? ('active' as const) : ('todo' as const)
+  }))
   const nameOf = (pid: string) => snap.personas.find(p => p.id === pid)?.name ?? '?'
   const animalOf = (pid: string) => snap.personas.find(p => p.id === pid)?.animal ?? 'fox'
   const stillChoosing = snap.personas.filter(p => snap.lines.some(l => !l.sent && l.personaId === p.id))
@@ -27,14 +29,14 @@ export function Status() {
             ✓
           </div>
           <div style={{ fontWeight: 300, fontSize: 28, lineHeight: 1.12, letterSpacing: '-0.9px' }}>
-            Заказ принят.
+            {allServed ? 'Всё подано.' : 'Заказ принят.'}
             <br />
             Приятного аппетита!
           </div>
         </div>
 
         <div style={{ display: 'flex', alignItems: 'flex-start', marginBottom: 22, padding: '0 6px' }}>
-          {STEPS.map((x, i) => {
+          {steps.map((x, i) => {
             const done = x.st === 'done'
             const active = x.st === 'active'
             return (
@@ -87,8 +89,8 @@ export function Status() {
                     {mine ? ' · своё' : ''}
                   </div>
                 </div>
-                <span style={{ fontFamily: 'ui-monospace, monospace', fontSize: 9.5, textTransform: 'uppercase', padding: '4px 9px', borderRadius: 50, background: '#FFF2DA', color: '#B07A12' }}>
-                  Готовится
+                <span style={{ fontFamily: 'ui-monospace, monospace', fontSize: 9.5, textTransform: 'uppercase', padding: '4px 9px', borderRadius: 50, background: l.served ? '#E4F6EA' : '#FFF2DA', color: l.served ? '#1F9D55' : '#B07A12' }}>
+                  {l.served ? 'Подано' : 'Готовится'}
                 </span>
               </div>
             )
