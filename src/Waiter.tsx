@@ -1,12 +1,40 @@
+import { useEffect, useState } from 'react'
 import { HALL_LABEL, NAVY, WAITER_NAME, findDish } from './data'
 import { tableId } from './api'
 import { Avatar, SharedIcon } from './avatars'
 import { useStore } from './store'
 import { fmt } from './format'
 
+function fmtDur(ms: number | null): string {
+  if (ms === null || ms < 0 || !isFinite(ms)) return '—'
+  const totalSec = Math.floor(ms / 1000)
+  const h = Math.floor(totalSec / 3600)
+  const m = Math.floor((totalSec % 3600) / 60)
+  const sec = totalSec % 60
+  if (h > 0) return `${h} ч ${String(m).padStart(2, '0')} м`
+  return `${m}:${String(sec).padStart(2, '0')}`
+}
+
+function Metric({ label, value, hint, accent }: { label: string; value: string; hint?: string; accent?: boolean }) {
+  return (
+    <div style={{ flex: '1 1 130px', minWidth: 130, background: '#fff', border: '1px solid #ECECEF', borderRadius: 16, padding: '12px 14px' }}>
+      <div style={{ fontFamily: 'ui-monospace, monospace', fontSize: 9.5, letterSpacing: '0.5px', textTransform: 'uppercase', color: '#9A9AA4', marginBottom: 5 }}>
+        {label}
+      </div>
+      <div style={{ fontWeight: 680, fontSize: 21, letterSpacing: '-0.6px', color: accent ? '#1F9D55' : '#1F1D3D' }}>{value}</div>
+      {hint && <div style={{ fontSize: 11, color: '#A6A6AE', marginTop: 3 }}>{hint}</div>}
+    </div>
+  )
+}
+
 // Экран менеджера/официанта: живой снапшот стола со всех телефонов.
 export function Waiter() {
   const { snap, connected, totals, closeTable, serveLine } = useStore()
+  const [now, setNow] = useState(Date.now())
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 1000)
+    return () => clearInterval(t)
+  }, [])
   const personas = snap?.personas ?? []
   const lines = snap?.lines ?? []
   const payments = snap?.payments ?? []
@@ -15,6 +43,24 @@ export function Waiter() {
   const nameOf = (pid: string) => personas.find(p => p.id === pid)?.name ?? '?'
   const animalOf = (pid: string) => personas.find(p => p.id === pid)?.animal ?? 'fox'
   const fullyPaid = totals.tableTotal > 0 && totals.remaining < 0.01
+
+  // ---- Метрики стола ----
+  const openedAt = snap?.openedAt ?? null
+  const endAt = snap?.status === 'closed' ? (snap?.closedAt ?? now) : now
+  const tableDur = openedAt ? endAt - openedAt : null
+  const sentAts = lines.filter(l => l.sentAt).map(l => l.sentAt as number)
+  const firstSentAt = sentAts.length ? Math.min(...sentAts) : null
+  const toFirstOrder = openedAt && firstSentAt ? firstSentAt - openedAt : null
+  const kitchenDone = lines.filter(l => l.sentAt && l.servedAt)
+  const kitchenAvg = kitchenDone.length
+    ? kitchenDone.reduce((s, l) => s + ((l.servedAt as number) - (l.sentAt as number)), 0) / kitchenDone.length
+    : null
+  const servedAts = lines.filter(l => l.servedAt).map(l => l.servedAt as number)
+  const lastServedAt = servedAts.length ? Math.max(...servedAts) : null
+  const lastPayAt = payments.length ? Math.max(...payments.map(p => p.at)) : null
+  const payWait = fullyPaid && lastServedAt && lastPayAt ? Math.max(0, lastPayAt - lastServedAt) : null
+  const revPerHour = tableDur && tableDur > 30_000 ? totals.paidTotal / (tableDur / 3_600_000) : null
+  const perGuest = personas.length ? totals.tableTotal / personas.length : null
 
   const personaCards = personas.map(p => {
     const own = totals.personaOwn(p.id)
@@ -94,6 +140,30 @@ export function Waiter() {
           ← гостевой экран
         </a>
       </div>
+
+      {(openedAt || snap?.status === 'closed') && (
+        <div style={{ flexShrink: 0, display: 'flex', gap: 10, padding: '14px 24px 4px', flexWrap: 'wrap', background: '#F4F4F6' }}>
+          <Metric
+            label={snap?.status === 'closed' ? 'Стол обслужен за' : 'Стол открыт'}
+            value={fmtDur(tableDur)}
+            hint={snap?.status === 'closed' ? 'итог сессии' : 'идёт сейчас'}
+            accent={snap?.status === 'closed'}
+          />
+          <Metric label="До первого заказа" value={fmtDur(toFirstOrder)} hint="сели → на кухню" />
+          <Metric
+            label="Кухня, среднее"
+            value={fmtDur(kitchenAvg)}
+            hint={kitchenDone.length ? `по ${kitchenDone.length} поз.` : 'ещё нет поданных'}
+          />
+          <Metric label="Подача → оплата" value={fmtDur(payWait)} hint={payWait === null ? 'после полной оплаты' : 'ожидание денег'} />
+          <Metric
+            label="Темп выручки"
+            value={revPerHour ? `${Math.round(revPerHour).toLocaleString('ru-RU')} ₽/ч` : '—'}
+            hint="оплачено / время стола"
+          />
+          <Metric label="Чек на гостя" value={perGuest ? fmt(perGuest) : '—'} hint={`счёт / ${personas.length || 0} гост.`} />
+        </div>
+      )}
 
       <div style={{ flex: 1, minHeight: 0, display: 'flex', flexWrap: 'wrap', overflow: 'auto' }}>
         <div style={{ width: 380, flexShrink: 0, borderRight: '1px solid #ECECEF', padding: 22, background: '#FAFAFB' }}>
@@ -175,7 +245,7 @@ export function Waiter() {
                   </div>
                   {l.served ? (
                     <span style={{ fontFamily: 'ui-monospace, monospace', fontSize: 10, padding: '4px 9px', borderRadius: 50, background: '#E4F6EA', color: '#1F9D55', marginRight: 6 }}>
-                      ПОДАНО
+                      ПОДАНО{l.sentAt && l.servedAt ? ` · ${fmtDur(l.servedAt - l.sentAt)}` : ''}
                     </span>
                   ) : l.sent ? (
                     <button
@@ -183,7 +253,7 @@ export function Waiter() {
                       title="Отметить поданным"
                       style={{ fontFamily: 'ui-monospace, monospace', fontSize: 10, padding: '5px 10px', borderRadius: 50, background: '#FFF2DA', color: '#B07A12', border: '1px dashed #E8C87A', cursor: 'pointer', marginRight: 6 }}
                     >
-                      ГОТОВИТСЯ → ПОДАТЬ ✓
+                      ГОТОВИТСЯ {l.sentAt ? fmtDur(now - l.sentAt) : ''} → ПОДАТЬ ✓
                     </button>
                   ) : (
                     <span style={{ fontFamily: 'ui-monospace, monospace', fontSize: 10, padding: '4px 9px', borderRadius: 50, background: '#EFEFF2', color: '#7A7A84', marginRight: 6 }}>

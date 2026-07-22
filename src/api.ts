@@ -19,6 +19,8 @@ export interface ServerLine {
   personaId: string
   sent: boolean
   served: boolean
+  sentAt: number | null
+  servedAt: number | null
 }
 
 export interface ServerPayment {
@@ -32,6 +34,8 @@ export interface Snapshot {
   tableId: string
   sessionId: string | null
   status: 'open' | 'closed'
+  openedAt: number | null
+  closedAt: number | null
   personas: ServerPersona[]
   lines: ServerLine[]
   payments: ServerPayment[]

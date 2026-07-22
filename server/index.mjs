@@ -78,6 +78,8 @@ function snapshot(id) {
     tableId: id,
     sessionId: t.sessionId,
     status: t.status,
+    openedAt: t.openedAt,
+    closedAt: t.closedAt,
     personas: t.personas,
     lines: t.lines,
     payments: t.payments
@@ -243,6 +245,7 @@ async function handleApi(req, res, url) {
     const line = t.lines.find(l => l.uid === Number(body.uid))
     if (!line || !line.sent) return json(res, 400, { error: 'not sent yet' })
     line.served = true
+    line.servedAt = Date.now()
     broadcast(tableId)
     return json(res, 200, { ok: true })
   }
@@ -271,7 +274,9 @@ async function handleApi(req, res, url) {
       shared: !!body.shared,
       personaId: persona.id,
       sent: false,
-      served: false
+      served: false,
+      sentAt: null,
+      servedAt: null
     })
     broadcast(tableId)
     return json(res, 200, { ok: true })
@@ -288,10 +293,11 @@ async function handleApi(req, res, url) {
 
   if (action === 'send') {
     const scope = body.scope === 'all' ? 'all' : 'mine'
+    const now = Date.now()
     t.lines = t.lines.map(l => {
       const mineUnsent = !l.sent && l.personaId === persona.id
       const anyUnsent = !l.sent
-      return (scope === 'all' ? anyUnsent : mineUnsent) ? { ...l, sent: true } : l
+      return (scope === 'all' ? anyUnsent : mineUnsent) ? { ...l, sent: true, sentAt: now } : l
     })
     broadcast(tableId)
     return json(res, 200, { ok: true })
