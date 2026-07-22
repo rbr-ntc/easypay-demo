@@ -98,6 +98,8 @@ function load(): State {
     const raw = localStorage.getItem(STORAGE_KEY)
     if (!raw) return initial
     const saved = JSON.parse(raw) as State
+    // Отбрасываем строки с блюдами, которых больше нет в меню (смена меню между версиями)
+    saved.lines = (saved.lines ?? []).filter(l => findDish(l.dishId))
     uidSeq = Math.max(1, ...saved.lines.map(l => l.uid + 1))
     // Никогда не восстанавливаем в промежуточных стадиях платежа
     return { ...initial, ...saved, sheet: null, payStage: 'form', toast: null }
