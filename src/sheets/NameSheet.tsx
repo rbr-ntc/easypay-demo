@@ -40,7 +40,7 @@ export function NameSheet() {
     <BottomSheet onClose={close}>
       <div style={{ padding: '0 22px', paddingBottom: 'calc(26px + env(safe-area-inset-bottom))' }}>
         <div style={{ fontWeight: 680, fontSize: 22, letterSpacing: '-0.5px', marginBottom: 4 }}>За кем записать заказ?</div>
-        <div style={{ fontSize: 14, color: '#7A7A84', marginBottom: 18 }}>
+        <div style={{ fontSize: 14, color: 'var(--ep-muted)', marginBottom: 18 }}>
           Выберите зверюшку и впишите имя — за ним закрепятся блюда
         </div>
 
@@ -55,32 +55,32 @@ export function NameSheet() {
                   borderRadius: '50%',
                   cursor: disabled ? 'not-allowed' : 'pointer',
                   opacity: disabled ? 0.35 : 1,
-                  boxShadow: a === effectiveAnimal ? '0 0 0 2px #fff, 0 0 0 4px #1F1D3D' : 'none',
+                  boxShadow: a === effectiveAnimal ? '0 0 0 2px #fff, 0 0 0 4px var(--ep-ink)' : 'none',
                   transition: 'box-shadow 120ms'
                 }}
               >
-                <Avatar animal={a} size={60} />
+                <Avatar animal={a} size={60} label={name || 'А'} />
               </div>
             )
           })}
         </div>
 
-        <div style={{ background: '#F7F7F9', border: '1px solid #ECECEF', borderRadius: 14, padding: '14px 16px', marginBottom: 14 }}>
+        <div style={{ background: 'var(--ep-bg)', border: '1px solid var(--ep-border)', borderRadius: 'var(--ep-r-sm)', padding: '14px 16px', marginBottom: 14 }}>
           <input
             placeholder="Ваше имя"
             value={name}
             onChange={e => setName(e.target.value)}
-            style={{ width: '100%', border: 'none', outline: 'none', background: 'transparent', fontSize: 17, fontWeight: 540, color: '#1F1D3D' }}
+            style={{ width: '100%', border: 'none', outline: 'none', background: 'transparent', fontSize: 17, fontWeight: 540, color: 'var(--ep-ink)' }}
           />
         </div>
 
         {others.length > 0 && (
-          <div style={{ fontSize: 12.5, color: '#9A9AA4', marginBottom: 18 }}>
+          <div style={{ fontSize: 12.5, color: 'var(--ep-muted)', marginBottom: 18 }}>
             За столом уже: {others.map(p => p.name).join(' · ')}
           </div>
         )}
         {others.length === 0 && (
-          <div style={{ fontSize: 12.5, color: '#9A9AA4', marginBottom: 18 }}>Вы первый за этим столом</div>
+          <div style={{ fontSize: 12.5, color: 'var(--ep-muted)', marginBottom: 18 }}>Вы первый за этим столом</div>
         )}
 
         <PrimaryButton onClick={() => void confirm()} disabled={busy} style={{ minHeight: 54 }}>

@@ -15,7 +15,7 @@ function DishPhoto({ id, name, hasPhoto, size, radius }: { id: string; name: str
         src={`./dishes/${id}.jpg`}
         alt={name}
         loading="lazy"
-        style={{ width: size, height: size, flexShrink: 0, borderRadius: radius, objectFit: 'cover', background: '#F2F2F4' }}
+        style={{ width: size, height: size, flexShrink: 0, borderRadius: radius, objectFit: 'cover', background: 'var(--ep-soft)' }}
       />
     )
   }
@@ -47,20 +47,20 @@ export function Menu() {
 
   return (
     <div className="ep-screen">
-      <div style={{ flexShrink: 0, background: '#fff', borderBottom: '1px solid #ECECEF', padding: '12px 20px' }}>
+      <div style={{ flexShrink: 0, background: 'var(--ep-opaque)', borderBottom: '1px solid var(--ep-border)', padding: '12px 20px' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
           {me ? (
             <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
-              <Avatar animal={me.animal} size={32} />
+              <Avatar animal={me.animal} size={32} label={me.name} />
               <div>
-                <div style={{ fontSize: 11, color: '#8A8A92' }}>Заказ · Стол №{tableId}</div>
+                <div style={{ fontSize: 11, color: 'var(--ep-muted)' }}>Заказ · Стол №{tableId}</div>
                 <div style={{ fontWeight: 600, fontSize: 14.5, lineHeight: 1.1 }}>{me.name}</div>
               </div>
             </div>
           ) : (
             <div>
               <div style={{ fontWeight: 700, fontSize: 17, letterSpacing: '-0.3px' }}>Меню</div>
-              <div style={{ fontSize: 12, color: '#8A8A92' }}>
+              <div style={{ fontSize: 12, color: 'var(--ep-muted)' }}>
                 Стол №{tableId} · {HALL_LABEL}
               </div>
             </div>
@@ -72,7 +72,7 @@ export function Menu() {
               height: 42,
               borderRadius: '50%',
               border: 'none',
-              background: '#F2F2F4',
+              background: 'var(--ep-soft)',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
@@ -92,12 +92,12 @@ export function Menu() {
                 fontSize: 14,
                 fontWeight: c === ui.menuCat ? 600 : 440,
                 padding: '8px 15px',
-                borderRadius: 50,
+                borderRadius: 'var(--ep-r-pill)',
                 cursor: 'pointer',
                 whiteSpace: 'nowrap',
                 border: 'none',
-                background: c === ui.menuCat ? NAVY : '#F2F2F4',
-                color: c === ui.menuCat ? '#fff' : '#5C5C66'
+                background: c === ui.menuCat ? NAVY : 'var(--ep-soft)',
+                color: c === ui.menuCat ? 'var(--ep-on-ink)' : 'var(--ep-text-2)'
               }}
             >
               {c}
@@ -108,8 +108,8 @@ export function Menu() {
 
       <div className="ep-scroll" style={{ padding: '14px 20px 22px', display: 'flex', flexDirection: 'column', gap: 11 }}>
         {items.length === 0 && (
-          <div style={{ textAlign: 'center', padding: '64px 20px', color: '#9A9AA4' }}>
-            <div style={{ fontWeight: 540, fontSize: 15, color: '#5C5C66' }}>В этой категории пока пусто</div>
+          <div style={{ textAlign: 'center', padding: '64px 20px', color: 'var(--ep-muted)' }}>
+            <div style={{ fontWeight: 540, fontSize: 15, color: 'var(--ep-text-2)' }}>В этой категории пока пусто</div>
             <div style={{ fontSize: 13, marginTop: 4 }}>Загляните в другие разделы меню</div>
           </div>
         )}
@@ -120,9 +120,9 @@ export function Menu() {
               display: 'flex',
               gap: 13,
               padding: 12,
-              borderRadius: 18,
-              background: '#fff',
-              border: '1px solid #ECECEF',
+              borderRadius: 'var(--ep-r-card)',
+              background: 'var(--ep-surface)',
+              border: '1px solid var(--ep-border)',
               opacity: it.stop ? 0.55 : 1
             }}
           >
@@ -140,19 +140,19 @@ export function Menu() {
                       fontSize: 9.5,
                       letterSpacing: '0.4px',
                       textTransform: 'uppercase',
-                      background: '#F2F2F4',
-                      color: '#8A8A92',
+                      background: 'var(--ep-soft)',
+                      color: 'var(--ep-muted)',
                       padding: '3px 7px',
-                      borderRadius: 50
+                      borderRadius: 'var(--ep-r-pill)'
                     }}
                   >
                     Нет в наличии
                   </span>
                 )}
               </div>
-              <div style={{ fontSize: 12.5, color: '#7A7A84', lineHeight: 1.4, margin: '3px 0 4px' }}>{it.desc}</div>
+              <div style={{ fontSize: 12.5, color: 'var(--ep-muted)', lineHeight: 1.4, margin: '3px 0 4px' }}>{it.desc}</div>
               {(it.serving || it.kcal) && (
-                <div style={{ fontSize: 11.5, color: '#A6A6AE', marginBottom: 8 }}>
+                <div style={{ fontSize: 11.5, color: 'var(--ep-muted)', marginBottom: 8 }}>
                   {[it.serving, it.kcal ? `${it.kcal} ккал` : null].filter(Boolean).join(' · ')}
                 </div>
               )}
@@ -166,8 +166,8 @@ export function Menu() {
                     borderRadius: '50%',
                     border: 'none',
                     cursor: it.stop ? 'not-allowed' : 'pointer',
-                    background: it.stop ? '#EDEDEF' : NAVY,
-                    color: it.stop ? '#B6B6BE' : '#fff',
+                    background: it.stop ? 'var(--ep-soft)' : NAVY,
+                    color: it.stop ? 'var(--ep-muted)' : 'var(--ep-surface)',
                     fontSize: 20,
                     display: 'flex',
                     alignItems: 'center',
@@ -186,7 +186,7 @@ export function Menu() {
       {hasCart && (
         <div style={{ padding: '12px 20px', paddingBottom: 'calc(20px + env(safe-area-inset-bottom))' }}>
           <PrimaryButton onClick={() => patch({ screen: 'cart' })}>
-            <span style={{ background: 'rgba(255,255,255,.2)', padding: '3px 10px', borderRadius: 50, fontSize: 14, marginRight: 10 }}>
+            <span style={{ background: 'rgba(255,255,255,.2)', padding: '3px 10px', borderRadius: 'var(--ep-r-pill)', fontSize: 14, marginRight: 10 }}>
               Корзина
             </span>
             {fmt(totals.myTotal)} →

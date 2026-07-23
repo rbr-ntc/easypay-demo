@@ -19,7 +19,7 @@ export function Tips() {
     <div className="ep-screen">
       <div className="ep-scroll" style={{ padding: '24px 24px 20px' }}>
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', marginBottom: 24 }}>
-          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 7, background: '#E4F6EA', color: '#1F9D55', borderRadius: 50, padding: '7px 14px', fontSize: 13, fontWeight: 600, marginBottom: 16 }}>
+          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 7, background: '#E4F6EA', color: '#1F9D55', borderRadius: 'var(--ep-r-pill)', padding: '7px 14px', fontSize: 13, fontWeight: 600, marginBottom: 16 }}>
             ✓ Оплачено · {fmt(paidNow)}
           </div>
           <div
@@ -37,10 +37,10 @@ export function Tips() {
           >
             👨‍🍳
           </div>
-          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: '#fff', border: '1px solid #ECECEF', borderRadius: 50, padding: '5px 12px', marginBottom: 16 }}>
+          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: 'var(--ep-surface)', border: '1px solid var(--ep-border)', borderRadius: 'var(--ep-r-pill)', padding: '5px 12px', marginBottom: 16 }}>
             <span style={{ color: '#F4B400', fontSize: 13 }}>★</span>
             <span style={{ fontSize: 12.5, fontWeight: 600 }}>4.9</span>
-            <span style={{ fontSize: 12.5, color: '#9A9AA4' }}>· официант {WAITER_NAME}</span>
+            <span style={{ fontSize: 12.5, color: 'var(--ep-muted)' }}>· официант {WAITER_NAME}</span>
           </div>
           <div style={{ fontWeight: 300, fontSize: 28, lineHeight: 1.1, letterSpacing: '-0.9px' }}>
             Поблагодарить
@@ -59,17 +59,17 @@ export function Tips() {
                 flex: 1,
                 textAlign: 'center',
                 padding: '15px 6px',
-                borderRadius: 16,
+                borderRadius: 'var(--ep-r-card)',
                 cursor: 'pointer',
                 fontWeight: ui.tip === p.v ? 600 : 480,
                 fontSize: 16,
-                background: ui.tip === p.v ? NAVY : '#F2F2F4',
-                color: ui.tip === p.v ? '#fff' : '#3A3A42',
+                background: ui.tip === p.v ? NAVY : 'var(--ep-soft)',
+                color: ui.tip === p.v ? 'var(--ep-on-ink)' : 'var(--ep-text-2)',
                 border: 'none'
               }}
             >
               {p.popular && (
-                <span style={{ position: 'absolute', top: -9, left: '50%', transform: 'translateX(-50%)', fontFamily: 'ui-monospace, monospace', fontSize: 8, textTransform: 'uppercase', background: '#1F9D55', color: '#fff', padding: '2px 7px', borderRadius: 50, whiteSpace: 'nowrap' }}>
+                <span style={{ position: 'absolute', top: -9, left: '50%', transform: 'translateX(-50%)', fontFamily: 'ui-monospace, monospace', fontSize: 8, textTransform: 'uppercase', background: '#1F9D55', color: 'var(--ep-on-ink)', padding: '2px 7px', borderRadius: 'var(--ep-r-pill)', whiteSpace: 'nowrap' }}>
                   популярно
                 </span>
               )}
@@ -79,21 +79,21 @@ export function Tips() {
         </div>
 
         {ui.tip === 'custom' && (
-          <div style={{ background: '#fff', border: '1px solid #ECECEF', borderRadius: 16, padding: '14px 16px', display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16 }}>
+          <div style={{ background: 'var(--ep-surface)', border: '1px solid var(--ep-border)', borderRadius: 'var(--ep-r-card)', padding: '14px 16px', display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16 }}>
             <input
               placeholder="Введите сумму"
               inputMode="numeric"
               value={ui.tipCustom || ''}
               onChange={e => patch({ tipCustom: Number(e.target.value.replace(/\D/g, '')) || 0 })}
-              style={{ flex: 1, border: 'none', outline: 'none', fontSize: 18, fontWeight: 540, color: '#1F1D3D' }}
+              style={{ flex: 1, border: 'none', outline: 'none', fontSize: 18, fontWeight: 540, color: 'var(--ep-ink)' }}
             />
-            <span style={{ fontSize: 18, color: '#9A9AA4' }}>₽</span>
+            <span style={{ fontSize: 18, color: 'var(--ep-muted)' }}>₽</span>
           </div>
         )}
 
         {tip > 0 && <div style={{ textAlign: 'center', fontWeight: 300, fontSize: 42, letterSpacing: '-1.4px', margin: '6px 0 10px' }}>{fmt(tip)}</div>}
 
-        <div style={{ textAlign: 'center', fontSize: 12.5, color: '#9A9AA4' }}>Чаевые поступают напрямую официанту</div>
+        <div style={{ textAlign: 'center', fontSize: 12.5, color: 'var(--ep-muted)' }}>Чаевые поступают напрямую официанту</div>
       </div>
 
       <StickyFooter>
@@ -102,7 +102,7 @@ export function Tips() {
         </PrimaryButton>
         <button
           onClick={() => patch({ tip: '0', screen: 'done' })}
-          style={{ width: '100%', minHeight: 44, border: 'none', background: 'transparent', color: '#8A8A92', fontWeight: 520, fontSize: 15, cursor: 'pointer' }}
+          style={{ width: '100%', minHeight: 44, border: 'none', background: 'transparent', color: 'var(--ep-muted)', fontWeight: 520, fontSize: 15, cursor: 'pointer' }}
         >
           Пропустить
         </button>

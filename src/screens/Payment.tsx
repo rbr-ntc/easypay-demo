@@ -25,34 +25,34 @@ function QrStage({ amount, onBack, onPaid }: { amount: number; onBack: () => voi
   return (
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', padding: '18px 24px', paddingBottom: 'calc(26px + env(safe-area-inset-bottom))' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 8 }}>
-        <button onClick={onBack} style={{ width: 38, height: 38, borderRadius: '50%', border: '1px solid #ECECEF', background: '#fff', fontSize: 18, cursor: 'pointer' }}>
+        <button onClick={onBack} style={{ width: 38, height: 38, borderRadius: '50%', border: '1px solid var(--ep-border)', background: 'var(--ep-surface)', fontSize: 18, cursor: 'pointer' }}>
           ←
         </button>
         <div style={{ fontWeight: 640, fontSize: 18 }}>Оплата по СБП</div>
       </div>
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center' }}>
-        <div style={{ width: 60, height: 24, borderRadius: 7, background: SBP_GRADIENT, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: 12, marginBottom: 18 }}>
+        <div style={{ width: 60, height: 24, borderRadius: 'var(--ep-r-xs)', background: SBP_GRADIENT, color: 'var(--ep-on-ink)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: 12, marginBottom: 18 }}>
           СБП
         </div>
-        <div style={{ padding: 18, background: '#fff', borderRadius: 24, boxShadow: '0 10px 30px rgba(20,18,45,.12)', marginBottom: 18 }}>
+        <div style={{ padding: 18, background: 'var(--ep-surface)', borderRadius: 'var(--ep-r-lg)', boxShadow: '0 10px 30px rgba(20,18,45,.12)', marginBottom: 18 }}>
           <div
             style={{
               width: 200,
               height: 200,
-              borderRadius: 12,
-              backgroundImage: 'repeating-conic-gradient(#1F1D3D 0% 25%, #fff 0% 50%)',
+              borderRadius: 'var(--ep-r-sm)',
+              backgroundImage: 'repeating-conic-gradient(var(--ep-ink) 0% 25%, #fff 0% 50%)',
               backgroundSize: '17px 17px',
               border: '8px solid #fff'
             }}
           />
         </div>
         <div style={{ fontWeight: 300, fontSize: 34, letterSpacing: '-1px', marginBottom: 6 }}>{fmt(amount)}</div>
-        <div style={{ fontSize: 13.5, color: '#7A7A84', marginBottom: 4 }}>Наведите камеру или откройте приложение банка</div>
+        <div style={{ fontSize: 13.5, color: 'var(--ep-muted)', marginBottom: 4 }}>Наведите камеру или откройте приложение банка</div>
         <div style={{ fontFamily: 'ui-monospace, monospace', fontSize: 12, color: '#B5249C' }}>
           Код действителен {mm}:{ss}
         </div>
       </div>
-      <PrimaryButton onClick={onPaid} style={{ background: SBP_GRADIENT }}>
+      <PrimaryButton onClick={onPaid} style={{ background: SBP_GRADIENT, color: '#fff', border: 'none' }}>
         Открыть приложение банка
       </PrimaryButton>
     </div>
@@ -102,10 +102,10 @@ export function Payment() {
   if (ui.payStage === 'processing') {
     return (
       <div className="ep-screen" style={{ alignItems: 'center', justifyContent: 'center', gap: 22 }}>
-        <div className="ep-spin" style={{ width: 62, height: 62, borderRadius: '50%', border: `5px solid #ECECEF`, borderTopColor: NAVY }} />
+        <div className="ep-spin" style={{ width: 62, height: 62, borderRadius: '50%', border: `5px solid var(--ep-border)`, borderTopColor: NAVY }} />
         <div style={{ textAlign: 'center' }}>
           <div style={{ fontWeight: 600, fontSize: 19, marginBottom: 5 }}>Проводим оплату…</div>
-          <div style={{ fontSize: 14, color: '#7A7A84' }}>Не закрывайте экран</div>
+          <div style={{ fontSize: 14, color: 'var(--ep-muted)' }}>Не закрывайте экран</div>
         </div>
       </div>
     )
@@ -152,17 +152,17 @@ export function Payment() {
                   alignItems: 'center',
                   gap: 12,
                   padding: '13px 14px',
-                  borderRadius: 16,
+                  borderRadius: 'var(--ep-r-card)',
                   cursor: o.disabled ? 'not-allowed' : 'pointer',
                   opacity: o.disabled ? 0.45 : 1,
-                  background: '#fff',
-                  border: active ? `2px solid ${NAVY}` : '1px solid #ECECEF'
+                  background: 'var(--ep-surface)',
+                  border: active ? `2px solid ${NAVY}` : '1px solid var(--ep-border)'
                 }}
               >
-                <div style={{ width: 20, height: 20, borderRadius: '50%', flexShrink: 0, border: active ? `6px solid ${NAVY}` : '2px solid #CFCFD6', background: '#fff', boxSizing: 'border-box' }} />
+                <div style={{ width: 20, height: 20, borderRadius: '50%', flexShrink: 0, border: active ? `6px solid ${NAVY}` : '2px solid var(--ep-border)', background: 'var(--ep-surface)', boxSizing: 'border-box' }} />
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontWeight: 600, fontSize: 15 }}>{o.label}</div>
-                  <div style={{ fontSize: 12, color: '#8A8A92', marginTop: 2 }}>{o.disabled ? 'уже оплачено' : o.sub}</div>
+                  <div style={{ fontSize: 12, color: 'var(--ep-muted)', marginTop: 2 }}>{o.disabled ? 'уже оплачено' : o.sub}</div>
                 </div>
                 <span style={{ fontWeight: 660, fontSize: 16 }}>{fmt(amt)}</span>
               </div>
@@ -178,26 +178,26 @@ export function Payment() {
             alignItems: 'center',
             gap: 12,
             padding: 14,
-            borderRadius: 18,
+            borderRadius: 'var(--ep-r-card)',
             cursor: 'pointer',
-            background: sbp ? 'linear-gradient(118deg,#FBF0F8,#F4ECFB)' : '#fff',
-            border: sbp ? '2px solid #B5249C' : '1px solid #ECECEF'
+            background: sbp ? 'linear-gradient(118deg,#FBF0F8,#F4ECFB)' : 'var(--ep-surface)',
+            border: sbp ? '2px solid #B5249C' : '1px solid var(--ep-border)'
           }}
         >
-          <div style={{ width: 46, height: 46, borderRadius: 13, background: SBP_GRADIENT, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, color: '#fff', fontWeight: 700, fontSize: 15 }}>
+          <div style={{ width: 46, height: 46, borderRadius: 'var(--ep-r-sm)', background: SBP_GRADIENT, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, color: 'var(--ep-on-ink)', fontWeight: 700, fontSize: 15 }}>
             СБП
           </div>
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
               <span style={{ fontWeight: 620, fontSize: 15.5 }}>СБП</span>
-              <span style={{ fontFamily: 'ui-monospace, monospace', fontSize: 9, textTransform: 'uppercase', background: SBP_GRADIENT, color: '#fff', padding: '3px 8px', borderRadius: 50 }}>
+              <span style={{ fontFamily: 'ui-monospace, monospace', fontSize: 9, textTransform: 'uppercase', background: SBP_GRADIENT, color: 'var(--ep-on-ink)', padding: '3px 8px', borderRadius: 'var(--ep-r-pill)' }}>
                 Рекомендуем
               </span>
             </div>
-            <div style={{ fontSize: 12.5, color: '#7A7A84', marginTop: 2 }}>Оплата по QR или кнопке банка</div>
+            <div style={{ fontSize: 12.5, color: 'var(--ep-muted)', marginTop: 2 }}>Оплата по QR или кнопке банка</div>
           </div>
           {sbp && (
-            <div style={{ width: 22, height: 22, borderRadius: '50%', background: '#B5249C', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700, flexShrink: 0 }}>
+            <div style={{ width: 22, height: 22, borderRadius: '50%', background: '#B5249C', color: 'var(--ep-on-ink)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700, flexShrink: 0 }}>
               ✓
             </div>
           )}
@@ -208,13 +208,13 @@ export function Payment() {
             <div
               key={m.id}
               onClick={() => patch({ payMethod: m.id })}
-              style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '13px 14px', borderRadius: 16, background: '#fff', border: '1px solid #ECECEF', cursor: 'pointer' }}
+              style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '13px 14px', borderRadius: 'var(--ep-r-card)', background: 'var(--ep-surface)', border: '1px solid var(--ep-border)', cursor: 'pointer' }}
             >
-              <div style={{ width: 34, height: 34, borderRadius: 9, background: '#F2F2F4', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 600, fontSize: 14, color: '#5C5C66', flexShrink: 0 }}>
+              <div style={{ width: 34, height: 34, borderRadius: 'var(--ep-r-xs)', background: 'var(--ep-soft)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 600, fontSize: 14, color: 'var(--ep-text-2)', flexShrink: 0 }}>
                 {m.glyph}
               </div>
               <span style={{ flex: 1, fontWeight: 520, fontSize: 14.5 }}>{m.label}</span>
-              <div style={{ width: 18, height: 18, borderRadius: '50%', flexShrink: 0, border: ui.payMethod === m.id ? `5px solid ${NAVY}` : '2px solid #CFCFD6', background: '#fff', boxSizing: 'border-box' }} />
+              <div style={{ width: 18, height: 18, borderRadius: '50%', flexShrink: 0, border: ui.payMethod === m.id ? `5px solid ${NAVY}` : '2px solid var(--ep-border)', background: 'var(--ep-surface)', boxSizing: 'border-box' }} />
             </div>
           ))}
         </div>
@@ -224,7 +224,7 @@ export function Payment() {
         <PrimaryButton
           disabled={amount <= 0}
           onClick={() => (sbp ? patch({ payStage: 'qr' }) : void doPay())}
-          style={{ background: sbp ? SBP_GRADIENT : NAVY, fontSize: 17 }}
+          style={ sbp ? { background: SBP_GRADIENT, color: '#fff', border: 'none', fontSize: 17 } : { fontSize: 17 } }
         >
           {sbp ? `Оплатить по СБП · ${fmt(amount)}` : `Оплатить ${fmt(amount)}`}
         </PrimaryButton>

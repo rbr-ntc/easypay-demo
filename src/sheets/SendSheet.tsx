@@ -37,26 +37,26 @@ export function SendSheet() {
     alignItems: 'center',
     gap: 12,
     padding: '13px 14px',
-    borderRadius: 16,
+    borderRadius: 'var(--ep-r-card)',
     cursor: disabled ? 'not-allowed' : 'pointer',
     opacity: disabled ? 0.45 : 1,
-    background: '#fff',
-    border: active ? `2px solid ${NAVY}` : '1px solid #ECECEF'
+    background: 'var(--ep-surface)',
+    border: active ? `2px solid ${NAVY}` : '1px solid var(--ep-border)'
   })
   const dotStyle = (active: boolean): React.CSSProperties => ({
     width: 20,
     height: 20,
     borderRadius: '50%',
     flexShrink: 0,
-    border: active ? `6px solid ${NAVY}` : '2px solid #CFCFD6',
-    background: '#fff',
+    border: active ? `6px solid ${NAVY}` : '2px solid var(--ep-border)',
+    background: 'var(--ep-surface)',
     boxSizing: 'border-box'
   })
 
   if (sending) {
     return (
       <div style={{ position: 'fixed', inset: 0, zIndex: 50, background: 'rgba(255,255,255,.94)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 20 }}>
-        <div className="ep-spin" style={{ width: 56, height: 56, borderRadius: '50%', border: '5px solid #ECECEF', borderTopColor: NAVY }} />
+        <div className="ep-spin" style={{ width: 56, height: 56, borderRadius: '50%', border: '5px solid var(--ep-border)', borderTopColor: NAVY }} />
         <div style={{ fontWeight: 600, fontSize: 18 }}>Передаём на кухню…</div>
       </div>
     )
@@ -68,10 +68,10 @@ export function SendSheet() {
         <div style={{ fontWeight: 680, fontSize: 22, letterSpacing: '-0.5px', marginBottom: 16 }}>Отправить заказ на кухню?</div>
 
         {alone && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '13px 14px', borderRadius: 16, background: '#fff', border: '1px solid #ECECEF', marginBottom: 14 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '13px 14px', borderRadius: 'var(--ep-r-card)', background: 'var(--ep-surface)', border: '1px solid var(--ep-border)', marginBottom: 14 }}>
             <div style={{ flex: 1 }}>
               <div style={{ fontWeight: 600, fontSize: 15 }}>Ваш заказ</div>
-              <div style={{ fontSize: 12, color: '#8A8A92', marginTop: 2 }}>
+              <div style={{ fontSize: 12, color: 'var(--ep-muted)', marginTop: 2 }}>
                 {unsentMine.length} поз. · {fmt(unsentMine.reduce((s, l) => s + price(l), 0))}
               </div>
             </div>
@@ -86,7 +86,7 @@ export function SendSheet() {
             <div style={dotStyle(scope === 'mine')} />
             <div style={{ flex: 1 }}>
               <div style={{ fontWeight: 600, fontSize: 15 }}>Отправить мой заказ</div>
-              <div style={{ fontSize: 12, color: '#8A8A92', marginTop: 2 }}>
+              <div style={{ fontSize: 12, color: 'var(--ep-muted)', marginTop: 2 }}>
                 {me.name} · {unsentMine.length} поз. · {fmt(unsentMine.reduce((s, l) => s + price(l), 0))}
               </div>
             </div>
@@ -95,7 +95,7 @@ export function SendSheet() {
             <div style={dotStyle(scope === 'all')} />
             <div style={{ flex: 1 }}>
               <div style={{ fontWeight: 600, fontSize: 15 }}>Отправить за весь стол</div>
-              <div style={{ fontSize: 12, color: '#8A8A92', marginTop: 2 }}>
+              <div style={{ fontSize: 12, color: 'var(--ep-muted)', marginTop: 2 }}>
                 {unsentAll.length} поз. · {fmt(unsentAll.reduce((s, l) => s + price(l), 0))}
               </div>
             </div>
@@ -106,7 +106,7 @@ export function SendSheet() {
         {scope === 'all' && stillChoosing.length > 0 && (
           <div style={{ marginBottom: 14 }}>
             <WarnBanner>
-              <Avatar animal={stillChoosing[0].animal} size={26} />
+              <Avatar animal={stillChoosing[0].animal} size={26} label={stillChoosing[0].name} />
               <span style={{ fontSize: 13, color: '#7A5A12', lineHeight: 1.4 }}>
                 <b style={{ fontWeight: 640 }}>{stillChoosing.map(p => p.name).join(', ')}</b> ещё{' '}
                 {stillChoosing.length === 1 ? 'выбирает' : 'выбирают'}. Все точно готовы?
@@ -121,16 +121,16 @@ export function SendSheet() {
               style={{
                 width: 22,
                 height: 22,
-                borderRadius: 7,
+                borderRadius: 'var(--ep-r-xs)',
                 flexShrink: 0,
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
                 fontSize: 13,
                 fontWeight: 700,
-                background: checked ? NAVY : '#fff',
-                color: '#fff',
-                border: checked ? 'none' : '2px solid #CFCFD6'
+                background: checked ? NAVY : 'var(--ep-surface)',
+                color: 'var(--ep-on-ink)',
+                border: checked ? 'none' : '2px solid var(--ep-border)'
               }}
             >
               ✓
@@ -140,7 +140,7 @@ export function SendSheet() {
         )}
 
         {alreadySent.length > 0 && (
-          <div style={{ fontSize: 12.5, color: '#9A9AA4', marginBottom: 14 }}>
+          <div style={{ fontSize: 12.5, color: 'var(--ep-muted)', marginBottom: 14 }}>
             Уже на кухне (не отправится повторно):{' '}
             {alreadySent.map(l => findDish(l.dishId)?.name ?? '?').join(', ')}
           </div>
@@ -149,7 +149,7 @@ export function SendSheet() {
         <PrimaryButton onClick={() => void send()} disabled={gated || unsentAll.length === 0} style={{ minHeight: 54, marginBottom: 8 }}>
           Отправить
         </PrimaryButton>
-        <button onClick={close} style={{ width: '100%', minHeight: 44, border: 'none', background: 'transparent', color: '#8A8A92', fontWeight: 520, fontSize: 15, cursor: 'pointer' }}>
+        <button onClick={close} style={{ width: '100%', minHeight: 44, border: 'none', background: 'transparent', color: 'var(--ep-muted)', fontWeight: 520, fontSize: 15, cursor: 'pointer' }}>
           Ещё подумаю
         </button>
       </div>

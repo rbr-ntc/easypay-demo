@@ -15,13 +15,13 @@ export function Done() {
     <div className="ep-screen">
       <div className="ep-scroll" style={{ padding: '30px 22px 20px' }}>
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', marginBottom: 22 }}>
-          <div className="ep-pop" style={{ width: 74, height: 74, borderRadius: '50%', background: '#1F9D55', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 38, marginBottom: 16 }}>
+          <div className="ep-pop" style={{ width: 74, height: 74, borderRadius: '50%', background: '#1F9D55', color: 'var(--ep-on-ink)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 38, marginBottom: 16 }}>
             ✓
           </div>
-          <div style={{ fontWeight: 300, fontSize: 18, color: '#5C5C66' }}>Оплачено</div>
+          <div style={{ fontWeight: 300, fontSize: 18, color: 'var(--ep-text-2)' }}>Оплачено</div>
           <div style={{ fontWeight: 300, fontSize: 44, letterSpacing: '-1.6px', lineHeight: 1 }}>{fmt(ui.lastPaid)}</div>
           {tip > 0 && (
-            <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, marginTop: 12, background: '#EDE7FD', color: '#7C5CFC', borderRadius: 50, padding: '6px 13px', fontSize: 13, fontWeight: 540 }}>
+            <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, marginTop: 12, background: 'var(--ep-accent-bg2)', color: 'var(--ep-accent)', borderRadius: 'var(--ep-r-pill)', padding: '6px 13px', fontSize: 13, fontWeight: 540 }}>
               + {fmt(tip)} чаевых официанту {WAITER_NAME}у
             </div>
           )}
@@ -34,19 +34,19 @@ export function Done() {
               <span style={{ flex: 1, fontSize: 13, color: '#7A5A12', lineHeight: 1.4 }}>
                 Ваша часть оплачена. По столу осталось <b style={{ fontWeight: 640 }}>{fmt(remaining)}</b>
               </span>
-              <span style={{ fontSize: 12, fontWeight: 600, color: '#1F1D3D', whiteSpace: 'nowrap', cursor: 'pointer' }}>Поделиться →</span>
+              <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--ep-ink)', whiteSpace: 'nowrap', cursor: 'pointer' }}>Поделиться →</span>
             </WarnBanner>
           </div>
         )}
 
         <Card style={{ padding: 16, marginBottom: 16 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 11 }}>
-            <div style={{ width: 40, height: 40, borderRadius: 11, background: '#E4F6EA', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontSize: 18 }}>
+            <div style={{ width: 40, height: 40, borderRadius: 'var(--ep-r-sm)', background: '#E4F6EA', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontSize: 18 }}>
               🧾
             </div>
             <div style={{ flex: 1 }}>
               <div style={{ fontWeight: 600, fontSize: 14.5 }}>Фискальный чек отправлен</div>
-              <div style={{ fontSize: 12.5, color: '#8A8A92', marginTop: 1 }}>На +7 ··· 45 и email</div>
+              <div style={{ fontSize: 12.5, color: 'var(--ep-muted)', marginTop: 1 }}>На +7 ··· 45 и email</div>
             </div>
           </div>
           <div style={{ display: 'flex', gap: 9, marginTop: 13 }}>
@@ -62,7 +62,7 @@ export function Done() {
               <button
                 key={n}
                 onClick={() => patch({ rating: n })}
-                style={{ border: 'none', background: 'transparent', cursor: 'pointer', fontSize: 34, lineHeight: 1, color: n <= ui.rating ? '#F4B400' : '#DADADE' }}
+                style={{ border: 'none', background: 'transparent', cursor: 'pointer', fontSize: 34, lineHeight: 1, color: n <= ui.rating ? '#F4B400' : 'var(--ep-border)' }}
               >
                 ★
               </button>
@@ -70,7 +70,7 @@ export function Done() {
           </div>
           <div style={{ display: 'flex', justifyContent: 'center', gap: 8, flexWrap: 'wrap' }}>
             {CHIPS.map(ch => (
-              <span key={ch} style={{ fontSize: 13, fontWeight: 520, padding: '8px 15px', borderRadius: 50, background: '#F2F2F4', color: '#42424C', cursor: 'pointer' }}>
+              <span key={ch} style={{ fontSize: 13, fontWeight: 520, padding: '8px 15px', borderRadius: 'var(--ep-r-pill)', background: 'var(--ep-soft)', color: 'var(--ep-text-2)', cursor: 'pointer' }}>
                 {ch}
               </span>
             ))}

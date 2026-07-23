@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { HALL_LABEL, NAVY, WAITER_NAME, findDish } from './data'
 import { tableId } from './api'
+import { theme, setTheme } from './theme'
 import { Avatar, SharedIcon } from './avatars'
 import { useStore } from './store'
 import { fmt } from './format'
@@ -17,12 +18,12 @@ function fmtDur(ms: number | null): string {
 
 function Metric({ label, value, hint, accent }: { label: string; value: string; hint?: string; accent?: boolean }) {
   return (
-    <div style={{ flex: '1 1 130px', minWidth: 130, background: '#fff', border: '1px solid #ECECEF', borderRadius: 16, padding: '12px 14px' }}>
-      <div style={{ fontFamily: 'ui-monospace, monospace', fontSize: 9.5, letterSpacing: '0.5px', textTransform: 'uppercase', color: '#9A9AA4', marginBottom: 5 }}>
+    <div style={{ flex: '1 1 130px', minWidth: 130, background: 'var(--ep-surface)', border: '1px solid var(--ep-border)', borderRadius: 'var(--ep-r-card)', padding: '12px 14px' }}>
+      <div style={{ fontFamily: 'ui-monospace, monospace', fontSize: 9.5, letterSpacing: '0.5px', textTransform: 'uppercase', color: 'var(--ep-muted)', marginBottom: 5 }}>
         {label}
       </div>
-      <div style={{ fontWeight: 680, fontSize: 21, letterSpacing: '-0.6px', color: accent ? '#1F9D55' : '#1F1D3D' }}>{value}</div>
-      {hint && <div style={{ fontSize: 11, color: '#A6A6AE', marginTop: 3 }}>{hint}</div>}
+      <div style={{ fontWeight: 680, fontSize: 21, letterSpacing: '-0.6px', color: accent ? '#1F9D55' : 'var(--ep-ink)' }}>{value}</div>
+      {hint && <div style={{ fontSize: 11, color: 'var(--ep-muted)', marginTop: 3 }}>{hint}</div>}
     </div>
   )
 }
@@ -78,9 +79,9 @@ export function Waiter() {
 
   return (
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column', background: '#F4F4F6' }}>
-      <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: 20, padding: '16px 24px', background: '#fff', borderBottom: '1px solid #ECECEF', flexWrap: 'wrap' }}>
+      <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: 20, padding: '16px 24px', background: 'var(--ep-opaque)', borderBottom: '1px solid var(--ep-border)', flexWrap: 'wrap' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <div style={{ width: 34, height: 34, borderRadius: 10, background: NAVY, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: 18 }}>
+          <div style={{ width: 34, height: 34, borderRadius: 10, background: NAVY, color: 'var(--ep-on-ink)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: 18 }}>
             e
           </div>
           <div>
@@ -91,29 +92,29 @@ export function Waiter() {
                   fontFamily: 'ui-monospace, monospace',
                   fontSize: 10,
                   padding: '3px 9px',
-                  borderRadius: 50,
-                  background: isOpen ? '#E4F6EA' : '#F2F2F4',
-                  color: isOpen ? '#1F9D55' : '#8A8A92',
+                  borderRadius: 'var(--ep-r-pill)',
+                  background: isOpen ? '#E4F6EA' : 'var(--ep-soft)',
+                  color: isOpen ? '#1F9D55' : 'var(--ep-muted)',
                   textTransform: 'uppercase'
                 }}
               >
                 {isOpen ? 'Открыт' : 'Закрыт'}
               </span>
             </div>
-            <div style={{ fontSize: 12.5, color: '#8A8A92' }}>
+            <div style={{ fontSize: 12.5, color: 'var(--ep-muted)' }}>
               официант {WAITER_NAME} · экран ресторана {connected ? '' : '· нет связи…'}
             </div>
           </div>
         </div>
         <div style={{ flex: 1, minWidth: 220, maxWidth: 420 }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: 12.5, marginBottom: 6 }}>
-            <span style={{ color: '#7A7A84' }}>Оплачено по столу</span>
+            <span style={{ color: 'var(--ep-muted)' }}>Оплачено по столу</span>
             <span style={{ fontWeight: 620 }}>
               {fmt(totals.paidTotal)} / {fmt(totals.tableTotal)}
             </span>
           </div>
-          <div style={{ height: 8, borderRadius: 50, background: '#ECECEF', overflow: 'hidden' }}>
-            <div style={{ height: '100%', width: `${progress}%`, background: '#1F9D55', borderRadius: 50, transition: 'width 300ms' }} />
+          <div style={{ height: 8, borderRadius: 'var(--ep-r-pill)', background: 'var(--ep-border)', overflow: 'hidden' }}>
+            <div style={{ height: '100%', width: `${progress}%`, background: '#1F9D55', borderRadius: 'var(--ep-r-pill)', transition: 'width 300ms' }} />
           </div>
         </div>
         {isOpen && (
@@ -126,10 +127,10 @@ export function Waiter() {
             style={{
               minHeight: 42,
               padding: '0 18px',
-              borderRadius: 50,
-              border: fullyPaid ? 'none' : '1px solid #DDDDE2',
-              background: fullyPaid ? '#1F9D55' : '#fff',
-              color: fullyPaid ? '#fff' : '#1F1D3D',
+              borderRadius: 'var(--ep-r-pill)',
+              border: fullyPaid ? 'none' : '1px solid var(--ep-ghost-border)',
+              background: fullyPaid ? '#1F9D55' : 'var(--ep-surface)',
+              color: fullyPaid ? 'var(--ep-on-ink)' : 'var(--ep-ink)',
               fontWeight: 600,
               fontSize: 14,
               cursor: 'pointer'
@@ -138,7 +139,13 @@ export function Waiter() {
             Закрыть стол
           </button>
         )}
-        <a href="#/" style={{ fontSize: 13, color: '#7A7A84' }}>
+        <span
+          onClick={() => setTheme(theme === 'classic' ? 'seasons' : 'classic')}
+          style={{ fontSize: 13, color: 'var(--ep-muted)', cursor: 'pointer', textDecoration: 'underline' }}
+        >
+          стиль: {theme === 'classic' ? 'Классика' : 'Времена года'}
+        </span>
+        <a href="#/" style={{ fontSize: 13, color: 'var(--ep-muted)' }}>
           ← гостевой экран
         </a>
       </div>
@@ -168,33 +175,33 @@ export function Waiter() {
       )}
 
       <div style={{ flex: 1, minHeight: 0, display: 'flex', flexWrap: 'wrap', overflow: 'auto' }}>
-        <div style={{ width: 380, flexShrink: 0, borderRight: '1px solid #ECECEF', padding: 22, background: '#FAFAFB' }}>
-          <div style={{ fontFamily: 'ui-monospace, monospace', fontSize: 11, letterSpacing: '0.6px', textTransform: 'uppercase', color: '#9A9AA4', marginBottom: 14 }}>
+        <div style={{ width: 380, flexShrink: 0, borderRight: '1px solid var(--ep-border)', padding: 22, background: 'var(--ep-surface-2)' }}>
+          <div style={{ fontFamily: 'ui-monospace, monospace', fontSize: 11, letterSpacing: '0.6px', textTransform: 'uppercase', color: 'var(--ep-muted)', marginBottom: 14 }}>
             Гости стола · {personas.length}
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
             {personaCards.map(({ p, total, paid, payLabel, orderLabel }) => (
               <div
                 key={p.id}
-                style={{ display: 'flex', alignItems: 'center', gap: 13, padding: '13px 15px', borderRadius: 18, background: '#fff', border: '1px solid #ECECEF' }}
+                style={{ display: 'flex', alignItems: 'center', gap: 13, padding: '13px 15px', borderRadius: 'var(--ep-r-card)', background: 'var(--ep-surface)', border: '1px solid var(--ep-border)' }}
               >
-                <Avatar animal={p.animal} size={46} />
+                <Avatar animal={p.animal} size={46} label={p.name} />
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontWeight: 600, fontSize: 16 }}>{p.name}</div>
-                  <div style={{ fontSize: 12.5, color: '#8A8A92', marginTop: 2 }}>
+                  <div style={{ fontSize: 12.5, color: 'var(--ep-muted)', marginTop: 2 }}>
                     {fmt(total)} с долей общих{paid > 0 ? ` · внесено ${fmt(paid)}` : ''}
                   </div>
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 5, alignItems: 'flex-end' }}>
-                  <span style={{ fontFamily: 'ui-monospace, monospace', fontSize: 9.5, padding: '3px 8px', borderRadius: 50, background: '#EFEFF2', color: '#7A7A84' }}>{orderLabel}</span>
+                  <span style={{ fontFamily: 'ui-monospace, monospace', fontSize: 9.5, padding: '3px 8px', borderRadius: 'var(--ep-r-pill)', background: 'var(--ep-soft)', color: 'var(--ep-muted)' }}>{orderLabel}</span>
                   <span
                     style={{
                       fontFamily: 'ui-monospace, monospace',
                       fontSize: 9.5,
                       padding: '3px 8px',
-                      borderRadius: 50,
-                      background: payLabel === 'Оплачено' ? '#E4F6EA' : payLabel === 'Частично' ? '#EDE7FD' : '#FFF2DA',
-                      color: payLabel === 'Оплачено' ? '#1F9D55' : payLabel === 'Частично' ? '#7C5CFC' : '#B07A12'
+                      borderRadius: 'var(--ep-r-pill)',
+                      background: payLabel === 'Оплачено' ? '#E4F6EA' : payLabel === 'Частично' ? 'var(--ep-accent-bg2)' : '#FFF2DA',
+                      color: payLabel === 'Оплачено' ? '#1F9D55' : payLabel === 'Частично' ? 'var(--ep-accent)' : '#B07A12'
                     }}
                   >
                     {payLabel}
@@ -203,30 +210,30 @@ export function Waiter() {
               </div>
             ))}
             {personas.length === 0 && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 13, padding: 15, borderRadius: 18, border: '1.5px dashed #CFCFD6' }}>
-                <div style={{ width: 44, height: 44, borderRadius: '50%', background: '#F0F0F2', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 24, color: '#9A9AA4' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 13, padding: 15, borderRadius: 'var(--ep-r-card)', border: '1.5px dashed var(--ep-border)' }}>
+                <div style={{ width: 44, height: 44, borderRadius: '50%', background: 'var(--ep-border)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 24, color: 'var(--ep-muted)' }}>
                   +
                 </div>
-                <span style={{ fontWeight: 540, fontSize: 15, color: '#7A7A84' }}>
+                <span style={{ fontWeight: 540, fontSize: 15, color: 'var(--ep-muted)' }}>
                   {isOpen ? 'Ждём гостей…' : 'Стол свободен — гость откроет его, отсканировав QR'}
                 </span>
               </div>
             )}
           </div>
-          <div style={{ height: 1, background: '#ECECEF', margin: '22px 0' }} />
+          <div style={{ height: 1, background: 'var(--ep-border)', margin: '22px 0' }} />
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <span style={{ fontSize: 15, color: '#42424C' }}>Итого по столу</span>
+            <span style={{ fontSize: 15, color: 'var(--ep-text-2)' }}>Итого по столу</span>
             <span style={{ fontWeight: 700, fontSize: 22, letterSpacing: '-0.5px' }}>{fmt(totals.tableTotal)}</span>
           </div>
         </div>
 
         <div style={{ flex: 1, minWidth: 300, padding: '26px 30px' }}>
-          <div style={{ fontFamily: 'ui-monospace, monospace', fontSize: 11, letterSpacing: '0.6px', textTransform: 'uppercase', color: '#9A9AA4', marginBottom: 14 }}>
+          <div style={{ fontFamily: 'ui-monospace, monospace', fontSize: 11, letterSpacing: '0.6px', textTransform: 'uppercase', color: 'var(--ep-muted)', marginBottom: 14 }}>
             Живая лента заказа
           </div>
-          <div style={{ background: '#fff', border: '1px solid #ECECEF', borderRadius: 20, padding: '6px 20px', marginBottom: 18 }}>
+          <div style={{ background: 'var(--ep-surface)', border: '1px solid var(--ep-border)', borderRadius: 'var(--ep-r-card)', padding: '6px 20px', marginBottom: 18 }}>
             {lines.length === 0 && (
-              <div style={{ padding: '18px 0', fontSize: 14, color: '#9A9AA4' }}>
+              <div style={{ padding: '18px 0', fontSize: 14, color: 'var(--ep-muted)' }}>
                 Пока пусто — гости ещё ничего не добавили
               </div>
             )}
@@ -234,31 +241,31 @@ export function Waiter() {
               const d = findDish(l.dishId)
               if (!d) return null
               return (
-                <div key={l.uid} style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '14px 0', borderBottom: '1px solid #F2F2F4' }}>
-                  {l.shared ? <SharedIcon size={40} /> : <Avatar animal={animalOf(l.personaId)} size={40} />}
+                <div key={l.uid} style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '14px 0', borderBottom: '1px solid var(--ep-soft)' }}>
+                  {l.shared ? <SharedIcon size={40} /> : <Avatar animal={animalOf(l.personaId)} size={40} label={nameOf(l.personaId)} />}
                   <div style={{ flex: 1 }}>
                     <div style={{ fontWeight: 600, fontSize: 15.5 }}>
                       {d.name}
                       {l.qty > 1 ? ` ×${l.qty}` : ''}
                     </div>
-                    <div style={{ fontSize: 12.5, color: '#8A8A92' }}>
+                    <div style={{ fontSize: 12.5, color: 'var(--ep-muted)' }}>
                       {l.shared ? `общее на стол · добавил(а) ${nameOf(l.personaId)}` : `${nameOf(l.personaId)} · своё`}
                     </div>
                   </div>
                   {l.served ? (
-                    <span style={{ fontFamily: 'ui-monospace, monospace', fontSize: 10, padding: '4px 9px', borderRadius: 50, background: '#E4F6EA', color: '#1F9D55', marginRight: 6 }}>
+                    <span style={{ fontFamily: 'ui-monospace, monospace', fontSize: 10, padding: '4px 9px', borderRadius: 'var(--ep-r-pill)', background: '#E4F6EA', color: '#1F9D55', marginRight: 6 }}>
                       ПОДАНО{l.sentAt && l.servedAt ? ` · ${fmtDur(l.servedAt - l.sentAt)}` : ''}
                     </span>
                   ) : l.sent ? (
                     <button
                       onClick={() => void serveLine(l.uid)}
                       title="Отметить поданным"
-                      style={{ fontFamily: 'ui-monospace, monospace', fontSize: 10, padding: '5px 10px', borderRadius: 50, background: '#FFF2DA', color: '#B07A12', border: '1px dashed #E8C87A', cursor: 'pointer', marginRight: 6 }}
+                      style={{ fontFamily: 'ui-monospace, monospace', fontSize: 10, padding: '5px 10px', borderRadius: 'var(--ep-r-pill)', background: '#FFF2DA', color: '#B07A12', border: '1px dashed #E8C87A', cursor: 'pointer', marginRight: 6 }}
                     >
                       ГОТОВИТСЯ {l.sentAt ? fmtDur(now - l.sentAt) : ''} → ПОДАТЬ ✓
                     </button>
                   ) : (
-                    <span style={{ fontFamily: 'ui-monospace, monospace', fontSize: 10, padding: '4px 9px', borderRadius: 50, background: '#EFEFF2', color: '#7A7A84', marginRight: 6 }}>
+                    <span style={{ fontFamily: 'ui-monospace, monospace', fontSize: 10, padding: '4px 9px', borderRadius: 'var(--ep-r-pill)', background: 'var(--ep-soft)', color: 'var(--ep-muted)', marginRight: 6 }}>
                       ЧЕРНОВИК
                     </span>
                   )}
@@ -270,16 +277,16 @@ export function Waiter() {
 
           {payments.length > 0 && (
             <>
-              <div style={{ fontFamily: 'ui-monospace, monospace', fontSize: 11, letterSpacing: '0.6px', textTransform: 'uppercase', color: '#9A9AA4', marginBottom: 14 }}>
+              <div style={{ fontFamily: 'ui-monospace, monospace', fontSize: 11, letterSpacing: '0.6px', textTransform: 'uppercase', color: 'var(--ep-muted)', marginBottom: 14 }}>
                 Оплаты
               </div>
-              <div style={{ background: '#fff', border: '1px solid #ECECEF', borderRadius: 20, padding: '6px 20px' }}>
+              <div style={{ background: 'var(--ep-surface)', border: '1px solid var(--ep-border)', borderRadius: 'var(--ep-r-card)', padding: '6px 20px' }}>
                 {payments.map((p, i) => (
-                  <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '13px 0', borderBottom: '1px solid #F2F2F4' }}>
+                  <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '13px 0', borderBottom: '1px solid var(--ep-soft)' }}>
                     <Avatar animal={animalOf(p.personaId)} size={34} />
                     <div style={{ flex: 1 }}>
                       <div style={{ fontWeight: 560, fontSize: 14.5 }}>{nameOf(p.personaId)}</div>
-                      <div style={{ fontSize: 12, color: '#8A8A92' }}>
+                      <div style={{ fontSize: 12, color: 'var(--ep-muted)' }}>
                         {p.scope === 'own' ? 'своя часть' : p.scope === 'equal' ? 'поровну' : 'весь стол'} · СБП
                       </div>
                     </div>

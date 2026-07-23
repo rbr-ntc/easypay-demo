@@ -1,6 +1,6 @@
 import menuJson from './menu.json'
 
-export const NAVY = '#1F1D3D'
+export const NAVY = 'var(--ep-ink)'
 export const SBP_GRADIENT = 'linear-gradient(118deg,#5A1E9B 0%,#8E2A8C 46%,#E5097F 100%)'
 
 export type Animal = 'fox' | 'bear' | 'panda' | 'raccoon' | 'owl' | 'cat'

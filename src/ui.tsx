@@ -1,5 +1,4 @@
 import type { CSSProperties, ReactNode } from 'react'
-import { NAVY } from './data'
 
 export function PrimaryButton({
   children,
@@ -20,10 +19,12 @@ export function PrimaryButton({
       style={{
         width: '100%',
         minHeight: 56,
-        border: 'none',
-        borderRadius: 50,
-        background: NAVY,
-        color: '#fff',
+        border: 'var(--ep-btn-border)' as never,
+        borderRadius: 'var(--ep-r-pill)',
+        background: 'var(--ep-btn-bg)',
+        color: 'var(--ep-btn-fg)',
+        textTransform: 'var(--ep-btn-tt)' as never,
+        letterSpacing: 'var(--ep-btn-ls)',
         fontWeight: 600,
         fontSize: 16,
         cursor: 'pointer',
@@ -52,10 +53,12 @@ export function GhostButton({
       style={{
         width: '100%',
         minHeight: 52,
-        border: '1px solid #DDDDE2',
-        borderRadius: 50,
-        background: '#fff',
-        color: NAVY,
+        border: '1px solid var(--ep-ghost-border)',
+        borderRadius: 'var(--ep-r-pill)',
+        background: 'var(--ep-ghost-bg)',
+        color: 'var(--ep-ink)',
+        textTransform: 'var(--ep-btn-tt)' as never,
+        letterSpacing: 'var(--ep-btn-ls)',
         fontWeight: 540,
         fontSize: 15,
         cursor: 'pointer',
@@ -69,7 +72,7 @@ export function GhostButton({
 
 export function Card({ children, style }: { children: ReactNode; style?: CSSProperties }) {
   return (
-    <div style={{ background: '#fff', border: '1px solid #ECECEF', borderRadius: 18, ...style }}>{children}</div>
+    <div style={{ background: 'var(--ep-surface)', border: '1px solid var(--ep-border)', borderRadius: 'var(--ep-r-card)', ...style }}>{children}</div>
   )
 }
 
@@ -81,7 +84,7 @@ export function Mono({ children, style }: { children: ReactNode; style?: CSSProp
         fontSize: 10.5,
         letterSpacing: '0.6px',
         textTransform: 'uppercase',
-        color: '#9A9AA4',
+        color: 'var(--ep-muted)',
         ...style
       }}
     >
@@ -99,7 +102,7 @@ export function WarnBanner({ children }: { children: ReactNode }) {
         gap: 10,
         background: '#FFF6E6',
         border: '1px solid #F4E2BD',
-        borderRadius: 14,
+        borderRadius: 'var(--ep-r-sm)',
         padding: '12px 14px'
       }}
     >
@@ -116,8 +119,8 @@ export function BottomSheet({ children, onClose }: { children: ReactNode; onClos
         className="ep-fade-in"
         style={{
           position: 'relative',
-          background: '#fff',
-          borderRadius: '28px 28px 0 0',
+          background: 'var(--ep-opaque)',
+          borderRadius: 'var(--ep-r-lg) var(--ep-r-lg) 0 0',
           maxHeight: '90%',
           display: 'flex',
           flexDirection: 'column',
@@ -125,7 +128,7 @@ export function BottomSheet({ children, onClose }: { children: ReactNode; onClos
         }}
       >
         <div style={{ display: 'flex', justifyContent: 'center', padding: 10 }}>
-          <div style={{ width: 40, height: 4, borderRadius: 4, background: '#E0E0E4' }} />
+          <div style={{ width: 40, height: 4, borderRadius: 4, background: 'var(--ep-border)' }} />
         </div>
         {children}
       </div>
@@ -143,9 +146,9 @@ export function Toast({ msg }: { msg: string }) {
         right: 20,
         top: 'calc(14px + env(safe-area-inset-top))',
         zIndex: 60,
-        background: NAVY,
-        color: '#fff',
-        borderRadius: 16,
+        background: 'var(--ep-ink)',
+        color: 'var(--ep-on-ink)',
+        borderRadius: 'var(--ep-r-card)',
         padding: '13px 18px',
         fontSize: 14,
         fontWeight: 540,
@@ -164,8 +167,8 @@ export function StickyFooter({ children }: { children: ReactNode }) {
       style={{
         padding: '12px 20px',
         paddingBottom: 'calc(20px + env(safe-area-inset-bottom))',
-        background: '#fff',
-        borderTop: '1px solid #F0F0F2',
+        background: 'var(--ep-opaque)',
+        borderTop: '1px solid var(--ep-border)',
         display: 'flex',
         flexDirection: 'column',
         gap: 9

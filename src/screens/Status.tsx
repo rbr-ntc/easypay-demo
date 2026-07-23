@@ -42,7 +42,7 @@ export function Status() {
             return (
               <div key={x.label} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', position: 'relative' }}>
                 {i > 0 && (
-                  <div style={{ position: 'absolute', top: 17, right: '50%', width: '100%', height: 3, background: done || active ? '#1F9D55' : '#E4E4E8', zIndex: 0 }} />
+                  <div style={{ position: 'absolute', top: 17, right: '50%', width: '100%', height: 3, background: done || active ? '#1F9D55' : 'var(--ep-border)', zIndex: 0 }} />
                 )}
                 <div
                   className={active ? 'ep-pulse' : undefined}
@@ -58,14 +58,14 @@ export function Status() {
                     fontSize: 15,
                     fontWeight: 700,
                     marginBottom: 8,
-                    background: done ? '#1F9D55' : active ? NAVY : '#fff',
-                    color: done || active ? '#fff' : '#9A9AA4',
-                    border: x.st === 'todo' ? '2px solid #E4E4E8' : 'none'
+                    background: done ? '#1F9D55' : active ? NAVY : 'var(--ep-surface)',
+                    color: done || active ? 'var(--ep-on-ink)' : 'var(--ep-muted)',
+                    border: x.st === 'todo' ? '2px solid var(--ep-border)' : 'none'
                   }}
                 >
                   {done ? '✓' : ''}
                 </div>
-                <div style={{ fontSize: 12.5, fontWeight: active ? 600 : 480, color: x.st === 'todo' ? '#9A9AA4' : NAVY }}>{x.label}</div>
+                <div style={{ fontSize: 12.5, fontWeight: active ? 600 : 480, color: x.st === 'todo' ? 'var(--ep-muted)' : NAVY }}>{x.label}</div>
               </div>
             )
           })}
@@ -77,19 +77,19 @@ export function Status() {
             if (!d) return null
             const mine = l.personaId === me.id
             return (
-              <div key={l.uid} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '13px 0', borderBottom: '1px solid #F2F2F4' }}>
-                <Avatar animal={animalOf(l.personaId)} size={32} />
+              <div key={l.uid} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '13px 0', borderBottom: '1px solid var(--ep-soft)' }}>
+                <Avatar animal={animalOf(l.personaId)} size={32} label={nameOf(l.personaId)} />
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontWeight: 540, fontSize: 14.5 }}>
                     {d.name}
                     {l.qty > 1 ? ` ×${l.qty}` : ''}
                   </div>
-                  <div style={{ fontSize: 12, color: '#9A9AA4' }}>
+                  <div style={{ fontSize: 12, color: 'var(--ep-muted)' }}>
                     {nameOf(l.personaId)}
                     {mine ? ' · своё' : ''}
                   </div>
                 </div>
-                <span style={{ fontFamily: 'ui-monospace, monospace', fontSize: 9.5, textTransform: 'uppercase', padding: '4px 9px', borderRadius: 50, background: l.served ? '#E4F6EA' : '#FFF2DA', color: l.served ? '#1F9D55' : '#B07A12' }}>
+                <span style={{ fontFamily: 'ui-monospace, monospace', fontSize: 9.5, textTransform: 'uppercase', padding: '4px 9px', borderRadius: 'var(--ep-r-pill)', background: l.served ? '#E4F6EA' : '#FFF2DA', color: l.served ? '#1F9D55' : '#B07A12' }}>
                   {l.served ? 'Подано' : 'Готовится'}
                 </span>
               </div>
@@ -100,23 +100,23 @@ export function Status() {
               <SharedIcon size={32} />
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ fontWeight: 540, fontSize: 14.5 }}>Общие блюда</div>
-                <div style={{ fontSize: 12, color: '#9A9AA4', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                <div style={{ fontSize: 12, color: 'var(--ep-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   {sentShared.map(l => findDish(l.dishId)?.name ?? '?').join(', ')}
                 </div>
               </div>
-              <span style={{ fontFamily: 'ui-monospace, monospace', fontSize: 9.5, textTransform: 'uppercase', padding: '4px 9px', borderRadius: 50, background: '#F2F2F4', color: '#8A8A92' }}>
+              <span style={{ fontFamily: 'ui-monospace, monospace', fontSize: 9.5, textTransform: 'uppercase', padding: '4px 9px', borderRadius: 'var(--ep-r-pill)', background: 'var(--ep-soft)', color: 'var(--ep-muted)' }}>
                 Принято
               </span>
             </div>
           )}
           {sentOwn.length === 0 && sentShared.length === 0 && (
-            <div style={{ padding: '16px 0', fontSize: 14, color: '#9A9AA4' }}>На кухню пока ничего не отправлено</div>
+            <div style={{ padding: '16px 0', fontSize: 14, color: 'var(--ep-muted)' }}>На кухню пока ничего не отправлено</div>
           )}
         </Card>
 
         {stillChoosing.length > 0 && (
           <WarnBanner>
-            <Avatar animal={stillChoosing[0].animal} size={26} />
+            <Avatar animal={stillChoosing[0].animal} size={26} label={stillChoosing[0].name} />
             <span style={{ fontSize: 13, color: '#7A5A12' }}>
               <b style={{ fontWeight: 620 }}>{stillChoosing.map(p => p.name).join(', ')}</b> ещё{' '}
               {stillChoosing.length === 1 ? 'выбирает' : 'выбирают'} блюда

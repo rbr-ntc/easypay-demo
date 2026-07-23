@@ -8,7 +8,7 @@ import { fmt } from '../format'
 
 function SentBadge() {
   return (
-    <span style={{ fontFamily: 'ui-monospace, monospace', fontSize: 9.5, textTransform: 'uppercase', padding: '4px 9px', borderRadius: 50, background: '#FFF2DA', color: '#B07A12', flexShrink: 0 }}>
+    <span style={{ fontFamily: 'ui-monospace, monospace', fontSize: 9.5, textTransform: 'uppercase', padding: '4px 9px', borderRadius: 'var(--ep-r-pill)', background: '#FFF2DA', color: '#B07A12', flexShrink: 0 }}>
       Готовится
     </span>
   )
@@ -29,38 +29,38 @@ export function Cart() {
 
   return (
     <div className="ep-screen">
-      <div style={{ flexShrink: 0, padding: '14px 20px', background: '#fff', borderBottom: '1px solid #ECECEF' }}>
+      <div style={{ flexShrink: 0, padding: '14px 20px', background: 'var(--ep-opaque)', borderBottom: '1px solid var(--ep-border)' }}>
         <div style={{ fontWeight: 700, fontSize: 20, letterSpacing: '-0.5px' }}>Заказ · Стол №{tableId}</div>
       </div>
 
       <div className="ep-scroll" style={{ padding: '14px 20px 20px', display: 'flex', flexDirection: 'column', gap: 13 }}>
         {/* Мой заказ */}
-        <Card style={{ borderRadius: 20, padding: 16 }}>
+        <Card style={{ borderRadius: 'var(--ep-r-card)', padding: 16 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 11, marginBottom: myLines.length ? 14 : 0 }}>
-            <Avatar animal={me.animal} size={40} />
+            <Avatar animal={me.animal} size={40} label={me.name} />
             <div>
               <div style={{ fontWeight: 620, fontSize: 16 }}>{me.name}</div>
-              <div style={{ fontSize: 12, color: '#8A8A92' }}>мой заказ</div>
+              <div style={{ fontSize: 12, color: 'var(--ep-muted)' }}>мой заказ</div>
             </div>
             <span style={{ marginLeft: 'auto', fontWeight: 700, fontSize: 18 }}>{fmt(totals.myOwn)}</span>
           </div>
           {myLines.length === 0 && (
-            <div style={{ fontSize: 13.5, color: '#9A9AA4', padding: '4px 0 2px' }}>Пока пусто — добавьте блюда из меню</div>
+            <div style={{ fontSize: 13.5, color: 'var(--ep-muted)', padding: '4px 0 2px' }}>Пока пусто — добавьте блюда из меню</div>
           )}
           {myLines.map(l => {
             const d = findDish(l.dishId)
             if (!d) return null
             return (
-              <div key={l.uid} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: 13, background: '#FAFAFB', borderRadius: 14, marginBottom: 8 }}>
+              <div key={l.uid} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: 13, background: 'var(--ep-surface-2)', borderRadius: 'var(--ep-r-sm)', marginBottom: 8 }}>
                 <span style={{ flex: 1, fontWeight: 520, fontSize: 15 }}>
                   {d.name}
                   {l.qty > 1 ? ` ×${l.qty}` : ''}
                 </span>
-                <span style={{ fontSize: 14.5, color: '#42424C' }}>{fmt(d.price * l.qty)}</span>
+                <span style={{ fontSize: 14.5, color: 'var(--ep-text-2)' }}>{fmt(d.price * l.qty)}</span>
                 {l.sent ? (
                   <SentBadge />
                 ) : (
-                  <span style={{ cursor: 'pointer', fontSize: 13, color: '#9A9AA4' }} onClick={() => void removeLine(l.uid)}>
+                  <span style={{ cursor: 'pointer', fontSize: 13, color: 'var(--ep-muted)' }} onClick={() => void removeLine(l.uid)}>
                     ✕
                   </span>
                 )}
@@ -76,15 +76,15 @@ export function Cart() {
               <div style={{ display: 'flex' }}>
                 {others.slice(0, 4).map((p, i) => (
                   <div key={p.id} style={{ marginLeft: i === 0 ? 0 : -7 }}>
-                    <Avatar animal={p.animal} size={26} />
+                    <Avatar animal={p.animal} size={26} label={p.name} />
                   </div>
                 ))}
               </div>
               <span style={{ fontWeight: 600, fontSize: 14.5 }}>Весь стол</span>
-              <span style={{ fontSize: 13, color: '#8A8A92' }}>
+              <span style={{ fontSize: 13, color: 'var(--ep-muted)' }}>
                 · ещё {others.length} {others.length === 1 ? 'гость' : others.length < 5 ? 'гостя' : 'гостей'}
               </span>
-              <span style={{ marginLeft: 'auto', fontSize: 13, color: '#8A8A92', transform: tableOpen ? 'rotate(180deg)' : 'none', transition: 'transform 160ms' }}>▾</span>
+              <span style={{ marginLeft: 'auto', fontSize: 13, color: 'var(--ep-muted)', transform: tableOpen ? 'rotate(180deg)' : 'none', transition: 'transform 160ms' }}>▾</span>
             </div>
             {tableOpen && (
               <div style={{ padding: '0 16px 8px' }}>
@@ -92,21 +92,21 @@ export function Cart() {
                   const pl = lines.filter(l => !l.shared && l.personaId === p.id)
                   const sum = totals.personaOwn(p.id)
                   return (
-                    <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 11, padding: '11px 0', borderTop: '1px solid #F2F2F4' }}>
-                      <Avatar animal={p.animal} size={30} />
+                    <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 11, padding: '11px 0', borderTop: '1px solid var(--ep-soft)' }}>
+                      <Avatar animal={p.animal} size={30} label={p.name} />
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{ fontWeight: 520, fontSize: 14 }}>{p.name}</div>
-                        <div style={{ fontSize: 12, color: '#9A9AA4', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        <div style={{ fontSize: 12, color: 'var(--ep-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                           {pl.length ? pl.map(l => findDish(l.dishId)?.name ?? '?').join(', ') : 'ещё выбирает'}
                         </div>
                       </div>
-                      <span style={{ fontSize: 14, color: '#42424C' }}>{fmt(sum)}</span>
+                      <span style={{ fontSize: 14, color: 'var(--ep-text-2)' }}>{fmt(sum)}</span>
                     </div>
                   )
                 })}
-                <div style={{ display: 'flex', justifyContent: 'space-between', padding: '11px 0', borderTop: '1px solid #F2F2F4', fontSize: 13.5, color: '#7A7A84' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', padding: '11px 0', borderTop: '1px solid var(--ep-soft)', fontSize: 13.5, color: 'var(--ep-muted)' }}>
                   <span>Итого по столу (с общими)</span>
-                  <span style={{ fontWeight: 620, color: '#1F1D3D' }}>{fmt(totals.tableTotal)}</span>
+                  <span style={{ fontWeight: 620, color: 'var(--ep-ink)' }}>{fmt(totals.tableTotal)}</span>
                 </div>
               </div>
             )}
@@ -115,8 +115,8 @@ export function Cart() {
 
         {/* Общие блюда — только реально добавленные */}
         {sharedLines.length > 0 && (
-          <div style={{ background: '#fff', border: '1px dashed #C9C4E8', borderRadius: 18, overflow: 'hidden' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '12px 14px', background: '#F4F1FE' }}>
+          <div style={{ background: 'var(--ep-surface)', border: '1px dashed var(--ep-accent)', borderRadius: 'var(--ep-r-card)', overflow: 'hidden' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '12px 14px', background: 'var(--ep-accent-bg)' }}>
               <SharedIcon size={30} />
               <span style={{ fontWeight: 600, fontSize: 14.5 }}>Общие блюда</span>
               <span style={{ marginLeft: 'auto', fontWeight: 620, fontSize: 15 }}>{fmt(totals.sharedTotal)}</span>
@@ -127,17 +127,17 @@ export function Cart() {
                 if (!d) return null
                 const mineAdded = l.personaId === me.id
                 return (
-                  <div key={l.uid} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 0', borderBottom: '1px solid #F2F2F4' }}>
+                  <div key={l.uid} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 0', borderBottom: '1px solid var(--ep-soft)' }}>
                     <span style={{ flex: 1, fontSize: 14 }}>
                       {d.name}
                       {l.qty > 1 ? ` ×${l.qty}` : ''}
-                      <span style={{ color: '#7C5CFC', fontSize: 12 }}> · добавил(а) {nameOf(l.personaId)}</span>
+                      <span style={{ color: 'var(--ep-accent)', fontSize: 12 }}> · добавил(а) {nameOf(l.personaId)}</span>
                     </span>
-                    <span style={{ fontSize: 14, color: '#42424C' }}>{fmt(d.price * l.qty)}</span>
+                    <span style={{ fontSize: 14, color: 'var(--ep-text-2)' }}>{fmt(d.price * l.qty)}</span>
                     {l.sent ? (
                       <SentBadge />
                     ) : mineAdded ? (
-                      <span style={{ cursor: 'pointer', fontSize: 13, color: '#9A9AA4' }} onClick={() => void removeLine(l.uid)}>
+                      <span style={{ cursor: 'pointer', fontSize: 13, color: 'var(--ep-muted)' }} onClick={() => void removeLine(l.uid)}>
                         ✕
                       </span>
                     ) : null}
@@ -145,7 +145,7 @@ export function Cart() {
                 )
               })}
             </div>
-            <div style={{ padding: '4px 14px 14px', fontSize: 12.5, color: '#7A7A84' }}>
+            <div style={{ padding: '4px 14px 14px', fontSize: 12.5, color: 'var(--ep-muted)' }}>
               Делится поровну: по {fmt(totals.sharedTotal / totals.participants)} на {totals.participants}{' '}
               {totals.participants === 1 ? 'гостя' : 'гостей'}
             </div>
@@ -155,7 +155,7 @@ export function Cart() {
 
       <StickyFooter>
         <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', padding: '0 4px' }}>
-          <div style={{ fontSize: 13, color: '#7A7A84' }}>
+          <div style={{ fontSize: 13, color: 'var(--ep-muted)' }}>
             Мой итог: {fmt(totals.myOwn)} своё{totals.sharedTotal > 0 ? ` + ${fmt(totals.myShare)} доля общего` : ''}
           </div>
           <div style={{ fontWeight: 700, fontSize: 20, letterSpacing: '-0.5px' }}>{fmt(totals.myTotal)}</div>
@@ -167,14 +167,14 @@ export function Cart() {
           <PrimaryButton
             style={{ flex: 1.5, minHeight: 54, fontSize: 15.5 }}
             onClick={() => {
-              if (!hasUnsentMine && !hasUnsentAny) {
-                toast('Все блюда уже на кухне')
+              if (!hasUnsentAny) {
+                patch({ screen: 'status' })
                 return
               }
               patch({ sheet: 'send', sendChecked: false, sendScope: hasUnsentMine ? 'mine' : 'all' })
             }}
           >
-            На кухню
+            {hasUnsentAny ? 'На кухню' : 'Статус заказа →'}
           </PrimaryButton>
         </div>
       </StickyFooter>

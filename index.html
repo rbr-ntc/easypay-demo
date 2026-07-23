@@ -9,6 +9,16 @@
   </head>
   <body>
     <div id="root"></div>
+    <script>
+      // Тема до загрузки приложения: ?style=... имеет приоритет, иначе localStorage
+      ;(function () {
+        var q = new URLSearchParams(location.search).get('style')
+        var t = q || localStorage.getItem('easypay-style') || 'classic'
+        if (t !== 'seasons') t = 'classic'
+        document.documentElement.dataset.theme = t
+        if (q) localStorage.setItem('easypay-style', t)
+      })()
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
