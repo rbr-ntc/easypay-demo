@@ -112,13 +112,16 @@ export function WarnBanner({ children }: { children: ReactNode }) {
 }
 
 export function BottomSheet({ children, onClose }: { children: ReactNode; onClose: () => void }) {
+  // На десктопе шит не растягивается на весь экран, а держит ширину гостевой колонки
   return (
-    <div style={{ position: 'fixed', inset: 0, zIndex: 40, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end' }}>
+    <div style={{ position: 'fixed', inset: 0, zIndex: 40, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-end' }}>
       <div onClick={onClose} style={{ position: 'absolute', inset: 0, background: 'rgba(11,11,18,.45)' }} />
       <div
         className="ep-fade-in"
         style={{
           position: 'relative',
+          width: '100%',
+          maxWidth: 480,
           background: 'var(--ep-opaque)',
           borderRadius: 'var(--ep-r-lg) var(--ep-r-lg) 0 0',
           maxHeight: '90%',
@@ -137,26 +140,37 @@ export function BottomSheet({ children, onClose }: { children: ReactNode; onClos
 }
 
 export function Toast({ msg }: { msg: string }) {
+  // Центрирование — контейнером, а не transform: анимация ep-fade сама
+  // управляет transform и перезаписала бы translateX(-50%)
   return (
     <div
-      className="ep-fade-in"
       style={{
         position: 'fixed',
-        left: 20,
-        right: 20,
+        left: 0,
+        right: 0,
         top: 'calc(14px + env(safe-area-inset-top))',
         zIndex: 60,
-        background: 'var(--ep-ink)',
-        color: 'var(--ep-on-ink)',
-        borderRadius: 'var(--ep-r-card)',
-        padding: '13px 18px',
-        fontSize: 14,
-        fontWeight: 540,
-        textAlign: 'center',
-        boxShadow: '0 10px 30px rgba(20,18,45,.35)'
+        display: 'flex',
+        justifyContent: 'center',
+        pointerEvents: 'none'
       }}
     >
-      {msg}
+      <div
+        className="ep-fade-in"
+        style={{
+          width: 'min(calc(100% - 40px), 440px)',
+          background: 'var(--ep-ink)',
+          color: 'var(--ep-on-ink)',
+          borderRadius: 'var(--ep-r-card)',
+          padding: '13px 18px',
+          fontSize: 14,
+          fontWeight: 540,
+          textAlign: 'center',
+          boxShadow: '0 10px 30px rgba(20,18,45,.35)'
+        }}
+      >
+        {msg}
+      </div>
     </div>
   )
 }
