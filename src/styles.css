@@ -27,34 +27,6 @@
   --ep-r-xs: 8px;
 }
 
-/* ===== Тема «Времена года» (из Claude Design v2) ===== */
-:root[data-theme='seasons'] {
-  --ep-ink: #2c2c2c;
-  --ep-on-ink: #d8cbb8; /* пергамент на чернильном */
-  --ep-bg: #d8cbb8;
-  --ep-surface: rgba(255, 255, 255, 0.26);
-  --ep-opaque: #ddd2c0;
-  --ep-surface-2: rgba(255, 255, 255, 0.16);
-  --ep-border: #b6ab9c;
-  --ep-soft: #c9bca9;
-  --ep-muted: #978e81;
-  --ep-text-2: #615b53;
-  --ep-accent: #d49653; /* шафран */
-  --ep-accent-bg: rgba(212, 150, 83, 0.14);
-  --ep-accent-bg2: rgba(212, 150, 83, 0.24);
-  --ep-ghost-border: #2c2c2c;
-  --ep-ghost-bg: transparent;
-  --ep-btn-bg: transparent;
-  --ep-btn-fg: #2c2c2c;
-  --ep-btn-border: 1px solid #2c2c2c;
-  --ep-btn-tt: uppercase;
-  --ep-btn-ls: 0.04em;
-  --ep-r-pill: 3px;
-  --ep-r-lg: 3px;
-  --ep-r-card: 3px;
-  --ep-r-sm: 3px;
-  --ep-r-xs: 3px;
-}
 
 * {
   box-sizing: border-box;

@@ -3,7 +3,6 @@ import { Avatar } from '../avatars'
 import { PrimaryButton, Mono } from '../ui'
 import { useStore } from '../store'
 import { tableId } from '../api'
-import { theme, setTheme } from '../theme'
 
 export function Welcome() {
   const { patch, me, snap, resetDemo, forgetMe } = useStore()
@@ -113,21 +112,6 @@ export function Welcome() {
           {' · '}
           <span style={{ textDecoration: 'underline', cursor: 'pointer' }} onClick={() => void resetDemo()}>
             сбросить стол
-          </span>
-          <br />
-          Стиль:{' '}
-          <span
-            style={{ textDecoration: theme === 'classic' ? 'none' : 'underline', fontWeight: theme === 'classic' ? 700 : 400, cursor: 'pointer' }}
-            onClick={() => setTheme('classic')}
-          >
-            Классика
-          </span>
-          {' · '}
-          <span
-            style={{ textDecoration: theme === 'seasons' ? 'none' : 'underline', fontWeight: theme === 'seasons' ? 700 : 400, cursor: 'pointer' }}
-            onClick={() => setTheme('seasons')}
-          >
-            Времена года
           </span>
         </div>
       </div>

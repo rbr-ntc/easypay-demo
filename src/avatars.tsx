@@ -1,5 +1,4 @@
 import type { Animal } from './data'
-import { theme } from './theme'
 
 const TINTS: Record<Animal, string> = {
   fox: '#FCEAE4',
@@ -87,41 +86,7 @@ const SVGS: Record<Animal, JSX.Element> = {
 export const ANIMAL_LIST: Animal[] = ['fox', 'bear', 'panda', 'raccoon', 'owl', 'cat']
 
 // Тона «Времён года»: каждому зверю соответствует свой тон (identity сохраняется между темами)
-const SEASON_TONES: Record<Animal, { bg: string; dark: boolean }> = {
-  fox: { bg: '#d49653', dark: false },
-  bear: { bg: '#978e81', dark: true },
-  panda: { bg: '#bfb4a3', dark: false },
-  raccoon: { bg: '#b6ab9c', dark: false },
-  owl: { bg: '#615b53', dark: true },
-  cat: { bg: '#292622', dark: true }
-}
-
 export function Avatar({ animal, size, label }: { animal: Animal; size: number; label?: string }) {
-  if (theme === 'seasons') {
-    const tone = SEASON_TONES[animal]
-    return (
-      <div
-        style={{
-          width: size,
-          height: size,
-          flexShrink: 0,
-          borderRadius: '50%',
-          background: tone.bg,
-          border: '1px solid #b6ab9c',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          fontFamily: 'Georgia, serif',
-          fontWeight: 300,
-          fontSize: size * 0.44,
-          textTransform: 'uppercase',
-          color: tone.dark ? '#d8cbb8' : '#2c2c2c'
-        }}
-      >
-        {(label ?? '').trim().charAt(0)}
-      </div>
-    )
-  }
   return (
     <div
       style={{

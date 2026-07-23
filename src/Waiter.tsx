@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react'
 import { HALL_LABEL, NAVY, WAITER_NAME, findDish } from './data'
 import { tableId } from './api'
-import { theme, setTheme } from './theme'
 import { Avatar, SharedIcon } from './avatars'
 import { useStore } from './store'
 import { fmt } from './format'
@@ -139,12 +138,6 @@ export function Waiter() {
             Закрыть стол
           </button>
         )}
-        <span
-          onClick={() => setTheme(theme === 'classic' ? 'seasons' : 'classic')}
-          style={{ fontSize: 13, color: 'var(--ep-muted)', cursor: 'pointer', textDecoration: 'underline' }}
-        >
-          стиль: {theme === 'classic' ? 'Классика' : 'Времена года'}
-        </span>
         <a href="#/" style={{ fontSize: 13, color: 'var(--ep-muted)' }}>
           ← гостевой экран
         </a>
