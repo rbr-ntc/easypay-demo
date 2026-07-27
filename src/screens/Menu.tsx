@@ -106,7 +106,8 @@ export function Menu() {
         </div>
       </div>
 
-      <div className="ep-scroll" style={{ padding: '14px 20px 22px', display: 'flex', flexDirection: 'column', gap: 11 }}>
+      <div className="ep-scroll" style={{ padding: '14px 20px 22px' }}>
+        <div className="ep-menu-grid">
         {items.length === 0 && (
           <div style={{ textAlign: 'center', padding: '64px 20px', color: 'var(--ep-muted)' }}>
             <div style={{ fontWeight: 540, fontSize: 15, color: 'var(--ep-text-2)' }}>В этой категории пока пусто</div>
@@ -181,6 +182,7 @@ export function Menu() {
             </div>
           </div>
         ))}
+        </div>
       </div>
 
       {hasCart && (

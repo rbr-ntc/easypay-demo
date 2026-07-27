@@ -117,11 +117,9 @@ export function BottomSheet({ children, onClose }: { children: ReactNode; onClos
     <div style={{ position: 'fixed', inset: 0, zIndex: 40, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-end' }}>
       <div onClick={onClose} style={{ position: 'absolute', inset: 0, background: 'rgba(11,11,18,.45)' }} />
       <div
-        className="ep-fade-in"
+        className="ep-fade-in ep-sheet-panel"
         style={{
           position: 'relative',
-          width: '100%',
-          maxWidth: 480,
           background: 'var(--ep-opaque)',
           borderRadius: 'var(--ep-r-lg) var(--ep-r-lg) 0 0',
           maxHeight: '90%',

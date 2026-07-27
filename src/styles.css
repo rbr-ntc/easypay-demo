@@ -133,3 +133,45 @@ input {
   overflow-y: auto;
   min-height: 0;
 }
+
+/* ===== Адаптив: гостевой поток на планшете/десктопе ===== */
+.ep-guest {
+  height: 100%;
+  max-width: 480px;
+  margin: 0 auto;
+  position: relative;
+  background: var(--ep-bg);
+}
+
+.ep-sheet-panel {
+  width: 100%;
+  max-width: 480px;
+}
+
+/* Сетка меню: на телефоне — один столбец */
+.ep-menu-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 11px;
+}
+
+@media (min-width: 700px) {
+  .ep-guest {
+    max-width: 760px;
+  }
+
+  .ep-sheet-panel {
+    max-width: 560px;
+  }
+
+  .ep-menu-grid {
+    grid-template-columns: 1fr 1fr;
+    gap: 13px;
+  }
+}
+
+@media (min-width: 1100px) {
+  .ep-menu-grid {
+    grid-template-columns: 1fr 1fr 1fr;
+  }
+}

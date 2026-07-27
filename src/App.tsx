@@ -60,7 +60,7 @@ function Guest() {
   const { ui } = useStore()
   useAutoNav()
   return (
-    <div style={{ height: '100%', maxWidth: 480, margin: '0 auto', position: 'relative', background: 'var(--ep-bg)' }}>
+    <div className="ep-guest">
       {ui.screen === 'welcome' && <Welcome />}
       {ui.screen === 'menu' && <Menu />}
       {ui.screen === 'cart' && <Cart />}
