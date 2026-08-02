@@ -10,7 +10,8 @@ export function NameSheet() {
   const [name, setName] = useState('')
   const [animal, setAnimal] = useState<Animal>('fox')
   const [busy, setBusy] = useState(false)
-  const others = snap?.personas ?? []
+  // У закрытого стола список гостей уже неактуален — join откроет новую сессию
+  const others = snap?.status === 'open' ? snap.personas : []
   // Не предлагаем зверя, которого уже выбрали за столом
   const taken = new Set(others.map(p => p.animal))
   const free = ANIMAL_LIST.filter(a => !taken.has(a))

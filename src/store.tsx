@@ -177,8 +177,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => subscribe(setSnap, setConnected), [])
 
+  // На закрытом столе личность недействительна: первое действие гостя
+  // должно пройти через join и открыть НОВУЮ сессию
   const me = useMemo(
-    () => snap?.personas.find(p => p.id === personaId) ?? null,
+    () => (snap?.status === 'open' ? snap.personas.find(p => p.id === personaId) ?? null : null),
     [snap, personaId]
   )
 

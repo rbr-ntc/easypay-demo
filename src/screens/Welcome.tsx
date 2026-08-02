@@ -6,7 +6,8 @@ import { tableId } from '../api'
 
 export function Welcome() {
   const { patch, me, snap, resetDemo, forgetMe } = useStore()
-  const personas = snap?.personas ?? []
+  // Гостей показываем только у открытого стола: у закрытого список уже неактуален
+  const personas = snap?.status === 'open' ? snap.personas : []
 
   return (
     <div className="ep-screen" style={{ background: 'var(--ep-surface)' }}>
