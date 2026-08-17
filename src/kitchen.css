@@ -1,0 +1,229 @@
+/* Экран кухни: очередь позиций по всему ресторану. Крупно — читается издалека. */
+
+.ep-k {
+  min-height: 100%;
+  background: var(--ep-page);
+  padding-bottom: 40px;
+}
+
+.ep-k-top {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding: 16px 24px;
+  background: var(--ep-opaque);
+  border-bottom: 1px solid var(--ep-border);
+}
+
+.ep-k-title {
+  font-weight: 680;
+  font-size: 19px;
+  letter-spacing: -0.4px;
+}
+
+.ep-k-sub {
+  font-size: 12.5px;
+  color: var(--ep-muted);
+}
+
+.ep-k-spacer {
+  flex: 1;
+}
+
+.ep-k-counters {
+  display: flex;
+  gap: 18px;
+  flex-wrap: wrap;
+}
+
+.ep-k-counter {
+  text-align: right;
+}
+
+.ep-k-counter-label {
+  font-family: ui-monospace, SFMono-Regular, monospace;
+  font-size: 9.5px;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  color: var(--ep-muted);
+}
+
+.ep-k-counter-value {
+  font-weight: 700;
+  font-size: 20px;
+  letter-spacing: -0.5px;
+}
+
+.ep-k-counter-value--alert {
+  color: var(--ep-danger);
+}
+
+/* ===== Две полосы: очередь и в работе ===== */
+.ep-k-lanes {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  padding: 18px 24px 0;
+}
+
+@media (max-width: 860px) {
+  .ep-k-lanes {
+    grid-template-columns: 1fr;
+  }
+}
+
+.ep-k-lane-title {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-family: ui-monospace, SFMono-Regular, monospace;
+  font-size: 11px;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  color: var(--ep-muted);
+  margin-bottom: 12px;
+}
+
+.ep-k-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* ===== Тикет ===== */
+.ep-k-ticket {
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 16px;
+  border-radius: var(--ep-r-card);
+  border: 1px solid var(--ep-border);
+  background: var(--ep-surface);
+}
+
+.ep-k-ticket::before {
+  content: '';
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 4px;
+  background: var(--ep-urgency, var(--ep-border));
+}
+
+.ep-k-ticket[data-urgency='warn'] {
+  --ep-urgency: var(--ep-warn);
+}
+
+.ep-k-ticket[data-urgency='danger'] {
+  --ep-urgency: var(--ep-danger);
+  border-color: var(--ep-danger);
+}
+
+.ep-k-table {
+  min-width: 74px;
+  text-align: center;
+  padding: 8px 6px;
+  border-radius: var(--ep-r-sm);
+  background: var(--ep-soft);
+}
+
+.ep-k-table-num {
+  font-weight: 700;
+  font-size: 18px;
+  letter-spacing: -0.4px;
+}
+
+.ep-k-table-zone {
+  font-size: 10.5px;
+  color: var(--ep-muted);
+}
+
+.ep-k-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.ep-k-dish {
+  font-weight: 640;
+  font-size: 17px;
+  letter-spacing: -0.3px;
+}
+
+.ep-k-qty {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 8px;
+  border-radius: var(--ep-r-pill);
+  background: var(--ep-ink);
+  color: var(--ep-on-ink);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.ep-k-mods {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.ep-k-mod {
+  font-size: 12.5px;
+  font-weight: 620;
+  padding: 3px 9px;
+  border-radius: var(--ep-r-pill);
+  background: var(--ep-accent-bg2);
+  color: var(--ep-accent);
+}
+
+.ep-k-guest {
+  font-size: 12.5px;
+  color: var(--ep-muted);
+  margin-top: 5px;
+}
+
+.ep-k-wait {
+  font-family: ui-monospace, SFMono-Regular, monospace;
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--ep-urgency, var(--ep-muted));
+  min-width: 58px;
+  text-align: right;
+}
+
+.ep-k-btn {
+  min-height: 46px;
+  padding: 0 18px;
+  border-radius: var(--ep-r-pill);
+  border: none;
+  background: var(--ep-ink);
+  color: var(--ep-on-ink);
+  font-family: inherit;
+  font-weight: 600;
+  font-size: 14.5px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.ep-k-btn--ready {
+  background: var(--ep-ok);
+}
+
+.ep-k-btn:disabled {
+  opacity: 0.5;
+  cursor: progress;
+}
+
+.ep-k-empty {
+  padding: 22px 16px;
+  border-radius: var(--ep-r-card);
+  border: 1.5px dashed var(--ep-border);
+  font-size: 14px;
+  color: var(--ep-muted);
+  text-align: center;
+}

@@ -9,6 +9,7 @@ import { fileURLToPath } from 'node:url'
 import crypto from 'node:crypto'
 import { amountFor, computeTotals, PAY_SCOPES, round2 } from '../shared/money.js'
 import { summarizeHall } from '../shared/hall.js'
+import { sortTickets, summarizeKitchen } from '../shared/kitchen.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const DIST = path.join(__dirname, '..', 'dist')
@@ -53,13 +54,15 @@ const tables = new Map()
 const streams = new Map()
 /** @type {Set<import('node:http').ServerResponse>} */
 const hallStreams = new Set()
+/** @type {Set<import('node:http').ServerResponse>} */
+const kitchenStreams = new Set()
 // Идемпотентность: ключ клиента -> уже отданный ответ. Ретрай платежа не создаёт второй платёж.
 /** @type {Map<string, {at:number, status:number, body:object}>} */
 const idempotency = new Map()
 
 const MAX_TABLES = 500
 const MAX_STREAMS_PER_TABLE = 50
-const MAX_HALL_STREAMS = 20
+const MAX_STAFF_STREAMS = 20
 const MAX_IDEM = 2000
 const IDEM_TTL = 10 * 60 * 1000
 
@@ -147,7 +150,9 @@ function broadcast(id) {
       }
     }
   }
-  broadcastHall() // любая мутация стола меняет картину зала
+  // любая мутация стола меняет картину зала и очередь кухни
+  broadcastHall()
+  broadcastKitchen()
 }
 
 // --- Зал ---
@@ -207,16 +212,54 @@ function hallPayload() {
   }
 }
 
-function broadcastHall() {
-  if (hallStreams.size === 0) return
-  const data = `data: ${JSON.stringify(hallPayload())}\n\n`
-  for (const res of hallStreams) {
+function pushTo(subscribers, payload) {
+  if (subscribers.size === 0) return
+  const data = `data: ${JSON.stringify(payload)}\n\n`
+  for (const res of subscribers) {
     try {
       res.write(data)
     } catch {
-      hallStreams.delete(res)
+      subscribers.delete(res)
     }
   }
+}
+
+function broadcastHall() {
+  if (hallStreams.size > 0) pushTo(hallStreams, hallPayload())
+}
+
+// --- Кухня ---
+/** Тикет = отправленная, но ещё не поданная позиция. Кухня видит весь ресторан сразу. */
+function kitchenPayload() {
+  const now = Date.now()
+  const tickets = []
+  for (const [id, t] of tables) {
+    if (t.status !== 'open') continue
+    const meta = TABLE_META.get(id)
+    for (const l of t.lines) {
+      if (!l.sent || l.served) continue
+      const persona = t.personas.find(p => p.id === l.personaId)
+      tickets.push({
+        tableId: id,
+        zoneName: meta?.zoneName ?? 'Вне плана',
+        uid: l.uid,
+        dishId: l.dishId,
+        qty: l.qty,
+        options: l.options ?? {},
+        shared: !!l.shared,
+        guest: persona?.name ?? 'Гость',
+        animal: persona?.animal ?? 'fox',
+        sentAt: l.sentAt,
+        startedAt: l.startedAt ?? null
+      })
+    }
+  }
+  const sorted = sortTickets(tickets)
+  return { tickets: sorted, summary: summarizeKitchen(sorted, now), now }
+}
+
+function broadcastKitchen() {
+  if (kitchenStreams.size > 0) pushTo(kitchenStreams, kitchenPayload())
 }
 
 // --- HTTP helpers ---
@@ -279,7 +322,7 @@ async function serveStatic(req, res, pathname) {
 const NAME_MAX = 30
 const ANIMALS = new Set(['fox', 'bear', 'panda', 'raccoon', 'owl', 'cat'])
 const TABLE_RE = /^[A-Za-z0-9_-]{1,24}$/
-const MANAGER_ACTIONS = new Set(['serve', 'close', 'reset', 'ack'])
+const MANAGER_ACTIONS = new Set(['serve', 'start', 'close', 'reset', 'ack'])
 const IDEMPOTENT_ACTIONS = new Set(['join', 'lines', 'pay', 'tip'])
 
 function sanitizeName(name) {
@@ -320,6 +363,16 @@ function mutate(tableId, action, body, isManager) {
 
   if (MANAGER_ACTIONS.has(action)) {
     if (!isManager) return { status: 401, body: { error: 'manager token required' } }
+
+    if (action === 'start') {
+      // Кухня взяла позицию в работу
+      const uid = asUid(body.uid)
+      const line = uid === null ? null : t.lines.find(l => l.uid === uid)
+      if (!line || !line.sent || line.served) return { status: 400, body: { error: 'not in queue' } }
+      line.startedAt = line.startedAt ?? Date.now()
+      broadcast(tableId)
+      return { status: 200, body: { ok: true, startedAt: line.startedAt } }
+    }
 
     if (action === 'serve') {
       const uid = asUid(body.uid)
@@ -392,6 +445,7 @@ function mutate(tableId, action, body, isManager) {
       sent: false,
       served: false,
       sentAt: null,
+      startedAt: null, // кухня взяла в работу
       servedAt: null
     })
     broadcast(tableId)
@@ -451,41 +505,48 @@ function mutate(tableId, action, body, isManager) {
   return { status: 404, body: { error: 'unknown action' } }
 }
 
+/** Общая обвязка экранов персонала: GET-снапшот и SSE на одном payload. */
+function staffFeed(req, res, url, payloadFn, subscribers) {
+  if (req.method !== 'GET') return json(res, 405, { error: 'method' })
+  if (!managerOk(req, url)) return json(res, 401, { error: 'manager token required' })
+  if (!url.pathname.endsWith('/stream')) return json(res, 200, payloadFn())
+
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-store',
+    Connection: 'keep-alive'
+  })
+  res.write(`data: ${JSON.stringify(payloadFn())}\n\n`)
+  if (subscribers.size >= MAX_STAFF_STREAMS) {
+    res.end()
+    return
+  }
+  subscribers.add(res)
+  const ping = setInterval(() => {
+    try {
+      res.write(': ping\n\n')
+    } catch {
+      /* closed */
+    }
+  }, 25000)
+  req.on('close', () => {
+    clearInterval(ping)
+    subscribers.delete(res)
+  })
+}
+
 // --- Роутер API ---
 async function handleApi(req, res, url) {
   if (url.pathname === '/api/manager/check') {
     return managerOk(req) ? json(res, 200, { ok: true }) : json(res, 401, { error: 'manager token required' })
   }
 
-  // Зал целиком — только для персонала
+  // Экраны персонала: зал и кухня. Снапшот или SSE — только с токеном
   if (url.pathname === '/api/hall' || url.pathname === '/api/hall/stream') {
-    if (req.method !== 'GET') return json(res, 405, { error: 'method' })
-    if (!managerOk(req, url)) return json(res, 401, { error: 'manager token required' })
-    if (url.pathname === '/api/hall') return json(res, 200, hallPayload())
-
-    res.writeHead(200, {
-      'Content-Type': 'text/event-stream',
-      'Cache-Control': 'no-store',
-      Connection: 'keep-alive'
-    })
-    res.write(`data: ${JSON.stringify(hallPayload())}\n\n`)
-    if (hallStreams.size >= MAX_HALL_STREAMS) {
-      res.end()
-      return
-    }
-    hallStreams.add(res)
-    const ping = setInterval(() => {
-      try {
-        res.write(': ping\n\n')
-      } catch {
-        /* closed */
-      }
-    }, 25000)
-    req.on('close', () => {
-      clearInterval(ping)
-      hallStreams.delete(res)
-    })
-    return
+    return staffFeed(req, res, url, hallPayload, hallStreams)
+  }
+  if (url.pathname === '/api/kitchen' || url.pathname === '/api/kitchen/stream') {
+    return staffFeed(req, res, url, kitchenPayload, kitchenStreams)
   }
 
   // /api/t/:table[/action]

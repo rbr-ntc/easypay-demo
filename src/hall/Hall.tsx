@@ -84,6 +84,9 @@ export function Hall() {
           </div>
         </div>
         <div className="ep-h-spacer" />
+        <a className="ep-w-link" href={`${window.location.pathname}#/kitchen`}>
+          Кухня{summary.kitchenPending > 0 ? ` · ${summary.kitchenPending}` : ''}
+        </a>
         <a className="ep-w-link" href={`${window.location.pathname}#/qr`}>
           QR-коды столов
         </a>

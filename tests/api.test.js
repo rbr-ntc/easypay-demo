@@ -233,7 +233,8 @@ test('модификаторы блюда сохраняются, чужие з�
   await post(table, 'lines', { personaId: anya, dishId: 'springrolls', qty: 1, options: { spice: 'Остро' } })
 
   const snap = await snapshot(table)
-  assert.deepEqual(snap.lines[0].options, { roast: 'Rare' })
+  assert.equal(snap.lines[0].options.roast, 'Rare')
+  assert.equal(snap.lines[0].options.side, 'Овощи гриль', 'незаданная группа берёт дефолт из меню')
   assert.deepEqual(snap.lines[1].options, { spice: 'Средне' }, 'неизвестное значение → дефолт из меню')
   assert.deepEqual(snap.lines[2].options, {}, 'у блюда без модификаторов их не появится')
 })
@@ -340,6 +341,50 @@ test('SSE зала принимает токен в query и шлёт обнов
   assert.equal(chunks.length >= 2, true, 'мутация стола обновила зал')
   const last = JSON.parse(chunks[chunks.length - 1].replace(/^data: /, ''))
   assert.equal(last.tables.find(t => t.id === table).guests, 1)
+})
+
+test('кухня видит отправленные позиции всех столов и ведёт их до подачи', async () => {
+  const table = '15'
+  const kitchen = async () => {
+    const r = await fetch(`${base}/api/kitchen`, { headers: { 'x-manager-token': TOKEN } })
+    assert.equal(r.status, 200)
+    return r.json()
+  }
+
+  assert.equal((await fetch(`${base}/api/kitchen`)).status, 401, 'без токена кухня закрыта')
+
+  const anya = await joinGuest(table, 'Аня', 'fox')
+  await post(table, 'lines', { personaId: anya, dishId: 'tomyam', qty: 2, options: { spice: 'Остро' } })
+
+  const draft = await kitchen()
+  assert.equal(draft.tickets.some(t => t.tableId === table), false, 'черновик на кухню не попадает')
+
+  await post(table, 'send', { personaId: anya, scope: 'mine' })
+  const queued = await kitchen()
+  const mine = queued.tickets.find(t => t.tableId === table)
+  assert.equal(mine.dishId, 'tomyam')
+  assert.equal(mine.qty, 2)
+  assert.equal(mine.options.spice, 'Остро', 'модификаторы видны кухне')
+  assert.equal(mine.guest, 'Аня')
+  assert.equal(mine.zoneName, 'Терраса')
+  assert.equal(mine.startedAt, null)
+  assert.equal(queued.summary.queued >= 1, true)
+
+  assert.equal((await post(table, 'start', { uid: mine.uid })).status, 401, 'взять в работу может только персонал')
+  assert.equal((await post(table, 'start', { uid: mine.uid }, TOKEN)).status, 200)
+
+  const cooking = await kitchen()
+  const started = cooking.tickets.find(t => t.tableId === table)
+  assert.equal(started.startedAt > 0, true)
+  assert.equal(cooking.summary.cooking >= 1, true)
+
+  await post(table, 'serve', { uid: mine.uid }, TOKEN)
+  const after = await kitchen()
+  assert.equal(after.tickets.some(t => t.tableId === table), false, 'поданное уходит с кухни')
+
+  const snap = await snapshot(table)
+  assert.equal(snap.lines[0].startedAt > 0, true, 'время начала готовки осталось в позиции')
+  assert.equal(snap.lines[0].served, true)
 })
 
 test('SSE зала без токена не открывается', async () => {

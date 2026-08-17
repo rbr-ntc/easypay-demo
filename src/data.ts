@@ -30,6 +30,55 @@ export interface Dish {
 
 export type LineOptions = Record<string, string>
 
+/** Теги-аллергены отделяем от «диетических»: гостю это разные вопросы. */
+const ALLERGENS = new Set(['глютен', 'лактоза', 'орехи', 'арахис', 'рыба', 'морепродукты', 'яйцо', 'кунжут'])
+
+export function allergenTags(dish: Dish): string[] {
+  return (dish.tags ?? []).filter(t => ALLERGENS.has(t))
+}
+
+export function dietTags(dish: Dish): string[] {
+  return (dish.tags ?? []).filter(t => !ALLERGENS.has(t))
+}
+
+const CATEGORY_EMOJI: Record<string, string> = {
+  Закуски: '🫒',
+  Салаты: '🥗',
+  Супы: '🍲',
+  Горячее: '🍽',
+  'Паста и пицца': '🍕',
+  Гарниры: '🍟',
+  Десерты: '🍰',
+  Напитки: '🥤'
+}
+
+export function categoryOfDish(id: string): string | null {
+  for (const cat of CATEGORIES) if (MENU[cat].some(d => d.id === id)) return cat
+  return null
+}
+
+/** Заглушка вместо фото: по блюду, а не один лимон на всё меню. */
+export function dishEmoji(dish: Dish): string {
+  if (dish.id === 'espresso' || dish.id === 'cappuccino') return '☕'
+  if (dish.id === 'seatea') return '🫖'
+  const cat = categoryOfDish(dish.id)
+  // Рыбу и морепродукты выделяем только там, где это главное в блюде
+  if (cat === 'Горячее' || cat === 'Закуски') {
+    const tags = dish.tags ?? []
+    if (tags.includes('морепродукты')) return '🦐'
+    if (tags.includes('рыба')) return '🐟'
+  }
+  return (cat && CATEGORY_EMOJI[cat]) || '🍽'
+}
+
+/** Значок в карточке меню: острое / растительное. */
+export function dishMark(dish: Dish): string {
+  const tags = dish.tags ?? []
+  if (tags.includes('острое')) return ' 🌶'
+  if (tags.includes('веган') || tags.includes('вегетарианское')) return ' 🌱'
+  return ''
+}
+
 /** «Остро · Без льда» — короткая подпись выбранных модификаторов. */
 export function optionsLabel(options: LineOptions | undefined): string {
   const values = Object.values(options ?? {})

@@ -1,11 +1,25 @@
-import { CATEGORIES, MENU, NAVY, HALL_LABEL } from '../data'
+import { CATEGORIES, MENU, NAVY, HALL_LABEL, dishEmoji, dishMark } from '../data'
 import { tableId } from '../api'
 import { Avatar } from '../avatars'
 import { PrimaryButton } from '../ui'
 import { useStore } from '../store'
 import { fmt } from '../format'
 
-function DishPhoto({ id, name, hasPhoto, size, radius }: { id: string; name: string; hasPhoto?: boolean; size: number; radius: number }) {
+function DishPhoto({
+  id,
+  name,
+  hasPhoto,
+  size,
+  radius,
+  emoji = '🍽'
+}: {
+  id: string
+  name: string
+  hasPhoto?: boolean
+  size: number
+  radius: number
+  emoji?: string
+}) {
   // Реальное фото из public/dishes; для блюд без фото — градиент-заглушка
   let hash = 0
   for (const ch of name) hash = (hash * 31 + ch.charCodeAt(0)) % 360
@@ -33,7 +47,7 @@ function DishPhoto({ id, name, hasPhoto, size, radius }: { id: string; name: str
         fontSize: size * 0.38
       }}
     >
-      🍋
+      {emoji}
     </div>
   )
 }
@@ -42,7 +56,9 @@ export { DishPhoto }
 
 export function Menu() {
   const { ui, patch, me, snap, totals } = useStore()
-  const items = MENU[ui.menuCat] ?? []
+  // Категория из состояния может устареть после правки меню — падаем на первую
+  const cat = MENU[ui.menuCat] ? ui.menuCat : CATEGORIES[0]
+  const items = MENU[cat] ?? []
   const hasCart = !!me && (snap?.lines ?? []).some(l => l.personaId === me.id)
 
   return (
@@ -92,14 +108,14 @@ export function Menu() {
               onClick={() => patch({ menuCat: c })}
               style={{
                 fontSize: 14,
-                fontWeight: c === ui.menuCat ? 600 : 440,
+                fontWeight: c === cat ? 600 : 440,
                 padding: '8px 15px',
                 borderRadius: 'var(--ep-r-pill)',
                 cursor: 'pointer',
                 whiteSpace: 'nowrap',
                 border: 'none',
-                background: c === ui.menuCat ? NAVY : 'var(--ep-soft)',
-                color: c === ui.menuCat ? 'var(--ep-on-ink)' : 'var(--ep-text-2)'
+                background: c === cat ? NAVY : 'var(--ep-soft)',
+                color: c === cat ? 'var(--ep-on-ink)' : 'var(--ep-text-2)'
               }}
             >
               {c}
@@ -129,12 +145,12 @@ export function Menu() {
               opacity: it.stop ? 0.55 : 1
             }}
           >
-            <DishPhoto id={it.id} name={it.name} hasPhoto={it.photo} size={74} radius={14} />
+            <DishPhoto id={it.id} name={it.name} hasPhoto={it.photo} size={74} radius={14} emoji={dishEmoji(it)} />
             <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap' }}>
                 <span style={{ fontWeight: 600, fontSize: 15 }}>
                   {it.name}
-                  {it.tags?.includes('острое') ? ' 🌶' : ''}
+                  {dishMark(it)}
                 </span>
                 {it.stop && (
                   <span

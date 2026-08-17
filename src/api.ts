@@ -38,6 +38,7 @@ export interface ServerLine {
   sent: boolean
   served: boolean
   sentAt: number | null
+  startedAt?: number | null
   servedAt: number | null
 }
 

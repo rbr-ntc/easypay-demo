@@ -20,7 +20,7 @@ import {
 import type { ServerPersona, Snapshot } from './api'
 import { clearManagerToken, getManagerToken, setManagerToken } from './manager'
 import { newIdemKey } from './keys'
-import { findDish } from './data'
+import { CATEGORIES, findDish } from './data'
 import type { Animal, LineOptions } from './data'
 import { amountFor, computeTotals as computeMoney } from '../shared/money.js'
 
@@ -60,7 +60,7 @@ const initialUi: UiState = {
   sheet: null,
   currentDishId: null,
   pendingAdd: null,
-  menuCat: 'Основное',
+  menuCat: CATEGORIES[0] ?? '',
   payScope: 'own',
   payMethod: 'sbp',
   payStage: 'form',

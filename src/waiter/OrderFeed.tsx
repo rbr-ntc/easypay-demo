@@ -45,7 +45,7 @@ export function OrderFeed({
                 </span>
               ) : l.sent ? (
                 <button className="ep-w-state ep-w-state--cooking" title="Отметить поданным" onClick={() => onServe(l.uid)}>
-                  ГОТОВИТСЯ {l.sentAt ? fmtDur(now - l.sentAt) : ''} → ПОДАТЬ ✓
+                  {l.startedAt ? 'ГОТОВИТСЯ' : 'В ОЧЕРЕДИ'} {l.sentAt ? fmtDur(now - l.sentAt) : ''} → ПОДАТЬ ✓
                 </button>
               ) : (
                 <span className="ep-w-state">ЧЕРНОВИК</span>

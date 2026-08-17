@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { defaultOptions, findDish, NAVY } from '../data'
+import { allergenTags, defaultOptions, dietTags, dishEmoji, findDish, NAVY } from '../data'
 import type { LineOptions } from '../data'
 import { BottomSheet, PrimaryButton, WarnBanner } from '../ui'
 import { useStore } from '../store'
@@ -77,7 +77,7 @@ export function DishSheet() {
               fontSize: 44
             }}
           >
-            🍋
+            {dishEmoji(dish)}
           </div>
         )}
         <div style={{ fontWeight: 680, fontSize: 22, letterSpacing: '-0.5px' }}>{dish.name}</div>
@@ -88,12 +88,18 @@ export function DishSheet() {
               {[dish.serving, dish.kcal ? `${dish.kcal} ккал` : null].filter(Boolean).join(' · ')}
             </span>
           )}
-          {(dish.tags ?? []).map(t => (
+          {dietTags(dish).map(t => (
             <span key={t} style={{ fontSize: 12.5, color: t === 'острое' ? '#B4451F' : '#5C7A4A', background: t === 'острое' ? '#FDEDE6' : '#EDF5E6', borderRadius: 'var(--ep-r-pill)', padding: '5px 11px' }}>
               {t === 'острое' ? '🌶 острое' : t}
             </span>
           ))}
         </div>
+
+        {allergenTags(dish).length > 0 && (
+          <div style={{ fontSize: 12.5, color: 'var(--ep-muted)', marginBottom: 16 }}>
+            Аллергены: {allergenTags(dish).join(' · ')}
+          </div>
+        )}
 
         {/* Кому блюдо — витрина УТП: привязка к персоне в момент заказа */}
         <div style={{ fontWeight: 600, fontSize: 15, marginBottom: 8 }}>Кому</div>

@@ -12,6 +12,7 @@ import { NameSheet } from './sheets/NameSheet'
 import { SendSheet } from './sheets/SendSheet'
 import { Waiter } from './Waiter'
 import { Hall } from './hall/Hall'
+import { Kitchen } from './kitchen/Kitchen'
 import { TablePicker } from './screens/TablePicker'
 import { tableId } from './api'
 import { seatsOfTable } from './hallConfig'
@@ -113,7 +114,9 @@ function useDocumentTitle(route: string) {
     const table = tableId ? `Стол №${tableId}` : null
     const title = route.startsWith('#/hall')
       ? 'EasyPay · Зал'
-      : route.startsWith('#/waiter')
+      : route.startsWith('#/kitchen')
+        ? 'EasyPay · Кухня'
+        : route.startsWith('#/waiter')
         ? `EasyPay · ${table ?? 'стол не выбран'} — экран ресторана`
         : route.startsWith('#/qr')
           ? `EasyPay · QR ${table ?? 'столов'}`
@@ -132,6 +135,8 @@ export default function App() {
       <ConnBanner />
       {route.startsWith('#/hall') ? (
         <Hall />
+      ) : route.startsWith('#/kitchen') ? (
+        <Kitchen />
       ) : route.startsWith('#/waiter') ? (
         tableId ? (
           <Waiter />
