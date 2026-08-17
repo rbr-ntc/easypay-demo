@@ -4,17 +4,17 @@ import { tableId } from './api'
 import { useStore } from './store'
 import { fmt } from './format'
 import { GuestList } from './waiter/GuestList'
-import { ManagerLogin } from './waiter/ManagerLogin'
 import { MetricsRow } from './waiter/Metrics'
 import { OrderFeed } from './waiter/OrderFeed'
 import { PaymentsList } from './waiter/PaymentsList'
 import { computeMetrics } from './waiter/tableMetrics'
 import { fmtDur } from './waiter/duration'
 import { CALL_LABEL } from '../shared/hall.js'
+import { ROLE_LABEL } from '../shared/roles.js'
 import './waiter.css'
 
 // Экран менеджера/официанта: живой снапшот стола со всех телефонов.
-// Действия менеджера закрыты токеном — см. ManagerLogin и server/index.mjs.
+// Доступ и кнопки зависят от роли вошедшего сотрудника (shared/roles.js).
 export function Waiter() {
   const {
     snap,
@@ -24,9 +24,9 @@ export function Waiter() {
     serveLine,
     ackCall,
     resetDemo,
-    managerAuthed,
-    checkManager,
-    signOutManager
+    staff,
+    may,
+    signOutStaff
   } = useStore()
   const [now, setNow] = useState(Date.now())
 
@@ -34,20 +34,6 @@ export function Waiter() {
     const t = setInterval(() => setNow(Date.now()), 1000)
     return () => clearInterval(t)
   }, [])
-
-  useEffect(() => {
-    void checkManager()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
-
-  if (managerAuthed === null) {
-    return (
-      <div className="ep-w-login">
-        <div className="ep-w-login-card ep-w-login-hint">Проверяем доступ…</div>
-      </div>
-    )
-  }
-  if (!managerAuthed) return <ManagerLogin />
 
   const personas = snap?.personas ?? []
   const lines = snap?.lines ?? []
@@ -81,7 +67,7 @@ export function Waiter() {
               </span>
             </div>
             <div className="ep-w-sub">
-              официант {WAITER_NAME} · экран ресторана {connected ? '' : '· нет связи…'}
+              официант {snap?.waiter?.name ?? WAITER_NAME} · экран ресторана {connected ? '' : '· нет связи…'}
             </div>
           </div>
         </div>
@@ -99,20 +85,28 @@ export function Waiter() {
         </div>
 
         <div className="ep-w-actions">
-          {isOpen && (
+          {isOpen && may('close') && (
             <button className={fullyPaid ? 'ep-w-btn ep-w-btn--ok' : 'ep-w-btn'} onClick={confirmClose}>
               Закрыть стол
             </button>
           )}
-          <button className="ep-w-btn ep-w-btn--quiet" onClick={confirmReset}>
-            Сбросить демо
-          </button>
-          <button className="ep-w-btn ep-w-btn--quiet" onClick={signOutManager}>
+          {may('reset') && (
+            <button className="ep-w-btn ep-w-btn--quiet" onClick={confirmReset}>
+              Сбросить демо
+            </button>
+          )}
+          <div className="ep-s-who">
+            <span className="ep-s-who-name">{staff?.name}</span>
+            <span className="ep-s-role">{staff ? ROLE_LABEL[staff.role] : ''}</span>
+          </div>
+          <button className="ep-w-btn ep-w-btn--quiet" onClick={() => void signOutStaff()}>
             Выйти
           </button>
-          <a className="ep-w-link" href={`${window.location.pathname}#/hall`}>
-            ← в зал
-          </a>
+          {may('hall') && (
+            <a className="ep-w-link" href={`${window.location.pathname}#/hall`}>
+              ← в зал
+            </a>
+          )}
           <a className="ep-w-link" href={`?t=${encodeURIComponent(tableId ?? '')}#/qr`}>
             QR стола
           </a>
@@ -129,9 +123,11 @@ export function Waiter() {
             <b>{personas.find(p => p.id === snap.call?.personaId)?.name ?? 'Гость'}</b>{' '}
             {CALL_LABEL[snap.call.reason] ?? CALL_LABEL.help} · {fmtDur(now - snap.call.at)}
           </span>
-          <button className="ep-w-btn ep-w-btn--ok" onClick={() => void ackCall()}>
-            Принял
-          </button>
+          {may('ack') && (
+            <button className="ep-w-btn ep-w-btn--ok" onClick={() => void ackCall()}>
+              Принял
+            </button>
+          )}
         </div>
       )}
 
@@ -144,7 +140,7 @@ export function Waiter() {
           <GuestList personas={personas} lines={lines} totals={totals} tableOpen={isOpen} />
         </div>
         <div className="ep-w-main">
-          <OrderFeed lines={lines} personas={personas} now={now} onServe={uid => void serveLine(uid)} />
+          <OrderFeed lines={lines} personas={personas} now={now} canServe={may('serve')} onServe={uid => void serveLine(uid)} />
           <PaymentsList payments={payments} personas={personas} />
         </div>
       </div>

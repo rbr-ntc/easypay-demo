@@ -8,15 +8,16 @@ import type { Animal } from '../data'
 const MAX_AVATARS = 4
 
 /** Карточка стола в зале: клик уводит на экран этого стола. */
-export function TableCard({ card, now }: { card: HallCard; now: number }) {
+export function TableCard({ card, now, mine }: { card: HallCard; now: number; mine?: boolean }) {
   const { status, since, alerts } = describeTable(card, now)
   const free = status === 'free'
   const href = `${window.location.pathname}?t=${encodeURIComponent(card.id)}#/waiter`
   const shown = card.personas.slice(0, MAX_AVATARS)
   const rest = card.personas.length - shown.length
+  const className = ['ep-h-card', free ? 'ep-h-card--free' : '', mine ? 'ep-h-card--mine' : ''].filter(Boolean).join(' ')
 
   return (
-    <a className={free ? 'ep-h-card ep-h-card--free' : 'ep-h-card'} data-status={status} href={href}>
+    <a className={className} data-status={status} href={href}>
       <div className="ep-h-card-head">
         <span className="ep-h-card-num">№{card.id}</span>
         {card.seats > 0 && <span className="ep-h-card-seats">{card.seats} мест</span>}

@@ -495,6 +495,86 @@
 
 .ep-w-error {
   font-size: 13px;
-  color: #b00020;
+  color: var(--ep-danger);
   margin-bottom: 12px;
+}
+
+/* ===== PIN-клавиатура смены ===== */
+.ep-s-dots {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+  margin: 18px 0;
+}
+
+.ep-s-dot {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 2px solid var(--ep-border);
+}
+
+.ep-s-dot--on {
+  background: var(--ep-ink);
+  border-color: var(--ep-ink);
+}
+
+.ep-s-pad {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+}
+
+.ep-s-key {
+  min-height: 58px;
+  border-radius: var(--ep-r-card);
+  border: 1px solid var(--ep-border);
+  background: var(--ep-surface-2);
+  color: var(--ep-ink);
+  font-family: inherit;
+  font-size: 22px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.ep-s-key:active {
+  background: var(--ep-soft);
+}
+
+.ep-s-key:disabled {
+  opacity: 0.5;
+}
+
+.ep-s-demo {
+  margin-top: 16px;
+  font-size: 12px;
+  color: var(--ep-muted);
+  text-align: center;
+}
+
+/* ===== Кто в смене ===== */
+.ep-s-who {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ep-s-who-name {
+  font-weight: 620;
+  font-size: 14px;
+}
+
+.ep-s-role {
+  font-family: ui-monospace, SFMono-Regular, monospace;
+  font-size: 9.5px;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  padding: 3px 8px;
+  border-radius: var(--ep-r-pill);
+  background: var(--ep-soft);
+  color: var(--ep-muted);
+}
+
+.ep-s-denied {
+  text-align: center;
 }

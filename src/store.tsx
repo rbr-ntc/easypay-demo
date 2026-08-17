@@ -6,8 +6,10 @@ import {
   apiAddLine,
   apiCall,
   apiClose,
-  apiManagerCheck,
   apiServe,
+  apiStaffLogin,
+  apiStaffLogout,
+  apiWhoami,
   apiJoin,
   apiPay,
   apiRemoveLine,
@@ -18,7 +20,9 @@ import {
   tableId
 } from './api'
 import type { ServerPersona, Snapshot } from './api'
-import { clearManagerToken, getManagerToken, setManagerToken } from './manager'
+import { clearStaff, getCachedStaff, setCachedStaff, setStaffToken } from './staff'
+import { can } from '../shared/roles.js'
+import type { Permission, Staff } from '../shared/roles.js'
 import { newIdemKey } from './keys'
 import { CATEGORIES, findDish } from './data'
 import type { Animal, LineOptions } from './data'
@@ -151,11 +155,14 @@ interface Ctx {
   leaveTip: (amount: number, idemKey: string) => Promise<number>
   callWaiter: (reason: 'help' | 'bill' | 'water') => Promise<void>
   forgetMe: () => void // «Я другой гость» — телефон передали новому человеку
-  // менеджерские действия (нужен токен)
-  managerAuthed: boolean | null
-  checkManager: () => Promise<void>
-  signInManager: (token: string) => Promise<boolean>
-  signOutManager: () => void
+  // смена сотрудника: вход по PIN, права роли
+  staff: Staff | null
+  staffChecked: boolean
+  shiftTips: number
+  may: (permission: Permission) => boolean
+  checkStaff: () => Promise<void>
+  signInStaff: (pin: string) => Promise<boolean>
+  signOutStaff: () => Promise<void>
   serveLine: (uid: number) => Promise<boolean>
   ackCall: () => Promise<boolean>
   closeTable: () => Promise<boolean>
@@ -169,7 +176,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [snap, setSnap] = useState<Snapshot | null>(null)
   const [connected, setConnected] = useState(false)
   const [identity, setIdentity] = useState<Identity | null>(loadIdentity)
-  const [managerAuthed, setManagerAuthed] = useState<boolean | null>(null)
+  const [staff, setStaff] = useState<Staff | null>(getCachedStaff)
+  const [staffChecked, setStaffChecked] = useState(false)
+  const [shiftTips, setShiftTips] = useState(0)
   const personaId = identity?.personaId ?? null
   const toastTimer = useRef<ReturnType<typeof setTimeout>>()
 
@@ -222,16 +231,18 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     }
   }
 
-  // Менеджерские действия: 401 означает «токен протух/не тот» — просим войти заново
-  const managerGuard = async (fn: () => Promise<unknown>): Promise<boolean> => {
+  // Действия персонала: 401 — сессия протухла, 403 — роли не хватает прав
+  const staffGuard = async (fn: () => Promise<unknown>): Promise<boolean> => {
     try {
       await fn()
-      setManagerAuthed(true)
       return true
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) {
-        setManagerAuthed(false)
-        toast('Нужен вход менеджера')
+        setStaff(null)
+        setCachedStaff(null)
+        toast('Нужно войти в смену')
+      } else if (err instanceof ApiError && err.status === 403) {
+        toast('Вашей роли это недоступно')
       } else {
         console.error('api error:', err)
         toast('Не получилось — проверьте связь и попробуйте ещё раз')
@@ -297,25 +308,38 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       setIdentity(null)
       setUi(initialUi)
     },
-    managerAuthed,
-    checkManager: async () => {
-      setManagerAuthed(await apiManagerCheck())
+    staff,
+    staffChecked,
+    shiftTips,
+    may: permission => can(staff?.role, permission),
+    checkStaff: async () => {
+      const who = await apiWhoami()
+      setStaff(who?.staff ?? null)
+      setCachedStaff(who?.staff ?? null)
+      setShiftTips(who?.shiftTips ?? 0)
+      setStaffChecked(true)
     },
-    signInManager: async (token: string) => {
-      const ok = await apiManagerCheck(token.trim())
-      if (ok) setManagerToken(token.trim())
-      setManagerAuthed(ok)
-      return ok
+    signInStaff: async (pin: string) => {
+      const result = await apiStaffLogin(pin.trim())
+      if (!result) return false
+      setStaffToken(result.token)
+      setStaff(result.staff)
+      setCachedStaff(result.staff)
+      setStaffChecked(true)
+      return true
     },
-    signOutManager: () => {
-      clearManagerToken()
-      setManagerAuthed(false)
+    signOutStaff: async () => {
+      await apiStaffLogout()
+      clearStaff()
+      setStaff(null)
+      setShiftTips(0)
+      setStaffChecked(true)
     },
-    serveLine: uid => managerGuard(() => apiServe(uid)),
-    ackCall: () => managerGuard(() => apiAck()),
-    closeTable: () => managerGuard(() => apiClose()),
+    serveLine: uid => staffGuard(() => apiServe(uid)),
+    ackCall: () => staffGuard(() => apiAck()),
+    closeTable: () => staffGuard(() => apiClose()),
     resetDemo: () =>
-      managerGuard(async () => {
+      staffGuard(async () => {
         await apiReset()
         localStorage.removeItem(ID_KEY)
         setIdentity(null)

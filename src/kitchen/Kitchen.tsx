@@ -2,10 +2,10 @@ import { useEffect, useState } from 'react'
 import { markReady, subscribeKitchen, takeToWork } from '../kitchenApi'
 import type { KitchenPayload } from '../kitchenApi'
 import { useStore } from '../store'
-import { ManagerLogin } from '../waiter/ManagerLogin'
 import { fmtDur } from '../waiter/duration'
 import { Ticket } from './Ticket'
 import { summarizeKitchen, ticketState } from '../../shared/kitchen.js'
+import { ROLE_LABEL } from '../../shared/roles.js'
 import '../kitchen.css'
 
 function Counter({ label, value, alert }: { label: string; value: string; alert?: boolean }) {
@@ -19,35 +19,18 @@ function Counter({ label, value, alert }: { label: string; value: string; alert?
 
 // Экран кухни: очередь позиций по всему ресторану, самое старое — сверху.
 export function Kitchen() {
-  const { managerAuthed, checkManager, signOutManager } = useStore()
+  const { staff, signOutStaff, may } = useStore()
   const [data, setData] = useState<KitchenPayload | null>(null)
   const [connected, setConnected] = useState(false)
   const [busy, setBusy] = useState<number | null>(null)
   const [now, setNow] = useState(Date.now())
 
   useEffect(() => {
-    void checkManager()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
-
-  useEffect(() => {
     const t = setInterval(() => setNow(Date.now()), 1000)
     return () => clearInterval(t)
   }, [])
 
-  useEffect(() => {
-    if (!managerAuthed) return
-    return subscribeKitchen(setData, setConnected)
-  }, [managerAuthed])
-
-  if (managerAuthed === null) {
-    return (
-      <div className="ep-w-login">
-        <div className="ep-w-login-card ep-w-login-hint">Проверяем доступ…</div>
-      </div>
-    )
-  }
-  if (!managerAuthed) return <ManagerLogin />
+  useEffect(() => subscribeKitchen(setData, setConnected), [])
 
   const tickets = data?.tickets ?? []
   const summary = summarizeKitchen(tickets, now)
@@ -84,10 +67,16 @@ export function Kitchen() {
             alert={summary.overdue > 0}
           />
         </div>
-        <a className="ep-w-link" href={`${window.location.pathname}#/hall`}>
-          в зал
-        </a>
-        <button className="ep-w-btn ep-w-btn--quiet" onClick={signOutManager}>
+        {may('hall') && (
+          <a className="ep-w-link" href={`${window.location.pathname}#/hall`}>
+            в зал
+          </a>
+        )}
+        <div className="ep-s-who">
+          <span className="ep-s-who-name">{staff?.name}</span>
+          <span className="ep-s-role">{staff ? ROLE_LABEL[staff.role] : ''}</span>
+        </div>
+        <button className="ep-w-btn ep-w-btn--quiet" onClick={() => void signOutStaff()}>
           Выйти
         </button>
       </div>

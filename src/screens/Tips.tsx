@@ -13,7 +13,7 @@ const PRESETS: { v: '0' | '5' | '10' | '15' | 'custom'; label: string; popular?:
 ]
 
 export function Tips() {
-  const { ui, patch, leaveTip } = useStore()
+  const { ui, patch, snap, leaveTip } = useStore()
   const [busy, setBusy] = useState(false)
   const tipKey = useRef(newIdemKey())
   const paidNow = ui.lastPaid
@@ -52,7 +52,7 @@ export function Tips() {
           <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: 'var(--ep-surface)', border: '1px solid var(--ep-border)', borderRadius: 'var(--ep-r-pill)', padding: '5px 12px', marginBottom: 16 }}>
             <span style={{ color: '#F4B400', fontSize: 13 }}>★</span>
             <span style={{ fontSize: 12.5, fontWeight: 600 }}>4.9</span>
-            <span style={{ fontSize: 12.5, color: 'var(--ep-muted)' }}>· официант {WAITER_NAME}</span>
+            <span style={{ fontSize: 12.5, color: 'var(--ep-muted)' }}>· официант {snap?.waiter?.name ?? WAITER_NAME}</span>
           </div>
           <div style={{ fontWeight: 300, fontSize: 28, lineHeight: 1.1, letterSpacing: '-0.9px' }}>
             Поблагодарить

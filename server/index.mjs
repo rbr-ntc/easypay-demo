@@ -10,6 +10,8 @@ import crypto from 'node:crypto'
 import { amountFor, computeTotals, PAY_SCOPES, round2 } from '../shared/money.js'
 import { summarizeHall } from '../shared/hall.js'
 import { sortTickets, summarizeKitchen } from '../shared/kitchen.js'
+import { can } from '../shared/roles.js'
+import { dropSession, loginAllowed, loginByPin, sessionStaff, staffRoster, sweepSessions, waiterOfTable } from './staff.mjs'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const DIST = path.join(__dirname, '..', 'dist')
@@ -30,7 +32,7 @@ for (const zone of HALL.zones) {
 }
 
 // Итоги смены: копятся при закрытии столов, обнуляются с рестартом (демо без БД)
-const shift = { tables: 0, revenue: 0, guests: 0, startedAt: Date.now() }
+const shift = { tables: 0, revenue: 0, guests: 0, startedAt: Date.now(), tipsByStaff: Object.create(null) }
 
 // --- Токен менеджера: закрывает serve/close/reset от посторонних ---
 // Без переменной окружения генерируем случайный и печатаем в лог при старте.
@@ -42,9 +44,38 @@ function tokenMatches(token) {
   return given.length === want.length && crypto.timingSafeEqual(given, want)
 }
 
-// EventSource не умеет слать заголовки, поэтому для SSE зала токен принимаем и из query.
-function managerOk(req, url) {
-  return tokenMatches(req.headers['x-manager-token']) || (url ? tokenMatches(url.searchParams.get('token')) : false)
+/**
+ * Кто действует: сотрудник со своей сессией (вход по PIN) или мастер-токен менеджера.
+ * EventSource не умеет слать заголовки, поэтому для SSE токен принимаем и из query.
+ */
+function actorFrom(req, url) {
+  const token =
+    req.headers['x-staff-token'] ?? req.headers['x-manager-token'] ?? (url ? url.searchParams.get('token') : null)
+  if (!token) return null
+  if (tokenMatches(token)) return { id: 'token', name: 'Менеджер (токен)', role: 'manager', tables: [] }
+  return sessionStaff(token)
+}
+
+function allowed(actor, permission) {
+  return !!actor && can(actor.role, permission)
+}
+
+// --- Журнал смены: кто что сделал ---
+const AUDIT_MAX = 300
+/** @type {{at:number, staffId:string|null, name:string, role:string|null, action:string, tableId:string|null, detail:string|null}[]} */
+const auditLog = []
+
+function audit(actor, action, tableId, detail = null) {
+  auditLog.push({
+    at: Date.now(),
+    staffId: actor?.id ?? null,
+    name: actor?.name ?? 'Гость',
+    role: actor?.role ?? null,
+    action,
+    tableId: tableId ?? null,
+    detail
+  })
+  if (auditLog.length > AUDIT_MAX) auditLog.shift()
 }
 
 // --- Состояние столов ---
@@ -106,6 +137,7 @@ const sweeper = setInterval(() => {
   }
   const idemCutoff = Date.now() - IDEM_TTL
   for (const [key, rec] of idempotency) if (rec.at < idemCutoff) idempotency.delete(key)
+  sweepSessions()
 }, 10 * 60 * 1000)
 sweeper.unref()
 
@@ -134,7 +166,8 @@ function snapshot(id) {
     lines: t.lines,
     payments: t.payments,
     tips: t.tips,
-    call: t.call
+    call: t.call,
+    waiter: waiterOfTable(id) // гость видит имя своего официанта, а не общий хардкод
   }
 }
 
@@ -322,7 +355,8 @@ async function serveStatic(req, res, pathname) {
 const NAME_MAX = 30
 const ANIMALS = new Set(['fox', 'bear', 'panda', 'raccoon', 'owl', 'cat'])
 const TABLE_RE = /^[A-Za-z0-9_-]{1,24}$/
-const MANAGER_ACTIONS = new Set(['serve', 'start', 'close', 'reset', 'ack'])
+// Действия персонала: имя действия = имя права в shared/roles.js
+const STAFF_ACTIONS = new Set(['serve', 'start', 'close', 'reset', 'ack'])
 const IDEMPOTENT_ACTIONS = new Set(['join', 'lines', 'pay', 'tip'])
 
 function sanitizeName(name) {
@@ -358,11 +392,12 @@ function sanitizeOptions(dish, raw) {
 const CALL_REASONS = new Set(['help', 'bill', 'water'])
 
 // --- Мутации (POST): возвращают {status, body}, чтобы ответ можно было закэшировать по idemKey ---
-function mutate(tableId, action, body, isManager) {
+function mutate(tableId, action, body, actor) {
   const t = getTable(tableId, true)
 
-  if (MANAGER_ACTIONS.has(action)) {
-    if (!isManager) return { status: 401, body: { error: 'manager token required' } }
+  if (STAFF_ACTIONS.has(action)) {
+    if (!actor) return { status: 401, body: { error: 'staff login required' } }
+    if (!can(actor.role, action)) return { status: 403, body: { error: 'role not allowed' } }
 
     if (action === 'start') {
       // Кухня взяла позицию в работу
@@ -370,6 +405,7 @@ function mutate(tableId, action, body, isManager) {
       const line = uid === null ? null : t.lines.find(l => l.uid === uid)
       if (!line || !line.sent || line.served) return { status: 400, body: { error: 'not in queue' } }
       line.startedAt = line.startedAt ?? Date.now()
+      audit(actor, `взял в работу`, tableId, DISHES.get(line.dishId)?.name ?? line.dishId)
       broadcast(tableId)
       return { status: 200, body: { ok: true, startedAt: line.startedAt } }
     }
@@ -380,6 +416,7 @@ function mutate(tableId, action, body, isManager) {
       if (!line || !line.sent) return { status: 400, body: { error: 'not sent yet' } }
       line.served = true
       line.servedAt = Date.now()
+      audit(actor, `подал`, tableId, DISHES.get(line.dishId)?.name ?? line.dishId)
       broadcast(tableId)
       return { status: 200, body: { ok: true } }
     }
@@ -387,6 +424,7 @@ function mutate(tableId, action, body, isManager) {
     if (action === 'ack') {
       // Персонал принял вызов гостя
       t.call = null
+      audit(actor, `принял вызов`, tableId)
       broadcast(tableId)
       return { status: 200, body: { ok: true } }
     }
@@ -402,12 +440,14 @@ function mutate(tableId, action, body, isManager) {
       }
       t.status = 'closed'
       t.closedAt = Date.now()
+      audit(actor, `закрыл стол`, tableId)
       broadcast(tableId)
       return { status: 200, body: { ok: true } }
     }
 
     // reset — сброс демо-стола к чистому листу
     tables.set(tableId, emptySession())
+    audit(actor, `сбросил стол`, tableId)
     broadcast(tableId)
     return { status: 200, body: { ok: true } }
   }
@@ -480,6 +520,7 @@ function mutate(tableId, action, body, isManager) {
     const amount = round2(amountFor(computeTotals(t, priceOf), persona.id, scope))
     if (amount <= 0) return { status: 400, body: { error: 'nothing to pay' } }
     t.payments.push({ personaId: persona.id, amount, scope, at: Date.now() })
+    audit(null, 'оплата', tableId, `${persona.name} · ${amount} ₽`)
     broadcast(tableId)
     return { status: 200, body: { ok: true, amount } }
   }
@@ -489,7 +530,11 @@ function mutate(tableId, action, body, isManager) {
     const raw = Number(body.amount)
     const amount = Number.isFinite(raw) ? round2(Math.min(100_000, Math.max(0, raw))) : 0
     if (amount <= 0) return { status: 400, body: { error: 'bad amount' } }
-    t.tips.push({ personaId: persona.id, amount, at: Date.now() })
+    // Чаевые адресные: уходят официанту, за которым закреплён этот стол
+    const waiter = waiterOfTable(tableId)
+    t.tips.push({ personaId: persona.id, amount, at: Date.now(), waiterId: waiter?.id ?? null })
+    if (waiter) shift.tipsByStaff[waiter.id] = (shift.tipsByStaff[waiter.id] ?? 0) + amount
+    audit(null, 'чаевые', tableId, `${persona.name} → ${waiter?.name ?? 'официанту'} · ${amount} ₽`)
     broadcast(tableId)
     return { status: 200, body: { ok: true, amount } }
   }
@@ -506,9 +551,11 @@ function mutate(tableId, action, body, isManager) {
 }
 
 /** Общая обвязка экранов персонала: GET-снапшот и SSE на одном payload. */
-function staffFeed(req, res, url, payloadFn, subscribers) {
+function staffFeed(req, res, url, payloadFn, subscribers, permission) {
   if (req.method !== 'GET') return json(res, 405, { error: 'method' })
-  if (!managerOk(req, url)) return json(res, 401, { error: 'manager token required' })
+  const actor = actorFrom(req, url)
+  if (!actor) return json(res, 401, { error: 'staff login required' })
+  if (!allowed(actor, permission)) return json(res, 403, { error: 'role not allowed' })
   if (!url.pathname.endsWith('/stream')) return json(res, 200, payloadFn())
 
   res.writeHead(200, {
@@ -537,16 +584,52 @@ function staffFeed(req, res, url, payloadFn, subscribers) {
 
 // --- Роутер API ---
 async function handleApi(req, res, url) {
-  if (url.pathname === '/api/manager/check') {
-    return managerOk(req) ? json(res, 200, { ok: true }) : json(res, 401, { error: 'manager token required' })
+  // --- Персонал: вход по PIN, текущая сессия, выход ---
+  if (url.pathname === '/api/staff/login') {
+    if (req.method !== 'POST') return json(res, 405, { error: 'method' })
+    const ip = req.socket.remoteAddress ?? 'unknown'
+    if (!loginAllowed(ip)) return json(res, 429, { error: 'too many attempts' })
+    const body = await readBody(req).catch(() => null)
+    if (body === null) return json(res, 400, { error: 'bad json' })
+    const result = loginByPin(body.pin, ip)
+    if (!result) return json(res, 401, { error: 'wrong pin' })
+    audit(result.staff, 'вошёл в смену', null)
+    return json(res, 200, { token: result.token, staff: result.staff })
+  }
+
+  // /api/manager/check оставлен как алиас: им пользуются старые ссылки с ?mtoken=
+  if (url.pathname === '/api/staff/me' || url.pathname === '/api/manager/check') {
+    const actor = actorFrom(req, url)
+    if (!actor) return json(res, 401, { error: 'staff login required' })
+    return json(res, 200, { ok: true, staff: actor, shiftTips: round2(shift.tipsByStaff[actor.id] ?? 0) })
+  }
+
+  if (url.pathname === '/api/staff/logout') {
+    if (req.method !== 'POST') return json(res, 405, { error: 'method' })
+    dropSession(req.headers['x-staff-token'])
+    return json(res, 200, { ok: true })
+  }
+
+  if (url.pathname === '/api/staff/roster') {
+    const actor = actorFrom(req, url)
+    if (!allowed(actor, 'log')) return json(res, 403, { error: 'role not allowed' })
+    return json(res, 200, { staff: staffRoster() })
+  }
+
+  // Журнал смены — менеджеру
+  if (url.pathname === '/api/log') {
+    const actor = actorFrom(req, url)
+    if (!actor) return json(res, 401, { error: 'staff login required' })
+    if (!allowed(actor, 'log')) return json(res, 403, { error: 'role not allowed' })
+    return json(res, 200, { entries: [...auditLog].reverse().slice(0, 100) })
   }
 
   // Экраны персонала: зал и кухня. Снапшот или SSE — только с токеном
   if (url.pathname === '/api/hall' || url.pathname === '/api/hall/stream') {
-    return staffFeed(req, res, url, hallPayload, hallStreams)
+    return staffFeed(req, res, url, hallPayload, hallStreams, 'hall')
   }
   if (url.pathname === '/api/kitchen' || url.pathname === '/api/kitchen/stream') {
-    return staffFeed(req, res, url, kitchenPayload, kitchenStreams)
+    return staffFeed(req, res, url, kitchenPayload, kitchenStreams, 'kitchen')
   }
 
   // /api/t/:table[/action]
@@ -597,7 +680,7 @@ async function handleApi(req, res, url) {
     if (hit) return json(res, hit.status, hit.body)
   }
 
-  const out = mutate(tableId, action, body, managerOk(req))
+  const out = mutate(tableId, action, body, actorFrom(req))
   if (cacheKey && out.status === 200) idemRemember(cacheKey, out.status, out.body)
   return json(res, out.status, out.body)
 }

@@ -7,7 +7,7 @@ import { fmt } from '../format'
 const CHIPS = ['Вкусно', 'Быстро', 'Уютно']
 
 export function Done() {
-  const { ui, patch, totals } = useStore()
+  const { ui, patch, snap, totals } = useStore()
   const tip = tipAmount(ui)
   const remaining = totals.remaining
 
@@ -22,7 +22,7 @@ export function Done() {
           <div style={{ fontWeight: 300, fontSize: 44, letterSpacing: '-1.6px', lineHeight: 1 }}>{fmt(ui.lastPaid)}</div>
           {tip > 0 && (
             <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, marginTop: 12, background: 'var(--ep-accent-bg2)', color: 'var(--ep-accent)', borderRadius: 'var(--ep-r-pill)', padding: '6px 13px', fontSize: 13, fontWeight: 540 }}>
-              + {fmt(tip)} чаевых официанту {WAITER_NAME}у
+              + {fmt(tip)} чаевых официанту {snap?.waiter?.name ?? WAITER_NAME}
             </div>
           )}
         </div>

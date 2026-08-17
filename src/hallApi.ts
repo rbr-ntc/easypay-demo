@@ -1,4 +1,4 @@
-import { getManagerToken } from './manager'
+import { getStaffToken } from './staff'
 import type { HallCard, HallShift, HallSummary } from '../shared/hall.js'
 
 export interface HallPayload {
@@ -12,7 +12,7 @@ export interface HallPayload {
 
 export async function fetchHall(): Promise<HallPayload | null> {
   try {
-    const res = await fetch('/api/hall', { headers: { 'x-manager-token': getManagerToken() } })
+    const res = await fetch('/api/hall', { headers: { 'x-staff-token': getStaffToken() } })
     if (!res.ok) return null
     return (await res.json()) as HallPayload
   } catch (err) {
@@ -26,7 +26,7 @@ export async function fetchHall(): Promise<HallPayload | null> {
  * компромисс демо (в проде — сессионная кука для персонала).
  */
 export function subscribeHall(onData: (p: HallPayload) => void, onState: (ok: boolean) => void): () => void {
-  const es = new EventSource(`/api/hall/stream?token=${encodeURIComponent(getManagerToken())}`)
+  const es = new EventSource(`/api/hall/stream?token=${encodeURIComponent(getStaffToken())}`)
   es.onmessage = e => {
     try {
       onData(JSON.parse(e.data) as HallPayload)

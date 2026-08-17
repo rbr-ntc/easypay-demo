@@ -1,5 +1,6 @@
 import type { Animal } from './data'
-import { getManagerToken } from './manager'
+import { getStaffToken } from './staff'
+import type { Staff } from '../shared/roles.js'
 
 // Стол — только из ?t=... (его несёт QR со стола). Молчаливого дефолта нет:
 // без параметра гость увидит экран выбора стола, а не чужой заказ.
@@ -72,12 +73,13 @@ export interface Snapshot {
   payments: ServerPayment[]
   tips: ServerTip[]
   call: ServerCall | null
+  waiter: { id: string; name: string } | null
 }
 
-async function post<T>(action: string, body: object, opts: { manager?: boolean } = {}): Promise<T> {
+async function post<T>(action: string, body: object, opts: { staff?: boolean } = {}): Promise<T> {
   if (!API) throw new ApiError('стол не выбран', 400)
   const headers: Record<string, string> = { 'Content-Type': 'application/json' }
-  if (opts.manager) headers['x-manager-token'] = getManagerToken()
+  if (opts.staff) headers['x-staff-token'] = getStaffToken()
   const res = await fetch(`${API}/${action}`, {
     method: 'POST',
     headers,
@@ -116,23 +118,72 @@ export const apiTip = (personaId: string, amount: number, idemKey: string) =>
 export const apiCall = (personaId: string, reason: 'help' | 'bill' | 'water') =>
   post<{ ok: true }>('call', { personaId, reason })
 
-// Менеджерские действия — только с токеном
-export const apiServe = (uid: number) => post<{ ok: true }>('serve', { uid }, { manager: true })
+// Действия персонала — только с сессией сотрудника
+export const apiServe = (uid: number) => post<{ ok: true }>('serve', { uid }, { staff: true })
 
-export const apiAck = () => post<{ ok: true }>('ack', {}, { manager: true })
+export const apiAck = () => post<{ ok: true }>('ack', {}, { staff: true })
 
-export const apiClose = () => post<{ ok: true }>('close', {}, { manager: true })
+export const apiClose = () => post<{ ok: true }>('close', {}, { staff: true })
 
-export const apiReset = () => post<{ ok: true }>('reset', {}, { manager: true })
+export const apiReset = () => post<{ ok: true }>('reset', {}, { staff: true })
 
-export async function apiManagerCheck(token: string = getManagerToken()): Promise<boolean> {
-  if (!token) return false
+export interface Whoami {
+  staff: Staff
+  shiftTips: number
+}
+
+/** Кто сейчас в смене на этом устройстве. null — нужно войти. */
+export async function apiWhoami(token: string = getStaffToken()): Promise<Whoami | null> {
+  if (!token) return null
   try {
-    const res = await fetch('/api/manager/check', { headers: { 'x-manager-token': token } })
-    return res.ok
+    const res = await fetch('/api/staff/me', { headers: { 'x-staff-token': token } })
+    if (!res.ok) return null
+    return (await res.json()) as Whoami
   } catch {
-    return false
+    return null
   }
+}
+
+export async function apiStaffLogin(pin: string): Promise<{ token: string; staff: Staff } | null> {
+  try {
+    const res = await fetch('/api/staff/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ pin })
+    })
+    if (!res.ok) return null
+    return (await res.json()) as { token: string; staff: Staff }
+  } catch {
+    return null
+  }
+}
+
+export async function apiStaffLogout(token: string = getStaffToken()): Promise<void> {
+  try {
+    await fetch('/api/staff/logout', { method: 'POST', headers: { 'x-staff-token': token } })
+  } catch {
+    /* выходим локально в любом случае */
+  }
+}
+
+export async function apiShiftLog(): Promise<{ entries: LogEntry[] } | null> {
+  try {
+    const res = await fetch('/api/log', { headers: { 'x-staff-token': getStaffToken() } })
+    if (!res.ok) return null
+    return (await res.json()) as { entries: LogEntry[] }
+  } catch {
+    return null
+  }
+}
+
+export interface LogEntry {
+  at: number
+  staffId: string | null
+  name: string
+  role: string | null
+  action: string
+  tableId: string | null
+  detail: string | null
 }
 
 export function subscribe(onSnapshot: (s: Snapshot) => void, onState: (ok: boolean) => void): () => void {

@@ -2,11 +2,12 @@ import { useEffect, useState } from 'react'
 import { subscribeHall } from '../hallApi'
 import type { HallPayload } from '../hallApi'
 import { useStore } from '../store'
-import { ManagerLogin } from '../waiter/ManagerLogin'
 import { HallSummary } from './HallSummary'
+import { ShiftLog } from './ShiftLog'
 import { TableCard } from './TableCard'
 import { describeTable, summarizeHall } from '../../shared/hall.js'
 import type { HallCard } from '../../shared/hall.js'
+import { ownsTable, ROLE_LABEL } from '../../shared/roles.js'
 import '../hall.css'
 
 function useNow(stepMs = 1000) {
@@ -42,31 +43,17 @@ function AttentionBar({ cards, now }: { cards: HallCard[]; now: number }) {
 
 // Экран зала: план столов ресторана с живыми статусами и сводкой смены.
 export function Hall() {
-  const { managerAuthed, checkManager, signOutManager } = useStore()
+  const { staff, signOutStaff, may, shiftTips } = useStore()
   const [hall, setHall] = useState<HallPayload | null>(null)
   const [connected, setConnected] = useState(false)
+  const [onlyMine, setOnlyMine] = useState(staff?.role === 'waiter')
   const now = useNow()
 
-  useEffect(() => {
-    void checkManager()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  useEffect(() => subscribeHall(setHall, setConnected), [])
 
-  useEffect(() => {
-    if (!managerAuthed) return
-    return subscribeHall(setHall, setConnected)
-  }, [managerAuthed])
-
-  if (managerAuthed === null) {
-    return (
-      <div className="ep-w-login">
-        <div className="ep-w-login-card ep-w-login-hint">Проверяем доступ…</div>
-      </div>
-    )
-  }
-  if (!managerAuthed) return <ManagerLogin />
-
-  const cards = hall?.tables ?? []
+  const allCards = hall?.tables ?? []
+  const hasOwnTables = (staff?.tables ?? []).length > 0
+  const cards = onlyMine && hasOwnTables ? allCards.filter(c => ownsTable(staff, c.id)) : allCards
   // Считаем сводку локально: таймеры и «внимание» так обновляются каждую секунду
   const summary = summarizeHall(cards, hall?.shift ?? null, now)
   const zones = hall?.zones ?? []
@@ -81,16 +68,29 @@ export function Hall() {
           <div className="ep-h-sub">
             смена идёт{connected ? '' : ' · нет связи…'}
             {summary.closedTables > 0 ? ` · закрыто столов: ${summary.closedTables}` : ''}
+            {shiftTips > 0 ? ` · ваши чаевые: ${Math.round(shiftTips)} ₽` : ''}
           </div>
         </div>
         <div className="ep-h-spacer" />
-        <a className="ep-w-link" href={`${window.location.pathname}#/kitchen`}>
-          Кухня{summary.kitchenPending > 0 ? ` · ${summary.kitchenPending}` : ''}
-        </a>
+
+        {hasOwnTables && (
+          <button className="ep-w-btn ep-w-btn--quiet" onClick={() => setOnlyMine(!onlyMine)}>
+            {onlyMine ? 'Показать весь зал' : 'Только мои столы'}
+          </button>
+        )}
+        {may('kitchen') && (
+          <a className="ep-w-link" href={`${window.location.pathname}#/kitchen`}>
+            Кухня{summary.kitchenPending > 0 ? ` · ${summary.kitchenPending}` : ''}
+          </a>
+        )}
         <a className="ep-w-link" href={`${window.location.pathname}#/qr`}>
           QR-коды столов
         </a>
-        <button className="ep-w-btn ep-w-btn--quiet" onClick={signOutManager}>
+        <div className="ep-s-who">
+          <span className="ep-s-who-name">{staff?.name}</span>
+          <span className="ep-s-role">{staff ? ROLE_LABEL[staff.role] : ''}</span>
+        </div>
+        <button className="ep-w-btn ep-w-btn--quiet" onClick={() => void signOutStaff()}>
           Выйти
         </button>
       </div>
@@ -114,7 +114,7 @@ export function Hall() {
             </div>
             <div className="ep-h-grid">
               {zoneCards.map(card => (
-                <TableCard key={card.id} card={card} now={now} />
+                <TableCard key={card.id} card={card} now={now} mine={ownsTable(staff, card.id)} />
               ))}
             </div>
           </div>
@@ -129,11 +129,13 @@ export function Hall() {
           </div>
           <div className="ep-h-grid">
             {offPlan.map(card => (
-              <TableCard key={card.id} card={card} now={now} />
+              <TableCard key={card.id} card={card} now={now} mine={ownsTable(staff, card.id)} />
             ))}
           </div>
         </div>
       )}
+
+      {may('log') && <ShiftLog />}
     </div>
   )
 }

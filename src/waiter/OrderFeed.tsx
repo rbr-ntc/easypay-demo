@@ -8,11 +8,13 @@ export function OrderFeed({
   lines,
   personas,
   now,
+  canServe = true,
   onServe
 }: {
   lines: ServerLine[]
   personas: ServerPersona[]
   now: number
+  canServe?: boolean
   onServe: (uid: number) => void
 }) {
   const nameOf = (pid: string) => personas.find(p => p.id === pid)?.name ?? '?'
@@ -43,10 +45,14 @@ export function OrderFeed({
                 <span className="ep-w-state ep-w-state--served">
                   ПОДАНО{l.sentAt && l.servedAt ? ` · ${fmtDur(l.servedAt - l.sentAt)}` : ''}
                 </span>
-              ) : l.sent ? (
+              ) : l.sent && canServe ? (
                 <button className="ep-w-state ep-w-state--cooking" title="Отметить поданным" onClick={() => onServe(l.uid)}>
                   {l.startedAt ? 'ГОТОВИТСЯ' : 'В ОЧЕРЕДИ'} {l.sentAt ? fmtDur(now - l.sentAt) : ''} → ПОДАТЬ ✓
                 </button>
+              ) : l.sent ? (
+                <span className="ep-w-state ep-w-state--cooking">
+                  {l.startedAt ? 'ГОТОВИТСЯ' : 'В ОЧЕРЕДИ'} {l.sentAt ? fmtDur(now - l.sentAt) : ''}
+                </span>
               ) : (
                 <span className="ep-w-state">ЧЕРНОВИК</span>
               )}

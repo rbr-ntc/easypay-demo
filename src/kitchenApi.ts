@@ -1,4 +1,4 @@
-import { getManagerToken } from './manager'
+import { getStaffToken } from './staff'
 import type { KitchenSummary, KitchenTicket } from '../shared/kitchen.js'
 
 export interface KitchenPayload {
@@ -12,7 +12,7 @@ async function tableAction(tableId: string, action: 'start' | 'serve', uid: numb
   try {
     const res = await fetch(`/api/t/${encodeURIComponent(tableId)}/${action}`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-manager-token': getManagerToken() },
+      headers: { 'Content-Type': 'application/json', 'x-staff-token': getStaffToken() },
       body: JSON.stringify({ uid })
     })
     return res.ok
@@ -29,7 +29,7 @@ export function subscribeKitchen(
   onData: (p: KitchenPayload) => void,
   onState: (ok: boolean) => void
 ): () => void {
-  const es = new EventSource(`/api/kitchen/stream?token=${encodeURIComponent(getManagerToken())}`)
+  const es = new EventSource(`/api/kitchen/stream?token=${encodeURIComponent(getStaffToken())}`)
   es.onmessage = e => {
     try {
       onData(JSON.parse(e.data) as KitchenPayload)

@@ -14,6 +14,7 @@ import { Waiter } from './Waiter'
 import { Hall } from './hall/Hall'
 import { Kitchen } from './kitchen/Kitchen'
 import { TablePicker } from './screens/TablePicker'
+import { StaffGate } from './staff/StaffGate'
 import { tableId } from './api'
 import { seatsOfTable } from './hallConfig'
 import { QrTent } from './QrTent'
@@ -134,12 +135,18 @@ export default function App() {
     <StoreProvider>
       <ConnBanner />
       {route.startsWith('#/hall') ? (
-        <Hall />
+        <StaffGate need="hall">
+          <Hall />
+        </StaffGate>
       ) : route.startsWith('#/kitchen') ? (
-        <Kitchen />
+        <StaffGate need="kitchen">
+          <Kitchen />
+        </StaffGate>
       ) : route.startsWith('#/waiter') ? (
         tableId ? (
-          <Waiter />
+          <StaffGate need="table">
+            <Waiter />
+          </StaffGate>
         ) : (
           <NoTable />
         )
