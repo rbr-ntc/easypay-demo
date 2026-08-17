@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
+import { newIdemKey } from '../keys'
 import { findDish } from '../data'
 import type { Animal } from '../data'
 import { ANIMAL_LIST, Avatar } from '../avatars'
@@ -10,6 +11,8 @@ export function NameSheet() {
   const [name, setName] = useState('')
   const [animal, setAnimal] = useState<Animal>('fox')
   const [busy, setBusy] = useState(false)
+  // Повторное «Готово» после обрыва связи не создаёт вторую персону
+  const joinKey = useRef(newIdemKey())
   // У закрытого стола список гостей уже неактуален — join откроет новую сессию
   const others = snap?.status === 'open' ? snap.personas : []
   // Не предлагаем зверя, которого уже выбрали за столом
@@ -22,7 +25,7 @@ export function NameSheet() {
   const confirm = async () => {
     if (busy) return
     setBusy(true)
-    const persona = await join(name.trim() || `Гость ${others.length + 1}`, effectiveAnimal)
+    const persona = await join(name.trim() || `Гость ${others.length + 1}`, effectiveAnimal, joinKey.current)
     if (!persona) {
       setBusy(false)
       return

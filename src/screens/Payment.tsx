@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import { newIdemKey } from '../keys'
 import { NAVY, SBP_GRADIENT } from '../data'
 import { Avatar } from '../avatars'
 import { Mono, PrimaryButton, StickyFooter, WarnBanner } from '../ui'
@@ -61,6 +62,8 @@ function QrStage({ amount, onBack, onPaid }: { amount: number; onBack: () => voi
 
 export function Payment() {
   const { ui, patch, me, snap, totals, pay } = useStore()
+  // Ключ живёт до успешной оплаты: повтор после обрыва связи не создаёт второй платёж
+  const payKey = useRef(newIdemKey())
   if (!me || !snap) return null
   const amount = totals.scopeAmount(ui.payScope)
   const sbp = ui.payMethod === 'sbp'
@@ -91,8 +94,9 @@ export function Payment() {
 
   const doPay = async () => {
     patch({ payStage: 'processing' })
-    const paid = await pay(ui.payScope)
+    const paid = await pay(ui.payScope, payKey.current)
     if (paid > 0) {
+      payKey.current = newIdemKey() // следующая оплата — новый ключ
       setTimeout(() => patch({ payStage: 'form', screen: 'tips' }), 1400)
     } else {
       patch({ payStage: 'form' })

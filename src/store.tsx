@@ -1,8 +1,10 @@
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import {
+  ApiError,
   apiAddLine,
   apiClose,
+  apiManagerCheck,
   apiServe,
   apiJoin,
   apiPay,
@@ -13,8 +15,11 @@ import {
   tableId
 } from './api'
 import type { ServerPersona, Snapshot } from './api'
+import { clearManagerToken, getManagerToken, setManagerToken } from './manager'
+import { newIdemKey } from './keys'
 import { findDish } from './data'
 import type { Animal } from './data'
+import { amountFor, computeTotals as computeMoney } from '../shared/money.js'
 
 export type Screen = 'welcome' | 'menu' | 'cart' | 'status' | 'payment' | 'tips' | 'done'
 export type Sheet = null | 'dish' | 'name' | 'send'
@@ -98,44 +103,24 @@ export interface Totals {
   personaPaid: (pid: string) => number
 }
 
+// Считает ровно то же, что сервер: модель живёт в shared/money.js в одном экземпляре.
+// Клиентские суммы — только для отображения, списывает всегда сервер.
 export function computeTotals(snap: Snapshot | null, myId: string | null): Totals {
-  const personas = snap?.personas ?? []
-  const lines = snap?.lines ?? []
-  const payments = snap?.payments ?? []
-  const participants = Math.max(1, personas.length)
-  const price = (l: { dishId: string; qty: number }) => (findDish(l.dishId)?.price ?? 0) * l.qty
-  const sharedTotal = lines.filter(l => l.shared).reduce((s, l) => s + price(l), 0)
-  const personaOwn = (pid: string) =>
-    lines.filter(l => !l.shared && l.personaId === pid).reduce((s, l) => s + price(l), 0)
-  const ownAll = lines.filter(l => !l.shared).reduce((s, l) => s + price(l), 0)
-  const myShare = sharedTotal / participants
-  const myOwn = myId ? personaOwn(myId) : 0
-  const myTotal = myOwn + myShare
-  const tableTotal = ownAll + sharedTotal
-  const paidTotal = payments.reduce((s, p) => s + p.amount, 0)
-  const remaining = Math.max(0, tableTotal - paidTotal)
-  const personaPaid = (pid: string) => payments.filter(p => p.personaId === pid).reduce((s, p) => s + p.amount, 0)
-  const myPaid = myId ? personaPaid(myId) : 0
-  const myRemaining = Math.max(0, myTotal - myPaid)
-  const scopeAmount = (scope: PayScope) => {
-    if (scope === 'full') return remaining
-    if (scope === 'equal') return Math.min(remaining, tableTotal / participants)
-    return Math.min(myRemaining, remaining)
-  }
+  const core = computeMoney(snap ?? {}, id => findDish(id)?.price ?? 0)
   return {
-    participants,
-    sharedTotal,
-    myOwn,
-    myShare,
-    myTotal,
-    tableTotal,
-    paidTotal,
-    remaining,
-    myPaid,
-    myRemaining,
-    scopeAmount,
-    personaOwn,
-    personaPaid
+    participants: core.participants,
+    sharedTotal: core.sharedTotal,
+    myOwn: core.ownOf(myId),
+    myShare: core.share,
+    myTotal: core.totalOf(myId),
+    tableTotal: core.tableTotal,
+    paidTotal: core.paidTotal,
+    remaining: core.remaining,
+    myPaid: core.paidOf(myId),
+    myRemaining: core.remainingOf(myId),
+    scopeAmount: scope => amountFor(core, myId, scope),
+    personaOwn: pid => core.ownOf(pid),
+    personaPaid: pid => core.paidOf(pid)
   }
 }
 
@@ -154,15 +139,20 @@ interface Ctx {
   totals: Totals
   toast: (msg: string) => void
   // server actions
-  join: (name: string, animal: Animal) => Promise<ServerPersona | null>
+  join: (name: string, animal: Animal, idemKey: string) => Promise<ServerPersona | null>
   addLine: (dishId: string, qty: number, shared: boolean, asPersonaId?: string) => Promise<void>
   removeLine: (uid: number) => Promise<void>
   sendWave: (scope: 'mine' | 'all') => Promise<void>
-  pay: (scope: PayScope) => Promise<number>
-  serveLine: (uid: number) => Promise<void>
-  closeTable: () => Promise<void>
-  resetDemo: () => Promise<void>
+  pay: (scope: PayScope, idemKey: string) => Promise<number>
   forgetMe: () => void // «Я другой гость» — телефон передали новому человеку
+  // менеджерские действия (нужен токен)
+  managerAuthed: boolean | null
+  checkManager: () => Promise<void>
+  signInManager: (token: string) => Promise<boolean>
+  signOutManager: () => void
+  serveLine: (uid: number) => Promise<boolean>
+  closeTable: () => Promise<boolean>
+  resetDemo: () => Promise<boolean>
 }
 
 const StoreCtx = createContext<Ctx | null>(null)
@@ -172,6 +162,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [snap, setSnap] = useState<Snapshot | null>(null)
   const [connected, setConnected] = useState(false)
   const [identity, setIdentity] = useState<Identity | null>(loadIdentity)
+  const [managerAuthed, setManagerAuthed] = useState<boolean | null>(null)
   const personaId = identity?.personaId ?? null
   const toastTimer = useRef<ReturnType<typeof setTimeout>>()
 
@@ -224,6 +215,24 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     }
   }
 
+  // Менеджерские действия: 401 означает «токен протух/не тот» — просим войти заново
+  const managerGuard = async (fn: () => Promise<unknown>): Promise<boolean> => {
+    try {
+      await fn()
+      setManagerAuthed(true)
+      return true
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 401) {
+        setManagerAuthed(false)
+        toast('Нужен вход менеджера')
+      } else {
+        console.error('api error:', err)
+        toast('Не получилось — проверьте связь и попробуйте ещё раз')
+      }
+      return false
+    }
+  }
+
   const ctx: Ctx = {
     ui,
     patch,
@@ -232,9 +241,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     me,
     totals,
     toast,
-    join: (name, animal) =>
+    join: (name, animal, idemKey) =>
       guard(async () => {
-        const r = await apiJoin(name, animal)
+        const r = await apiJoin(name, animal, idemKey)
         const id: Identity = { sessionId: r.snapshot.sessionId ?? '', personaId: r.personaId }
         localStorage.setItem(ID_KEY, JSON.stringify(id))
         setIdentity(id)
@@ -245,7 +254,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       guard(async () => {
         const pid = asPersonaId ?? personaId
         if (!pid) return
-        await apiAddLine(pid, dishId, qty, shared)
+        await apiAddLine(pid, dishId, qty, shared, newIdemKey())
       }, undefined),
     removeLine: uid =>
       guard(async () => {
@@ -257,33 +266,41 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         if (!personaId) return
         await apiSend(personaId, scope)
       }, undefined),
-    pay: scope =>
+    pay: (scope, idemKey) =>
       guard(async () => {
         if (!personaId) return 0
-        const r = await apiPay(personaId, scope)
+        const r = await apiPay(personaId, scope, idemKey)
         patch({ lastPaid: r.amount })
         return r.amount
       }, 0),
-    serveLine: uid =>
-      guard(async () => {
-        await apiServe(uid)
-      }, undefined),
-    closeTable: () =>
-      guard(async () => {
-        await apiClose()
-      }, undefined),
-    resetDemo: () =>
-      guard(async () => {
-        await apiReset()
-        localStorage.removeItem(ID_KEY)
-        setIdentity(null)
-        setUi(initialUi)
-      }, undefined),
     forgetMe: () => {
       localStorage.removeItem(ID_KEY)
       setIdentity(null)
       setUi(initialUi)
-    }
+    },
+    managerAuthed,
+    checkManager: async () => {
+      setManagerAuthed(await apiManagerCheck())
+    },
+    signInManager: async (token: string) => {
+      const ok = await apiManagerCheck(token.trim())
+      if (ok) setManagerToken(token.trim())
+      setManagerAuthed(ok)
+      return ok
+    },
+    signOutManager: () => {
+      clearManagerToken()
+      setManagerAuthed(false)
+    },
+    serveLine: uid => managerGuard(() => apiServe(uid)),
+    closeTable: () => managerGuard(() => apiClose()),
+    resetDemo: () =>
+      managerGuard(async () => {
+        await apiReset()
+        localStorage.removeItem(ID_KEY)
+        setIdentity(null)
+        setUi(initialUi)
+      })
   }
 
   return <StoreCtx.Provider value={ctx}>{children}</StoreCtx.Provider>

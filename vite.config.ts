@@ -12,5 +12,14 @@ export default defineConfig({
         changeOrigin: true
       }
     }
+  },
+  // vite preview не наследует server.proxy — без этого превью осталось бы без API
+  preview: {
+    proxy: {
+      '/api': {
+        target: 'http://localhost:8787',
+        changeOrigin: true
+      }
+    }
   }
 })

@@ -7,7 +7,7 @@ import { fmt } from '../format'
 const CHIPS = ['Вкусно', 'Быстро', 'Уютно']
 
 export function Done() {
-  const { ui, patch, totals, resetDemo } = useStore()
+  const { ui, patch, totals } = useStore()
   const tip = tipAmount(ui)
   const remaining = totals.remaining
 

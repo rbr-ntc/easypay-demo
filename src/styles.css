@@ -20,6 +20,13 @@
   --ep-btn-border: 0px solid transparent;
   --ep-btn-tt: none;
   --ep-btn-ls: 0px;
+  /* Статусные цвета: оплачено / ждём (были захардкожены по экранам) */
+  --ep-ok: #1f9d55;
+  --ep-ok-bg: #e4f6ea;
+  --ep-warn: #b07a12;
+  --ep-warn-bg: #fff2da;
+  --ep-warn-border: #e8c87a;
+  --ep-page: #f4f4f6; /* фон рабочего экрана ресторана */
   --ep-r-pill: 50px;
   --ep-r-lg: 26px;
   --ep-r-card: 18px;

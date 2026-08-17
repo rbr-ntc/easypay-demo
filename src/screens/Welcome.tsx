@@ -5,7 +5,7 @@ import { useStore } from '../store'
 import { tableId } from '../api'
 
 export function Welcome() {
-  const { patch, me, snap, resetDemo, forgetMe } = useStore()
+  const { patch, me, snap, forgetMe } = useStore()
   // Гостей показываем только у открытого стола: у закрытого список уже неактуален
   const personas = snap?.status === 'open' ? snap.personas : []
 
@@ -110,10 +110,6 @@ export function Welcome() {
         </PrimaryButton>
         <div style={{ textAlign: 'center', fontSize: 11.5, color: 'var(--ep-muted)', marginTop: 11, lineHeight: 1.45 }}>
           Продолжая, вы соглашаетесь на обработку данных по <span style={{ textDecoration: 'underline' }}>152-ФЗ</span>
-          {' · '}
-          <span style={{ textDecoration: 'underline', cursor: 'pointer' }} onClick={() => void resetDemo()}>
-            сбросить стол
-          </span>
         </div>
       </div>
     </div>
