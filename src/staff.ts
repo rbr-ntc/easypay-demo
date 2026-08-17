@@ -4,6 +4,9 @@ import type { Staff } from '../shared/roles.js'
 // Раньше здесь лежал один общий токен менеджера на все экраны.
 const TOKEN_KEY = 'easypay-staff-token'
 const STAFF_KEY = 'easypay-staff'
+// Явный выход должен быть сильнее сервисной ссылки ?mtoken=: иначе перезагрузка
+// страницы молча возвращала менеджера и «Выйти» выглядел неработающим.
+const SIGNED_OUT_KEY = 'easypay-signed-out'
 
 /** Мастер-токен менеджера ссылкой `?mtoken=…` — совместимость со старыми демо-ссылками. */
 function readQueryToken(): string {
@@ -63,5 +66,31 @@ export function clearStaff(): void {
   }
 }
 
+export function markSignedOut(): void {
+  try {
+    sessionStorage.setItem(SIGNED_OUT_KEY, '1')
+  } catch {
+    /* приватный режим */
+  }
+}
+
+export function clearSignedOut(): void {
+  try {
+    sessionStorage.removeItem(SIGNED_OUT_KEY)
+  } catch {
+    /* см. выше */
+  }
+}
+
+export function wasSignedOut(): boolean {
+  try {
+    return sessionStorage.getItem(SIGNED_OUT_KEY) === '1'
+  } catch {
+    return false
+  }
+}
+
+// Токен из ссылки применяем только если в этой вкладке не выходили руками.
+// Параметр из адреса убираем в любом случае.
 const fromQuery = readQueryToken()
-if (fromQuery) setStaffToken(fromQuery)
+if (fromQuery && !wasSignedOut()) setStaffToken(fromQuery)

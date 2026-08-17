@@ -20,7 +20,7 @@ import {
   tableId
 } from './api'
 import type { ServerPersona, Snapshot } from './api'
-import { clearStaff, getCachedStaff, setCachedStaff, setStaffToken } from './staff'
+import { clearSignedOut, clearStaff, getCachedStaff, markSignedOut, setCachedStaff, setStaffToken } from './staff'
 import { can } from '../shared/roles.js'
 import type { Permission, Staff } from '../shared/roles.js'
 import { newIdemKey } from './keys'
@@ -161,7 +161,8 @@ interface Ctx {
   shiftTips: number
   may: (permission: Permission) => boolean
   checkStaff: () => Promise<void>
-  signInStaff: (pin: string) => Promise<boolean>
+  /** Возвращает HTTP-статус попытки: 200 — вошли, 401 — не тот PIN, 429 — перебор попыток. */
+  signInStaff: (pin: string) => Promise<number>
   signOutStaff: () => Promise<void>
   serveLine: (uid: number) => Promise<boolean>
   ackCall: () => Promise<boolean>
@@ -321,16 +322,18 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     },
     signInStaff: async (pin: string) => {
       const result = await apiStaffLogin(pin.trim())
-      if (!result) return false
+      if (!result.ok) return result.status
+      clearSignedOut()
       setStaffToken(result.token)
       setStaff(result.staff)
       setCachedStaff(result.staff)
       setStaffChecked(true)
-      return true
+      return 200
     },
     signOutStaff: async () => {
       await apiStaffLogout()
       clearStaff()
+      markSignedOut() // чтобы ссылка ?mtoken= не залогинила обратно при обновлении
       setStaff(null)
       setShiftTips(0)
       setStaffChecked(true)

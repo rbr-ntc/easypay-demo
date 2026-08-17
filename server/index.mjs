@@ -343,7 +343,13 @@ async function serveStatic(req, res, pathname) {
   try {
     const data = await readFile(filePath)
     const ext = path.extname(filePath)
-    res.writeHead(200, { 'Content-Type': MIME[ext] || 'application/octet-stream' })
+    // Файлы в assets/ содержат хеш в имени — их можно кэшировать вечно.
+    // index.html обязан перепроверяться, иначе тестировщик залипает на старой сборке.
+    const hashed = filePath.includes(`${path.sep}assets${path.sep}`)
+    res.writeHead(200, {
+      'Content-Type': MIME[ext] || 'application/octet-stream',
+      'Cache-Control': hashed ? 'public, max-age=31536000, immutable' : 'no-cache'
+    })
     res.end(data)
   } catch {
     res.writeHead(404)

@@ -144,17 +144,20 @@ export async function apiWhoami(token: string = getStaffToken()): Promise<Whoami
   }
 }
 
-export async function apiStaffLogin(pin: string): Promise<{ token: string; staff: Staff } | null> {
+export type LoginResult = { ok: true; token: string; staff: Staff } | { ok: false; status: number }
+
+export async function apiStaffLogin(pin: string): Promise<LoginResult> {
   try {
     const res = await fetch('/api/staff/login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ pin })
     })
-    if (!res.ok) return null
-    return (await res.json()) as { token: string; staff: Staff }
+    if (!res.ok) return { ok: false, status: res.status }
+    const body = (await res.json()) as { token: string; staff: Staff }
+    return { ok: true, ...body }
   } catch {
-    return null
+    return { ok: false, status: 0 } // связи нет
   }
 }
 
