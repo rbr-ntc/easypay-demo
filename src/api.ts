@@ -1,9 +1,15 @@
 import type { Animal } from './data'
 import { getManagerToken } from './manager'
 
-// Стол берём из ?t=..., по умолчанию 12
-export const tableId = new URLSearchParams(window.location.search).get('t') || '12'
-const API = `/api/t/${encodeURIComponent(tableId)}`
+// Стол — только из ?t=... (его несёт QR со стола). Молчаливого дефолта нет:
+// без параметра гость увидит экран выбора стола, а не чужой заказ.
+const TABLE_RE = /^[A-Za-z0-9_-]{1,24}$/
+const requested = new URLSearchParams(window.location.search).get('t')
+
+export const tableId: string | null = requested && TABLE_RE.test(requested) ? requested : null
+export const requestedTable = requested // как есть — чтобы показать «стол не найден»
+
+const API = tableId ? `/api/t/${encodeURIComponent(tableId)}` : null
 
 export class ApiError extends Error {
   readonly status: number
@@ -68,6 +74,7 @@ export interface Snapshot {
 }
 
 async function post<T>(action: string, body: object, opts: { manager?: boolean } = {}): Promise<T> {
+  if (!API) throw new ApiError('стол не выбран', 400)
   const headers: Record<string, string> = { 'Content-Type': 'application/json' }
   if (opts.manager) headers['x-manager-token'] = getManagerToken()
   const res = await fetch(`${API}/${action}`, {
@@ -128,6 +135,7 @@ export async function apiManagerCheck(token: string = getManagerToken()): Promis
 }
 
 export function subscribe(onSnapshot: (s: Snapshot) => void, onState: (ok: boolean) => void): () => void {
+  if (!API) return () => {} // стол не выбран — подписываться не на что
   const es = new EventSource(`${API}/stream`)
   es.onmessage = e => {
     try {

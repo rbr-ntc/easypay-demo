@@ -84,8 +84,8 @@ export function Hall() {
           </div>
         </div>
         <div className="ep-h-spacer" />
-        <a className="ep-w-link" href="#/">
-          гостевой экран
+        <a className="ep-w-link" href={`${window.location.pathname}#/qr`}>
+          QR-коды столов
         </a>
         <button className="ep-w-btn ep-w-btn--quiet" onClick={signOutManager}>
           Выйти

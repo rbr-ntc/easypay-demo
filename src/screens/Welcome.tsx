@@ -56,7 +56,7 @@ export function Welcome() {
             fontSize: 15
           }}
         >
-          Фото зала · Терраса
+          Фото зала · {HALL_LABEL}
         </div>
 
         {me ? (

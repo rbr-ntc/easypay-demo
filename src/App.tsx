@@ -12,12 +12,15 @@ import { NameSheet } from './sheets/NameSheet'
 import { SendSheet } from './sheets/SendSheet'
 import { Waiter } from './Waiter'
 import { Hall } from './hall/Hall'
+import { TablePicker } from './screens/TablePicker'
+import { tableId } from './api'
+import { seatsOfTable } from './hallConfig'
 import { QrTent } from './QrTent'
 import { Toast } from './ui'
 
 function ConnBanner() {
   const { connected, snap } = useStore()
-  if (connected || snap) return null
+  if (!tableId || connected || snap) return null
   return (
     <div style={{ position: 'fixed', top: 0, left: 0, right: 0, zIndex: 70, background: '#B00020', color: 'var(--ep-on-ink)', textAlign: 'center', fontSize: 12.5, padding: '7px 12px' }}>
       Подключаемся к серверу демо…
@@ -79,6 +82,21 @@ function Guest() {
   )
 }
 
+// Экран стола без ?t=… — заходить сюда нужно из зала
+function NoTable() {
+  return (
+    <div className="ep-w-login">
+      <div className="ep-w-login-card">
+        <div className="ep-w-login-title">Стол не выбран</div>
+        <div className="ep-w-login-hint">Экран стола открывается из зала — там видно, какие столы заняты.</div>
+        <a className="ep-w-btn ep-w-btn--primary" style={{ display: 'inline-block', lineHeight: '42px', textDecoration: 'none' }} href="#/hall">
+          Открыть зал
+        </a>
+      </div>
+    </div>
+  )
+}
+
 function useRoute(): string {
   const [route, setRoute] = useState(window.location.hash)
   useEffect(() => {
@@ -89,19 +107,43 @@ function useRoute(): string {
   return route
 }
 
+// Заголовок вкладки — по экрану и столу: раньше в титуле всегда стоял «Стол №12»
+function useDocumentTitle(route: string) {
+  useEffect(() => {
+    const table = tableId ? `Стол №${tableId}` : null
+    const title = route.startsWith('#/hall')
+      ? 'EasyPay · Зал'
+      : route.startsWith('#/waiter')
+        ? `EasyPay · ${table ?? 'стол не выбран'} — экран ресторана`
+        : route.startsWith('#/qr')
+          ? `EasyPay · QR ${table ?? 'столов'}`
+          : table
+            ? `EasyPay · ${table}`
+            : 'EasyPay · выберите стол'
+    document.title = title
+  }, [route])
+}
+
 export default function App() {
   const route = useRoute()
+  useDocumentTitle(route)
   return (
     <StoreProvider>
       <ConnBanner />
       {route.startsWith('#/hall') ? (
         <Hall />
       ) : route.startsWith('#/waiter') ? (
-        <Waiter />
+        tableId ? (
+          <Waiter />
+        ) : (
+          <NoTable />
+        )
       ) : route.startsWith('#/qr') ? (
         <QrTent />
-      ) : (
+      ) : tableId && seatsOfTable(tableId) !== null ? (
         <Guest />
+      ) : (
+        <TablePicker />
       )}
     </StoreProvider>
   )

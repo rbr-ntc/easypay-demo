@@ -53,7 +53,9 @@ export function Menu() {
             <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
               <Avatar animal={me.animal} size={32} label={me.name} />
               <div>
-                <div style={{ fontSize: 11, color: 'var(--ep-muted)' }}>Заказ · Стол №{tableId}</div>
+                <div style={{ fontSize: 11, color: 'var(--ep-muted)' }}>
+                  Стол №{tableId} · {HALL_LABEL}
+                </div>
                 <div style={{ fontWeight: 600, fontSize: 14.5, lineHeight: 1.1 }}>{me.name}</div>
               </div>
             </div>

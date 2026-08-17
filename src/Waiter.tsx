@@ -110,10 +110,13 @@ export function Waiter() {
           <button className="ep-w-btn ep-w-btn--quiet" onClick={signOutManager}>
             Выйти
           </button>
-          <a className="ep-w-link" href="#/hall">
+          <a className="ep-w-link" href={`${window.location.pathname}#/hall`}>
             ← в зал
           </a>
-          <a className="ep-w-link" href="#/">
+          <a className="ep-w-link" href={`?t=${encodeURIComponent(tableId ?? '')}#/qr`}>
+            QR стола
+          </a>
+          <a className="ep-w-link" href={`?t=${encodeURIComponent(tableId ?? '')}`}>
             гостевой экран
           </a>
         </div>

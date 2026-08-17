@@ -55,6 +55,6 @@ export function findDish(id: string): Dish | undefined {
 
 export const RESTAURANT = HALL_CONFIG.restaurant
 // Зона стола берётся из плана зала (src/hall.json), а не хардкодом
-export const HALL_LABEL = zoneOfTable(tableId) ?? 'Зал'
-export const TABLE_SEATS = seatsOfTable(tableId)
+export const HALL_LABEL = (tableId ? zoneOfTable(tableId) : null) ?? 'Зал'
+export const TABLE_SEATS = tableId ? seatsOfTable(tableId) : null
 export const WAITER_NAME = 'Максим'
