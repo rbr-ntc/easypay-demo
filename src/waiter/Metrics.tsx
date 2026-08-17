@@ -15,11 +15,13 @@ function Metric({ label, value, hint, accent }: { label: string; value: string; 
 export function MetricsRow({
   metrics,
   closed,
-  guests
+  guests,
+  tipsTotal
 }: {
   metrics: TableMetrics
   closed: boolean
   guests: number
+  tipsTotal: number
 }) {
   return (
     <div className="ep-w-metrics">
@@ -49,6 +51,12 @@ export function MetricsRow({
         label="Чек на гостя"
         value={metrics.perGuest ? fmt(metrics.perGuest) : '—'}
         hint={`счёт / ${guests} гост.`}
+      />
+      <Metric
+        label="Чаевые"
+        value={tipsTotal > 0 ? fmt(tipsTotal) : '—'}
+        hint="напрямую официанту"
+        accent={tipsTotal > 0}
       />
     </div>
   )

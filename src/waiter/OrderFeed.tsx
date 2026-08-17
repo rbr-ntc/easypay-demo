@@ -1,5 +1,5 @@
 import { Avatar, SharedIcon } from '../avatars'
-import { findDish } from '../data'
+import { findDish, optionsLabel } from '../data'
 import { fmt } from '../format'
 import { fmtDur } from './duration'
 import type { ServerLine, ServerPersona } from '../api'
@@ -36,6 +36,7 @@ export function OrderFeed({
                 </div>
                 <div className="ep-w-row-sub">
                   {l.shared ? `общее на стол · добавил(а) ${nameOf(l.personaId)}` : `${nameOf(l.personaId)} · своё`}
+                  {optionsLabel(l.options) ? ` · ${optionsLabel(l.options)}` : ''}
                 </div>
               </div>
               {l.served ? (

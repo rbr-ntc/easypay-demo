@@ -1,3 +1,5 @@
+import { useRef, useState } from 'react'
+import { newIdemKey } from '../keys'
 import { NAVY, WAITER_NAME } from '../data'
 import { PrimaryButton, StickyFooter } from '../ui'
 import { useStore, tipAmount } from '../store'
@@ -11,9 +13,19 @@ const PRESETS: { v: '0' | '5' | '10' | '15' | 'custom'; label: string; popular?:
 ]
 
 export function Tips() {
-  const { ui, patch } = useStore()
+  const { ui, patch, leaveTip } = useStore()
+  const [busy, setBusy] = useState(false)
+  const tipKey = useRef(newIdemKey())
   const paidNow = ui.lastPaid
   const tip = tipAmount(ui)
+
+  // Чаевые уходят на сервер отдельной строкой — официант видит их у себя на экране
+  const confirm = async () => {
+    if (busy) return
+    setBusy(true)
+    if (tip > 0) await leaveTip(tip, tipKey.current)
+    patch({ screen: 'done' })
+  }
 
   return (
     <div className="ep-screen">
@@ -97,8 +109,8 @@ export function Tips() {
       </div>
 
       <StickyFooter>
-        <PrimaryButton onClick={() => patch({ screen: 'done' })} style={{ fontSize: 17 }}>
-          {tip > 0 ? `Оставить ${fmt(tip)}` : 'Оставить чаевые'}
+        <PrimaryButton onClick={() => void confirm()} disabled={busy} style={{ fontSize: 17 }}>
+          {busy ? 'Отправляем…' : tip > 0 ? `Оставить ${fmt(tip)}` : 'Оставить чаевые'}
         </PrimaryButton>
         <button
           onClick={() => patch({ tip: '0', screen: 'done' })}

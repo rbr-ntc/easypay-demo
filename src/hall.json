@@ -1,0 +1,35 @@
+{
+  "restaurant": "Времена года",
+  "zones": [
+    {
+      "id": "terrace",
+      "name": "Терраса",
+      "tables": [
+        { "id": "12", "seats": 4 },
+        { "id": "13", "seats": 2 },
+        { "id": "14", "seats": 6 },
+        { "id": "15", "seats": 4 }
+      ]
+    },
+    {
+      "id": "main",
+      "name": "Основной зал",
+      "tables": [
+        { "id": "1", "seats": 2 },
+        { "id": "2", "seats": 2 },
+        { "id": "3", "seats": 4 },
+        { "id": "4", "seats": 4 },
+        { "id": "5", "seats": 6 },
+        { "id": "6", "seats": 8 }
+      ]
+    },
+    {
+      "id": "bar",
+      "name": "Бар",
+      "tables": [
+        { "id": "21", "seats": 2 },
+        { "id": "22", "seats": 2 }
+      ]
+    }
+  ]
+}

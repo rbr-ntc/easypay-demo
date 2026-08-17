@@ -11,6 +11,7 @@ import { DishSheet } from './sheets/DishSheet'
 import { NameSheet } from './sheets/NameSheet'
 import { SendSheet } from './sheets/SendSheet'
 import { Waiter } from './Waiter'
+import { Hall } from './hall/Hall'
 import { QrTent } from './QrTent'
 import { Toast } from './ui'
 
@@ -93,7 +94,15 @@ export default function App() {
   return (
     <StoreProvider>
       <ConnBanner />
-      {route.startsWith('#/waiter') ? <Waiter /> : route.startsWith('#/qr') ? <QrTent /> : <Guest />}
+      {route.startsWith('#/hall') ? (
+        <Hall />
+      ) : route.startsWith('#/waiter') ? (
+        <Waiter />
+      ) : route.startsWith('#/qr') ? (
+        <QrTent />
+      ) : (
+        <Guest />
+      )}
     </StoreProvider>
   )
 }

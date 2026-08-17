@@ -26,6 +26,7 @@ export interface ServerLine {
   uid: number
   dishId: string
   qty: number
+  options?: Record<string, string>
   shared: boolean
   personaId: string
   sent: boolean
@@ -41,6 +42,18 @@ export interface ServerPayment {
   at: number
 }
 
+export interface ServerTip {
+  personaId: string
+  amount: number
+  at: number
+}
+
+export interface ServerCall {
+  at: number
+  personaId: string
+  reason: string
+}
+
 export interface Snapshot {
   tableId: string
   sessionId: string | null
@@ -50,6 +63,8 @@ export interface Snapshot {
   personas: ServerPersona[]
   lines: ServerLine[]
   payments: ServerPayment[]
+  tips: ServerTip[]
+  call: ServerCall | null
 }
 
 async function post<T>(action: string, body: object, opts: { manager?: boolean } = {}): Promise<T> {
@@ -71,8 +86,14 @@ async function post<T>(action: string, body: object, opts: { manager?: boolean }
 export const apiJoin = (name: string, animal: Animal, idemKey: string) =>
   post<{ personaId: string; snapshot: Snapshot }>('join', { name, animal, idemKey })
 
-export const apiAddLine = (personaId: string, dishId: string, qty: number, shared: boolean, idemKey: string) =>
-  post<{ ok: true }>('lines', { personaId, dishId, qty, shared, idemKey })
+export const apiAddLine = (
+  personaId: string,
+  dishId: string,
+  qty: number,
+  shared: boolean,
+  options: Record<string, string>,
+  idemKey: string
+) => post<{ ok: true }>('lines', { personaId, dishId, qty, shared, options, idemKey })
 
 export const apiRemoveLine = (personaId: string, uid: number) => post<{ ok: true }>('remove', { personaId, uid })
 
@@ -81,8 +102,16 @@ export const apiSend = (personaId: string, scope: 'mine' | 'all') => post<{ ok: 
 export const apiPay = (personaId: string, scope: 'own' | 'equal' | 'full', idemKey: string) =>
   post<{ ok: true; amount: number }>('pay', { personaId, scope, idemKey })
 
+export const apiTip = (personaId: string, amount: number, idemKey: string) =>
+  post<{ ok: true; amount: number }>('tip', { personaId, amount, idemKey })
+
+export const apiCall = (personaId: string, reason: 'help' | 'bill' | 'water') =>
+  post<{ ok: true }>('call', { personaId, reason })
+
 // Менеджерские действия — только с токеном
 export const apiServe = (uid: number) => post<{ ok: true }>('serve', { uid }, { manager: true })
+
+export const apiAck = () => post<{ ok: true }>('ack', {}, { manager: true })
 
 export const apiClose = () => post<{ ok: true }>('close', {}, { manager: true })
 

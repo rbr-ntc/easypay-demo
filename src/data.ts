@@ -1,9 +1,19 @@
 import menuJson from './menu.json'
+import { tableId } from './api'
+import { HALL as HALL_CONFIG, seatsOfTable, zoneOfTable } from './hallConfig'
 
 export const NAVY = 'var(--ep-ink)'
 export const SBP_GRADIENT = 'linear-gradient(118deg,#5A1E9B 0%,#8E2A8C 46%,#E5097F 100%)'
 
 export type Animal = 'fox' | 'bear' | 'panda' | 'raccoon' | 'owl' | 'cat'
+
+/** Модификатор блюда: острота, прожарка, лёд. На цену не влияет — уходит на кухню. */
+export interface DishOption {
+  id: string
+  name: string
+  choices: string[]
+  default?: string
+}
 
 export interface Dish {
   id: string
@@ -15,6 +25,21 @@ export interface Dish {
   tags?: string[]
   photo?: boolean
   stop?: boolean
+  options?: DishOption[]
+}
+
+export type LineOptions = Record<string, string>
+
+/** «Остро · Без льда» — короткая подпись выбранных модификаторов. */
+export function optionsLabel(options: LineOptions | undefined): string {
+  const values = Object.values(options ?? {})
+  return values.length ? values.join(' · ') : ''
+}
+
+export function defaultOptions(dish: Dish): LineOptions {
+  const out: LineOptions = {}
+  for (const opt of dish.options ?? []) out[opt.id] = opt.default ?? opt.choices[0]
+  return out
 }
 
 export const MENU = menuJson as Record<string, Dish[]>
@@ -28,6 +53,8 @@ export function findDish(id: string): Dish | undefined {
   return undefined
 }
 
-export const RESTAURANT = 'Времена года'
-export const HALL_LABEL = 'Терраса'
+export const RESTAURANT = HALL_CONFIG.restaurant
+// Зона стола берётся из плана зала (src/hall.json), а не хардкодом
+export const HALL_LABEL = zoneOfTable(tableId) ?? 'Зал'
+export const TABLE_SEATS = seatsOfTable(tableId)
 export const WAITER_NAME = 'Максим'

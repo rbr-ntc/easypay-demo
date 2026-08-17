@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { findDish } from '../data'
+import { findDish, optionsLabel } from '../data'
 import { tableId } from '../api'
 import { Avatar, SharedIcon } from '../avatars'
 import { Card, GhostButton, PrimaryButton, StickyFooter } from '../ui'
@@ -52,10 +52,15 @@ export function Cart() {
             if (!d) return null
             return (
               <div key={l.uid} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: 13, background: 'var(--ep-surface-2)', borderRadius: 'var(--ep-r-sm)', marginBottom: 8 }}>
-                <span style={{ flex: 1, fontWeight: 520, fontSize: 15 }}>
-                  {d.name}
-                  {l.qty > 1 ? ` ×${l.qty}` : ''}
-                </span>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontWeight: 520, fontSize: 15 }}>
+                    {d.name}
+                    {l.qty > 1 ? ` ×${l.qty}` : ''}
+                  </div>
+                  {optionsLabel(l.options) && (
+                    <div style={{ fontSize: 12, color: 'var(--ep-muted)', marginTop: 2 }}>{optionsLabel(l.options)}</div>
+                  )}
+                </div>
                 <span style={{ fontSize: 14.5, color: 'var(--ep-text-2)' }}>{fmt(d.price * l.qty)}</span>
                 {l.sent ? (
                   <SentBadge />

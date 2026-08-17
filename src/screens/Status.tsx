@@ -1,4 +1,4 @@
-import { NAVY, findDish } from '../data'
+import { NAVY, findDish, optionsLabel } from '../data'
 import { Avatar, SharedIcon } from '../avatars'
 import { Card, GhostButton, PrimaryButton, StickyFooter, WarnBanner } from '../ui'
 import { useStore } from '../store'
@@ -6,7 +6,7 @@ import { useStore } from '../store'
 const STEP_LABELS = ['Принят', 'Готовится', 'Подано']
 
 export function Status() {
-  const { patch, me, snap } = useStore()
+  const { patch, me, snap, callWaiter } = useStore()
   if (!me || !snap) return null
 
   const sentOwn = snap.lines.filter(l => l.sent && !l.shared)
@@ -87,6 +87,7 @@ export function Status() {
                   <div style={{ fontSize: 12, color: 'var(--ep-muted)' }}>
                     {nameOf(l.personaId)}
                     {mine ? ' · своё' : ''}
+                    {optionsLabel(l.options) ? ` · ${optionsLabel(l.options)}` : ''}
                   </div>
                 </div>
                 <span style={{ fontFamily: 'ui-monospace, monospace', fontSize: 9.5, textTransform: 'uppercase', padding: '4px 9px', borderRadius: 'var(--ep-r-pill)', background: l.served ? '#E4F6EA' : '#FFF2DA', color: l.served ? '#1F9D55' : '#B07A12' }}>
@@ -126,7 +127,17 @@ export function Status() {
       </div>
 
       <StickyFooter>
-        <GhostButton onClick={() => patch({ screen: 'menu' })}>Дозаказать</GhostButton>
+        <div style={{ display: 'flex', gap: 10 }}>
+          <GhostButton style={{ flex: 1 }} onClick={() => patch({ screen: 'menu' })}>
+            Дозаказать
+          </GhostButton>
+          <GhostButton
+            style={{ flex: 1, opacity: snap.call ? 0.6 : 1 }}
+            onClick={() => !snap.call && void callWaiter('help')}
+          >
+            {snap.call ? 'Официант идёт ✓' : 'Позвать официанта'}
+          </GhostButton>
+        </div>
         <PrimaryButton onClick={() => patch({ screen: 'payment', payStage: 'form' })}>
           Оплатить, когда будете готовы
         </PrimaryButton>

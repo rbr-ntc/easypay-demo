@@ -8,6 +8,7 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import crypto from 'node:crypto'
 import { amountFor, computeTotals, PAY_SCOPES, round2 } from '../shared/money.js'
+import { summarizeHall } from '../shared/hall.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const DIST = path.join(__dirname, '..', 'dist')
@@ -19,14 +20,30 @@ const DISHES = new Map()
 for (const cat of Object.keys(MENU)) for (const d of MENU[cat]) DISHES.set(d.id, d)
 const priceOf = id => DISHES.get(id)?.price ?? 0
 
+// --- План зала (столы, зоны, посадка) ---
+const HALL = JSON.parse(readFileSync(path.join(__dirname, '..', 'src', 'hall.json'), 'utf8'))
+/** @type {Map<string, {zoneId:string, zoneName:string, seats:number}>} */
+const TABLE_META = new Map()
+for (const zone of HALL.zones) {
+  for (const t of zone.tables) TABLE_META.set(String(t.id), { zoneId: zone.id, zoneName: zone.name, seats: t.seats })
+}
+
+// Итоги смены: копятся при закрытии столов, обнуляются с рестартом (демо без БД)
+const shift = { tables: 0, revenue: 0, guests: 0, startedAt: Date.now() }
+
 // --- Токен менеджера: закрывает serve/close/reset от посторонних ---
 // Без переменной окружения генерируем случайный и печатаем в лог при старте.
 export const MANAGER_TOKEN = process.env.EASYPAY_MANAGER_TOKEN || crypto.randomBytes(9).toString('base64url')
 
-function managerOk(req) {
-  const given = Buffer.from(String(req.headers['x-manager-token'] ?? ''))
+function tokenMatches(token) {
+  const given = Buffer.from(String(token ?? ''))
   const want = Buffer.from(MANAGER_TOKEN)
   return given.length === want.length && crypto.timingSafeEqual(given, want)
+}
+
+// EventSource не умеет слать заголовки, поэтому для SSE зала токен принимаем и из query.
+function managerOk(req, url) {
+  return tokenMatches(req.headers['x-manager-token']) || (url ? tokenMatches(url.searchParams.get('token')) : false)
 }
 
 // --- Состояние столов ---
@@ -34,12 +51,15 @@ function managerOk(req) {
 const tables = new Map()
 /** @type {Map<string, Set<import('node:http').ServerResponse>>} */
 const streams = new Map()
+/** @type {Set<import('node:http').ServerResponse>} */
+const hallStreams = new Set()
 // Идемпотентность: ключ клиента -> уже отданный ответ. Ретрай платежа не создаёт второй платёж.
 /** @type {Map<string, {at:number, status:number, body:object}>} */
 const idempotency = new Map()
 
 const MAX_TABLES = 500
 const MAX_STREAMS_PER_TABLE = 50
+const MAX_HALL_STREAMS = 20
 const MAX_IDEM = 2000
 const IDEM_TTL = 10 * 60 * 1000
 
@@ -52,6 +72,8 @@ function emptySession(status = 'closed') {
     personas: [],
     lines: [],
     payments: [],
+    tips: [],
+    call: null, // активный вызов официанта: {at, personaId, reason}
     seq: 1
   }
 }
@@ -107,19 +129,92 @@ function snapshot(id) {
     closedAt: t.closedAt,
     personas: t.personas,
     lines: t.lines,
-    payments: t.payments
+    payments: t.payments,
+    tips: t.tips,
+    call: t.call
   }
 }
 
 function broadcast(id) {
   const subs = streams.get(id)
-  if (!subs) return
-  const data = `data: ${JSON.stringify(snapshot(id))}\n\n`
-  for (const res of subs) {
+  if (subs) {
+    const data = `data: ${JSON.stringify(snapshot(id))}\n\n`
+    for (const res of subs) {
+      try {
+        res.write(data)
+      } catch {
+        subs.delete(res)
+      }
+    }
+  }
+  broadcastHall() // любая мутация стола меняет картину зала
+}
+
+// --- Зал ---
+/** Компактная карточка стола: из неё shared/hall.js считает статус, таймеры и алерты. */
+function hallCard(id, meta) {
+  const t = getTable(id, false)
+  const money = computeTotals(t, priceOf)
+  const pending = t.lines.filter(l => l.sent && !l.served)
+  const sentAts = t.lines.filter(l => l.sentAt).map(l => l.sentAt)
+  const servedAts = t.lines.filter(l => l.servedAt).map(l => l.servedAt)
+  const payAts = t.payments.map(p => p.at)
+
+  return {
+    id,
+    zoneId: meta?.zoneId ?? 'other',
+    zoneName: meta?.zoneName ?? 'Вне плана',
+    seats: meta?.seats ?? 0,
+    status: t.status,
+    openedAt: t.openedAt,
+    closedAt: t.closedAt,
+    guests: t.personas.length,
+    personas: t.personas.map(p => ({ name: p.name, animal: p.animal })),
+    tableTotal: round2(money.tableTotal),
+    paidTotal: round2(money.paidTotal),
+    remaining: round2(money.remaining),
+    sentCount: t.lines.filter(l => l.sent).length,
+    kitchenPending: pending.length,
+    oldestPendingSentAt: pending.length ? Math.min(...pending.map(l => l.sentAt ?? 0)) : null,
+    lastSentAt: sentAts.length ? Math.max(...sentAts) : null,
+    lastServedAt: servedAts.length ? Math.max(...servedAts) : null,
+    lastPaidAt: payAts.length ? Math.max(...payAts) : null,
+    tipsTotal: round2(t.tips.reduce((s, x) => s + x.amount, 0)),
+    call: t.call
+      ? {
+          at: t.call.at,
+          reason: t.call.reason,
+          name: t.personas.find(p => p.id === t.call.personaId)?.name ?? 'Гость'
+        }
+      : null
+  }
+}
+
+function hallPayload() {
+  const now = Date.now()
+  const cards = [...TABLE_META].map(([id, meta]) => hallCard(id, meta))
+  // Столы, которых нет в плане зала (гость открыл произвольный ?t=): показываем отдельно
+  for (const [id, t] of tables) {
+    if (!TABLE_META.has(id) && t.status === 'open') cards.push(hallCard(id, null))
+  }
+  return {
+    restaurant: HALL.restaurant,
+    zones: HALL.zones.map(z => ({ id: z.id, name: z.name })),
+    tables: cards,
+    shift: { tables: shift.tables, revenue: round2(shift.revenue), guests: shift.guests, startedAt: shift.startedAt },
+    summary: summarizeHall(cards, shift, now),
+    now
+  }
+}
+
+function broadcastHall() {
+  if (hallStreams.size === 0) return
+  const data = `data: ${JSON.stringify(hallPayload())}\n\n`
+  for (const res of hallStreams) {
     try {
       res.write(data)
     } catch {
-      subs.delete(res)
+      hallStreams.delete(res)
     }
   }
 }
@@ -184,8 +279,8 @@ async function serveStatic(req, res, pathname) {
 const NAME_MAX = 30
 const ANIMALS = new Set(['fox', 'bear', 'panda', 'raccoon', 'owl', 'cat'])
 const TABLE_RE = /^[A-Za-z0-9_-]{1,24}$/
-const MANAGER_ACTIONS = new Set(['serve', 'close', 'reset'])
-const IDEMPOTENT_ACTIONS = new Set(['join', 'lines', 'pay'])
+const MANAGER_ACTIONS = new Set(['serve', 'close', 'reset', 'ack'])
+const IDEMPOTENT_ACTIONS = new Set(['join', 'lines', 'pay', 'tip'])
 
 function sanitizeName(name) {
   return String(name ?? '')
@@ -205,6 +300,20 @@ function asUid(v) {
   return Number.isInteger(n) && n > 0 ? n : null
 }
 
+/** Модификаторы блюда (острота, прожарка): принимаем только значения из меню. */
+function sanitizeOptions(dish, raw) {
+  const spec = dish.options ?? []
+  if (spec.length === 0) return {}
+  const out = {}
+  for (const opt of spec) {
+    const given = raw && typeof raw === 'object' ? raw[opt.id] : null
+    out[opt.id] = opt.choices.includes(given) ? given : opt.default ?? opt.choices[0]
+  }
+  return out
+}
+
+const CALL_REASONS = new Set(['help', 'bill', 'water'])
+
 // --- Мутации (POST): возвращают {status, body}, чтобы ответ можно было закэшировать по idemKey ---
 function mutate(tableId, action, body, isManager) {
   const t = getTable(tableId, true)
@@ -222,8 +331,22 @@ function mutate(tableId, action, body, isManager) {
       return { status: 200, body: { ok: true } }
     }
 
+    if (action === 'ack') {
+      // Персонал принял вызов гостя
+      t.call = null
+      broadcast(tableId)
+      return { status: 200, body: { ok: true } }
+    }
+
     if (action === 'close') {
       // Менеджер закрывает стол: сессия замораживается, следующий join откроет новую
+      if (t.status === 'open') {
+        // Итоги смены: закрытый стол уходит в статистику зала
+        const money = computeTotals(t, priceOf)
+        shift.tables += 1
+        shift.revenue += money.paidTotal
+        shift.guests += t.personas.length
+      }
       t.status = 'closed'
       t.closedAt = Date.now()
       broadcast(tableId)
@@ -263,6 +386,7 @@ function mutate(tableId, action, body, isManager) {
       uid: t.seq++,
       dishId: dish.id,
       qty,
+      options: sanitizeOptions(dish, body.options),
       shared: !!body.shared,
       personaId: persona.id,
       sent: false,
@@ -306,6 +430,24 @@ function mutate(tableId, action, body, isManager) {
     return { status: 200, body: { ok: true, amount } }
   }
 
+  if (action === 'tip') {
+    // Чаевые не входят в счёт стола: идут официанту отдельной строкой
+    const raw = Number(body.amount)
+    const amount = Number.isFinite(raw) ? round2(Math.min(100_000, Math.max(0, raw))) : 0
+    if (amount <= 0) return { status: 400, body: { error: 'bad amount' } }
+    t.tips.push({ personaId: persona.id, amount, at: Date.now() })
+    broadcast(tableId)
+    return { status: 200, body: { ok: true, amount } }
+  }
+
+  if (action === 'call') {
+    // Вызов официанта: горит в зале и на экране стола, пока персонал не примет
+    const reason = CALL_REASONS.has(body.reason) ? body.reason : 'help'
+    t.call = { at: Date.now(), personaId: persona.id, reason }
+    broadcast(tableId)
+    return { status: 200, body: { ok: true } }
+  }
+
   return { status: 404, body: { error: 'unknown action' } }
 }
 
@@ -313,6 +455,37 @@ function mutate(tableId, action, body, isManager) {
 async function handleApi(req, res, url) {
   if (url.pathname === '/api/manager/check') {
     return managerOk(req) ? json(res, 200, { ok: true }) : json(res, 401, { error: 'manager token required' })
+  }
+
+  // Зал целиком — только для персонала
+  if (url.pathname === '/api/hall' || url.pathname === '/api/hall/stream') {
+    if (req.method !== 'GET') return json(res, 405, { error: 'method' })
+    if (!managerOk(req, url)) return json(res, 401, { error: 'manager token required' })
+    if (url.pathname === '/api/hall') return json(res, 200, hallPayload())
+
+    res.writeHead(200, {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-store',
+      Connection: 'keep-alive'
+    })
+    res.write(`data: ${JSON.stringify(hallPayload())}\n\n`)
+    if (hallStreams.size >= MAX_HALL_STREAMS) {
+      res.end()
+      return
+    }
+    hallStreams.add(res)
+    const ping = setInterval(() => {
+      try {
+        res.write(': ping\n\n')
+      } catch {
+        /* closed */
+      }
+    }, 25000)
+    req.on('close', () => {
+      clearInterval(ping)
+      hallStreams.delete(res)
+    })
+    return
   }
 
   // /api/t/:table[/action]

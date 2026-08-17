@@ -9,13 +9,25 @@ import { MetricsRow } from './waiter/Metrics'
 import { OrderFeed } from './waiter/OrderFeed'
 import { PaymentsList } from './waiter/PaymentsList'
 import { computeMetrics } from './waiter/tableMetrics'
+import { fmtDur } from './waiter/duration'
+import { CALL_LABEL } from '../shared/hall.js'
 import './waiter.css'
 
 // Экран менеджера/официанта: живой снапшот стола со всех телефонов.
 // Действия менеджера закрыты токеном — см. ManagerLogin и server/index.mjs.
 export function Waiter() {
-  const { snap, connected, totals, closeTable, serveLine, resetDemo, managerAuthed, checkManager, signOutManager } =
-    useStore()
+  const {
+    snap,
+    connected,
+    totals,
+    closeTable,
+    serveLine,
+    ackCall,
+    resetDemo,
+    managerAuthed,
+    checkManager,
+    signOutManager
+  } = useStore()
   const [now, setNow] = useState(Date.now())
 
   useEffect(() => {
@@ -45,6 +57,7 @@ export function Waiter() {
   const fullyPaid = totals.tableTotal > 0 && totals.remaining < 0.01
   const progress = totals.tableTotal > 0 ? Math.min(100, Math.round((totals.paidTotal / totals.tableTotal) * 100)) : 0
   const metrics = computeMetrics(snap, totals, now)
+  const tipsTotal = (snap?.tips ?? []).reduce((s, t) => s + t.amount, 0)
 
   const confirmClose = () => {
     const question = fullyPaid ? 'Закрыть стол?' : `По столу осталось ${fmt(totals.remaining)}. Всё равно закрыть?`
@@ -97,13 +110,31 @@ export function Waiter() {
           <button className="ep-w-btn ep-w-btn--quiet" onClick={signOutManager}>
             Выйти
           </button>
+          <a className="ep-w-link" href="#/hall">
+            ← в зал
+          </a>
           <a className="ep-w-link" href="#/">
-            ← гостевой экран
+            гостевой экран
           </a>
         </div>
       </div>
 
-      {(snap?.openedAt || closed) && <MetricsRow metrics={metrics} closed={closed} guests={personas.length} />}
+      {snap?.call && (
+        <div className="ep-w-call">
+          <span className="ep-w-call-dot ep-pulse" />
+          <span className="ep-w-call-text">
+            <b>{personas.find(p => p.id === snap.call?.personaId)?.name ?? 'Гость'}</b>{' '}
+            {CALL_LABEL[snap.call.reason] ?? CALL_LABEL.help} · {fmtDur(now - snap.call.at)}
+          </span>
+          <button className="ep-w-btn ep-w-btn--ok" onClick={() => void ackCall()}>
+            Принял
+          </button>
+        </div>
+      )}
+
+      {(snap?.openedAt || closed) && (
+        <MetricsRow metrics={metrics} closed={closed} guests={personas.length} tipsTotal={tipsTotal} />
+      )}
 
       <div className="ep-w-body">
         <div className="ep-w-side">

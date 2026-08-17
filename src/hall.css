@@ -1,0 +1,343 @@
+/* Экран зала: план столов, живые статусы, сводка смены. */
+
+.ep-h {
+  min-height: 100%;
+  background: var(--ep-page);
+  padding-bottom: 40px;
+}
+
+.ep-h-top {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding: 16px 24px;
+  background: var(--ep-opaque);
+  border-bottom: 1px solid var(--ep-border);
+}
+
+.ep-h-title {
+  font-weight: 680;
+  font-size: 19px;
+  letter-spacing: -0.4px;
+}
+
+.ep-h-sub {
+  font-size: 12.5px;
+  color: var(--ep-muted);
+}
+
+.ep-h-spacer {
+  flex: 1;
+}
+
+/* ===== Сводка ===== */
+.ep-h-summary {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 16px 24px 6px;
+}
+
+.ep-h-stat {
+  flex: 1 1 150px;
+  min-width: 150px;
+  background: var(--ep-surface);
+  border: 1px solid var(--ep-border);
+  border-radius: var(--ep-r-card);
+  padding: 12px 14px;
+}
+
+.ep-h-stat-label {
+  font-family: ui-monospace, SFMono-Regular, monospace;
+  font-size: 9.5px;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  color: var(--ep-muted);
+  margin-bottom: 5px;
+}
+
+.ep-h-stat-value {
+  font-weight: 680;
+  font-size: 22px;
+  letter-spacing: -0.6px;
+}
+
+.ep-h-stat-hint {
+  font-size: 11px;
+  color: var(--ep-muted);
+  margin-top: 3px;
+}
+
+.ep-h-stat--alert .ep-h-stat-value {
+  color: var(--ep-danger);
+}
+
+.ep-h-stat--money .ep-h-stat-value {
+  color: var(--ep-ok);
+}
+
+/* ===== Полоса внимания ===== */
+.ep-h-attention {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin: 12px 24px 0;
+  padding: 12px 14px;
+  background: var(--ep-warn-bg);
+  border: 1px solid var(--ep-warn-border);
+  border-radius: var(--ep-r-card);
+}
+
+.ep-h-attention-title {
+  font-family: ui-monospace, SFMono-Regular, monospace;
+  font-size: 10px;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  color: var(--ep-warn);
+}
+
+.ep-h-attention-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: var(--ep-r-pill);
+  background: var(--ep-surface);
+  border: 1px solid var(--ep-warn-border);
+  color: var(--ep-ink);
+  font-size: 13px;
+  font-weight: 540;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.ep-h-attention-chip b {
+  font-weight: 700;
+}
+
+/* ===== Зоны и сетка столов ===== */
+.ep-h-zone {
+  padding: 22px 24px 0;
+}
+
+.ep-h-zone-title {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.ep-h-zone-name {
+  font-family: ui-monospace, SFMono-Regular, monospace;
+  font-size: 11px;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  color: var(--ep-muted);
+}
+
+.ep-h-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: 12px;
+}
+
+/* ===== Карточка стола ===== */
+.ep-h-card {
+  display: block;
+  position: relative;
+  overflow: hidden;
+  padding: 14px 15px 13px;
+  border-radius: var(--ep-r-card);
+  border: 1px solid var(--ep-border);
+  background: var(--ep-surface);
+  color: inherit;
+  text-decoration: none;
+  transition: transform 120ms, box-shadow 120ms;
+}
+
+.ep-h-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 22px rgba(20, 18, 45, 0.09);
+}
+
+.ep-h-card::before {
+  content: '';
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 4px;
+  background: var(--ep-status, var(--ep-border));
+}
+
+.ep-h-card--free {
+  background: var(--ep-surface-2);
+  border-style: dashed;
+}
+
+.ep-h-card-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.ep-h-card-num {
+  font-weight: 700;
+  font-size: 20px;
+  letter-spacing: -0.5px;
+}
+
+.ep-h-card-seats {
+  font-size: 12px;
+  color: var(--ep-muted);
+}
+
+.ep-h-card-timer {
+  margin-left: auto;
+  font-family: ui-monospace, SFMono-Regular, monospace;
+  font-size: 11.5px;
+  color: var(--ep-muted);
+}
+
+.ep-h-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: var(--ep-r-pill);
+  font-size: 12px;
+  font-weight: 600;
+  background: var(--ep-status-bg, var(--ep-soft));
+  color: var(--ep-status, var(--ep-muted));
+}
+
+.ep-h-status-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.ep-h-card-guests {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 11px;
+  min-height: 28px;
+}
+
+.ep-h-card-avatars {
+  display: flex;
+}
+
+.ep-h-card-avatars > * + * {
+  margin-left: -7px;
+}
+
+.ep-h-card-names {
+  font-size: 12px;
+  color: var(--ep-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ep-h-card-money {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-top: 11px;
+  padding-top: 10px;
+  border-top: 1px solid var(--ep-soft);
+}
+
+.ep-h-card-total {
+  font-weight: 660;
+  font-size: 16px;
+}
+
+.ep-h-card-rest {
+  font-size: 12px;
+  color: var(--ep-muted);
+}
+
+.ep-h-card-rest--ok {
+  color: var(--ep-ok);
+  font-weight: 600;
+}
+
+.ep-h-card-alerts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 10px;
+}
+
+.ep-h-alert {
+  font-size: 11px;
+  font-weight: 560;
+  padding: 3px 8px;
+  border-radius: var(--ep-r-pill);
+  background: var(--ep-soft);
+  color: var(--ep-muted);
+}
+
+.ep-h-alert--warn {
+  background: var(--ep-warn-bg);
+  color: var(--ep-warn);
+}
+
+.ep-h-alert--danger {
+  background: var(--ep-danger-bg);
+  color: var(--ep-danger);
+}
+
+.ep-h-alert--ok {
+  background: var(--ep-ok-bg);
+  color: var(--ep-ok);
+}
+
+/* Цвет статуса задаётся переменными — карточка красится целиком */
+.ep-h-card[data-status='seated'] {
+  --ep-status: #2f6fd0;
+  --ep-status-bg: #e8f0fc;
+}
+
+.ep-h-card[data-status='cooking'] {
+  --ep-status: var(--ep-warn);
+  --ep-status-bg: var(--ep-warn-bg);
+}
+
+.ep-h-card[data-status='served'] {
+  --ep-status: var(--ep-accent);
+  --ep-status-bg: var(--ep-accent-bg2);
+}
+
+.ep-h-card[data-status='paying'] {
+  --ep-status: var(--ep-accent);
+  --ep-status-bg: var(--ep-accent-bg2);
+}
+
+.ep-h-card[data-status='paid'] {
+  --ep-status: var(--ep-ok);
+  --ep-status-bg: var(--ep-ok-bg);
+}
+
+.ep-h-card[data-status='dirty'] {
+  --ep-status: var(--ep-muted);
+  --ep-status-bg: var(--ep-soft);
+}
+
+.ep-h-card[data-status='free'] {
+  --ep-status: var(--ep-muted);
+  --ep-status-bg: var(--ep-soft);
+}
+
+.ep-h-empty {
+  font-size: 13.5px;
+  color: var(--ep-muted);
+}

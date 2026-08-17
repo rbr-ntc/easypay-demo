@@ -2,7 +2,9 @@ import { createContext, useContext, useEffect, useMemo, useRef, useState } from 
 import type { ReactNode } from 'react'
 import {
   ApiError,
+  apiAck,
   apiAddLine,
+  apiCall,
   apiClose,
   apiManagerCheck,
   apiServe,
@@ -11,6 +13,7 @@ import {
   apiRemoveLine,
   apiReset,
   apiSend,
+  apiTip,
   subscribe,
   tableId
 } from './api'
@@ -18,7 +21,7 @@ import type { ServerPersona, Snapshot } from './api'
 import { clearManagerToken, getManagerToken, setManagerToken } from './manager'
 import { newIdemKey } from './keys'
 import { findDish } from './data'
-import type { Animal } from './data'
+import type { Animal, LineOptions } from './data'
 import { amountFor, computeTotals as computeMoney } from '../shared/money.js'
 
 export type Screen = 'welcome' | 'menu' | 'cart' | 'status' | 'payment' | 'tips' | 'done'
@@ -31,6 +34,7 @@ export interface PendingAdd {
   dishId: string
   qty: number
   shared: boolean
+  options: LineOptions
 }
 
 export interface UiState {
@@ -140,10 +144,12 @@ interface Ctx {
   toast: (msg: string) => void
   // server actions
   join: (name: string, animal: Animal, idemKey: string) => Promise<ServerPersona | null>
-  addLine: (dishId: string, qty: number, shared: boolean, asPersonaId?: string) => Promise<void>
+  addLine: (dishId: string, qty: number, shared: boolean, options: LineOptions, asPersonaId?: string) => Promise<void>
   removeLine: (uid: number) => Promise<void>
   sendWave: (scope: 'mine' | 'all') => Promise<void>
   pay: (scope: PayScope, idemKey: string) => Promise<number>
+  leaveTip: (amount: number, idemKey: string) => Promise<number>
+  callWaiter: (reason: 'help' | 'bill' | 'water') => Promise<void>
   forgetMe: () => void // «Я другой гость» — телефон передали новому человеку
   // менеджерские действия (нужен токен)
   managerAuthed: boolean | null
@@ -151,6 +157,7 @@ interface Ctx {
   signInManager: (token: string) => Promise<boolean>
   signOutManager: () => void
   serveLine: (uid: number) => Promise<boolean>
+  ackCall: () => Promise<boolean>
   closeTable: () => Promise<boolean>
   resetDemo: () => Promise<boolean>
 }
@@ -250,11 +257,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         setSnap(r.snapshot)
         return r.snapshot.personas.find(p => p.id === r.personaId) ?? null
       }, null),
-    addLine: (dishId, qty, shared, asPersonaId) =>
+    addLine: (dishId, qty, shared, options, asPersonaId) =>
       guard(async () => {
         const pid = asPersonaId ?? personaId
         if (!pid) return
-        await apiAddLine(pid, dishId, qty, shared, newIdemKey())
+        await apiAddLine(pid, dishId, qty, shared, options, newIdemKey())
       }, undefined),
     removeLine: uid =>
       guard(async () => {
@@ -273,6 +280,18 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         patch({ lastPaid: r.amount })
         return r.amount
       }, 0),
+    leaveTip: (amount, idemKey) =>
+      guard(async () => {
+        if (!personaId || amount <= 0) return 0
+        const r = await apiTip(personaId, amount, idemKey)
+        return r.amount
+      }, 0),
+    callWaiter: reason =>
+      guard(async () => {
+        if (!personaId) return
+        await apiCall(personaId, reason)
+        toast('Официант уже идёт 👋')
+      }, undefined),
     forgetMe: () => {
       localStorage.removeItem(ID_KEY)
       setIdentity(null)
@@ -293,6 +312,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       setManagerAuthed(false)
     },
     serveLine: uid => managerGuard(() => apiServe(uid)),
+    ackCall: () => managerGuard(() => apiAck()),
     closeTable: () => managerGuard(() => apiClose()),
     resetDemo: () =>
       managerGuard(async () => {

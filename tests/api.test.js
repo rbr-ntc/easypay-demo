@@ -224,6 +224,129 @@ test('кривой id стола и битый JSON отбиваются', async
   assert.equal(res.status, 400)
 })
 
+test('модификаторы блюда сохраняются, чужие значения заменяются дефолтом', async () => {
+  const table = freshTable()
+  const anya = await joinGuest(table, 'Аня', 'fox')
+
+  await post(table, 'lines', { personaId: anya, dishId: 'steak', qty: 1, options: { roast: 'Rare' } })
+  await post(table, 'lines', { personaId: anya, dishId: 'tomyam', qty: 1, options: { spice: 'ядрёно' } })
+  await post(table, 'lines', { personaId: anya, dishId: 'springrolls', qty: 1, options: { spice: 'Остро' } })
+
+  const snap = await snapshot(table)
+  assert.deepEqual(snap.lines[0].options, { roast: 'Rare' })
+  assert.deepEqual(snap.lines[1].options, { spice: 'Средне' }, 'неизвестное значение → дефолт из меню')
+  assert.deepEqual(snap.lines[2].options, {}, 'у блюда без модификаторов их не появится')
+})
+
+test('чаевые уходят официанту и не попадают в счёт стола', async () => {
+  const table = freshTable()
+  const anya = await joinGuest(table, 'Аня', 'fox')
+  await post(table, 'lines', { personaId: anya, dishId: 'tomyam', qty: 1 })
+  await post(table, 'pay', { personaId: anya, scope: 'full', idemKey: 'tip-pay' })
+
+  const res = await post(table, 'tip', { personaId: anya, amount: 69, idemKey: 'tip-1' })
+  assert.equal(res.status, 200)
+  await post(table, 'tip', { personaId: anya, amount: 69, idemKey: 'tip-1' })
+
+  const snap = await snapshot(table)
+  assert.equal(snap.tips.length, 1, 'повтор с тем же ключом не удваивает чаевые')
+  assert.equal(snap.tips[0].amount, 69)
+  assert.equal(snap.payments.reduce((s, p) => s + p.amount, 0), 690, 'счёт стола не изменился')
+
+  assert.equal((await post(table, 'tip', { personaId: anya, amount: -5, idemKey: 'tip-2' })).status, 400)
+})
+
+test('гость зовёт официанта, вызов снимает только персонал', async () => {
+  const table = '13' // стол из плана зала — проверяем и карточку зала
+  const anya = await joinGuest(table, 'Аня', 'fox')
+
+  await post(table, 'call', { personaId: anya, reason: 'bill' })
+  const called = await snapshot(table)
+  assert.equal(called.call.reason, 'bill')
+  assert.equal(called.call.personaId, anya)
+
+  const hall = await (await fetch(`${base}/api/hall`, { headers: { 'x-manager-token': TOKEN } })).json()
+  const card = hall.tables.find(t => t.id === table)
+  assert.equal(card.call.name, 'Аня')
+
+  assert.equal((await post(table, 'ack', {})).status, 401, 'гость не может снять вызов')
+  assert.equal((await post(table, 'ack', {}, TOKEN)).status, 200)
+  assert.equal((await snapshot(table)).call, null)
+})
+
+test('зал отдаётся только персоналу и содержит план столов', async () => {
+  assert.equal((await fetch(`${base}/api/hall`)).status, 401)
+
+  const res = await fetch(`${base}/api/hall`, { headers: { 'x-manager-token': TOKEN } })
+  assert.equal(res.status, 200)
+  const hall = await res.json()
+  assert.equal(hall.restaurant.length > 0, true)
+  assert.equal(hall.zones.length >= 2, true)
+  assert.equal(hall.tables.length >= 12, true)
+  const t12 = hall.tables.find(t => t.id === '12')
+  assert.equal(t12.zoneName, 'Терраса')
+  assert.equal(t12.seats > 0, true)
+})
+
+test('гость за столом из плана виден в зале, закрытие уходит в смену', async () => {
+  const table = '22' // из hall.json, отдельный от остальных тестов
+  const hallOf = async () => {
+    const r = await fetch(`${base}/api/hall`, { headers: { 'x-manager-token': TOKEN } })
+    const body = await r.json()
+    return { card: body.tables.find(t => t.id === table), shift: body.shift, summary: body.summary }
+  }
+
+  const before = await hallOf()
+  assert.equal(before.card.status, 'closed')
+  assert.equal(before.card.guests, 0)
+
+  const anya = await joinGuest(table, 'Аня', 'fox')
+  await post(table, 'lines', { personaId: anya, dishId: 'tomyam', qty: 1 })
+  await post(table, 'send', { personaId: anya, scope: 'mine' })
+
+  const seated = await hallOf()
+  assert.equal(seated.card.status, 'open')
+  assert.equal(seated.card.guests, 1)
+  assert.equal(seated.card.personas[0].name, 'Аня')
+  assert.equal(seated.card.tableTotal, 690)
+  assert.equal(seated.card.kitchenPending, 1)
+  assert.equal(seated.card.oldestPendingSentAt > 0, true)
+  assert.equal(seated.summary.occupied >= 1, true)
+
+  await post(table, 'pay', { personaId: anya, scope: 'full', idemKey: 'hall-pay' })
+  await post(table, 'close', {}, TOKEN)
+
+  const closed = await hallOf()
+  assert.equal(closed.card.status, 'closed')
+  assert.equal(closed.shift.tables >= 1, true)
+  assert.equal(closed.shift.revenue >= 690, true)
+  assert.equal(closed.shift.guests >= 1, true)
+})
+
+test('SSE зала принимает токен в query и шлёт обновление при изменении стола', async () => {
+  const table = '21'
+  const chunks = []
+  const req = http.get(`${base}/api/hall/stream?token=${TOKEN}`, res => {
+    res.setEncoding('utf8')
+    res.on('data', d => chunks.push(d))
+  })
+  await new Promise(r => setTimeout(r, 150))
+  assert.equal(chunks.length, 1, 'первый снапшот приходит сразу')
+
+  await joinGuest(table, 'Лена', 'panda')
+  await new Promise(r => setTimeout(r, 150))
+  req.destroy()
+
+  assert.equal(chunks.length >= 2, true, 'мутация стола обновила зал')
+  const last = JSON.parse(chunks[chunks.length - 1].replace(/^data: /, ''))
+  assert.equal(last.tables.find(t => t.id === table).guests, 1)
+})
+
+test('SSE зала без токена не открывается', async () => {
+  const res = await fetch(`${base}/api/hall/stream`)
+  assert.equal(res.status, 401)
+})
+
 test('SSE отдаёт снапшот сразу после подключения', async () => {
   const table = freshTable()
   await joinGuest(table, 'Аня', 'fox')

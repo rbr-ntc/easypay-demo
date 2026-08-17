@@ -1,14 +1,18 @@
 import { useState } from 'react'
-import { findDish, NAVY } from '../data'
+import { defaultOptions, findDish, NAVY } from '../data'
+import type { LineOptions } from '../data'
 import { BottomSheet, PrimaryButton, WarnBanner } from '../ui'
 import { useStore } from '../store'
 import { fmt } from '../format'
 
+const MAX_QTY = 9 // столько же принимает сервер
+
 export function DishSheet() {
   const { ui, patch, me, snap, totals, addLine, toast } = useStore()
+  const dish = ui.currentDishId ? findDish(ui.currentDishId) : undefined
   const [qty, setQty] = useState(1)
   const [target, setTarget] = useState<'me' | 'table'>('me')
-  const dish = ui.currentDishId ? findDish(ui.currentDishId) : undefined
+  const [opts, setOpts] = useState<LineOptions>(() => (dish ? defaultOptions(dish) : {}))
   if (!dish) return null
 
   const close = () => patch({ sheet: null, currentDishId: null, pendingAdd: null })
@@ -17,13 +21,25 @@ export function DishSheet() {
     const shared = target === 'table'
     if (!me) {
       // Имя спрашиваем ровно в момент первой надобности; блюдо НЕ теряется
-      patch({ sheet: 'name', pendingAdd: { dishId: dish.id, qty, shared } })
+      patch({ sheet: 'name', pendingAdd: { dishId: dish.id, qty, shared, options: opts } })
       return
     }
     patch({ sheet: null, currentDishId: null })
-    await addLine(dish.id, qty, shared)
+    await addLine(dish.id, qty, shared, opts)
     toast(shared ? `${dish.name} → общее на стол` : `${dish.name} → ${me.name}`)
   }
+
+  const choiceStyle = (active: boolean): React.CSSProperties => ({
+    flex: 1,
+    textAlign: 'center',
+    padding: 10,
+    borderRadius: 'var(--ep-r-sm)',
+    border: active ? `2px solid ${NAVY}` : '1px solid var(--ep-border)',
+    background: 'var(--ep-surface)',
+    fontWeight: active ? 600 : 440,
+    fontSize: 14,
+    cursor: 'pointer'
+  })
 
   const segStyle = (active: boolean): React.CSSProperties => ({
     flex: 1,
@@ -101,12 +117,23 @@ export function DishSheet() {
           </div>
         )}
 
-        <div style={{ fontWeight: 600, fontSize: 15, marginBottom: 10 }}>Острота</div>
-        <div style={{ display: 'flex', gap: 8, marginBottom: 18 }}>
-          <span style={{ flex: 1, textAlign: 'center', padding: 10, borderRadius: 'var(--ep-r-sm)', border: '1px solid var(--ep-border)', fontSize: 14 }}>Слабо</span>
-          <span style={{ flex: 1, textAlign: 'center', padding: 10, borderRadius: 'var(--ep-r-sm)', border: `2px solid ${NAVY}`, fontWeight: 600, fontSize: 14 }}>Средне</span>
-          <span style={{ flex: 1, textAlign: 'center', padding: 10, borderRadius: 'var(--ep-r-sm)', border: '1px solid var(--ep-border)', fontSize: 14 }}>Остро</span>
-        </div>
+        {/* Модификаторы блюда — реальные: уходят на кухню вместе с позицией */}
+        {(dish.options ?? []).map(opt => (
+          <div key={opt.id}>
+            <div style={{ fontWeight: 600, fontSize: 15, marginBottom: 10 }}>{opt.name}</div>
+            <div style={{ display: 'flex', gap: 8, marginBottom: 18, flexWrap: 'wrap' }}>
+              {opt.choices.map(choice => (
+                <button
+                  key={choice}
+                  style={choiceStyle(opts[opt.id] === choice)}
+                  onClick={() => setOpts(prev => ({ ...prev, [opt.id]: choice }))}
+                >
+                  {choice}
+                </button>
+              ))}
+            </div>
+          </div>
+        ))}
       </div>
 
       <div style={{ padding: '12px 22px', paddingBottom: 'calc(20px + env(safe-area-inset-bottom))', borderTop: '1px solid var(--ep-border)', display: 'flex', alignItems: 'center', gap: 14 }}>
@@ -115,7 +142,10 @@ export function DishSheet() {
             −
           </span>
           <span style={{ fontWeight: 600, fontSize: 16, minWidth: 14, textAlign: 'center' }}>{qty}</span>
-          <span style={{ fontSize: 20, cursor: 'pointer' }} onClick={() => setQty(qty + 1)}>
+          <span
+            style={{ fontSize: 20, cursor: qty >= MAX_QTY ? 'not-allowed' : 'pointer', opacity: qty >= MAX_QTY ? 0.35 : 1 }}
+            onClick={() => setQty(Math.min(MAX_QTY, qty + 1))}
+          >
             +
           </span>
         </div>
