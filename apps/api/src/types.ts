@@ -125,6 +125,8 @@ export interface Actor {
 }
 
 export interface AuditEntry {
+  /** Какой именно гость это сделал: в споре о деньгах «Гость» — не ответ. */
+  guestId?: string | null
   at: number
   staffId: string | null
   name: string

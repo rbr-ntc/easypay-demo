@@ -60,7 +60,18 @@ export function hallCard(id: string, table: TableSession) {
     lastPaidAt: payAts.length ? Math.max(...payAts) : null,
     tipsTotal: round2(table.tips.reduce((s, t) => s + t.amount, 0)),
     call: firstCall(table),
-    calls: (table.calls ?? []).length
+    calls: (table.calls ?? []).length,
+    // Гость просит принять наличные: официант должен увидеть это в зале,
+    // а не проваливаться в каждый стол по очереди
+    cashIntent: table.cashIntent
+      ? {
+          amount: round2(table.cashIntent.amount),
+          at: table.cashIntent.at,
+          scope: table.cashIntent.scope,
+          personaId: table.cashIntent.personaId,
+          name: table.personas.find(p => p.id === table.cashIntent!.personaId)?.name ?? 'Гость'
+        }
+      : null
   }
 }
 

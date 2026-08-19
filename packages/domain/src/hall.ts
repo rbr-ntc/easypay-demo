@@ -41,6 +41,8 @@ export interface HallCard {
   lastPaidAt: number | null
   tipsTotal: number
   call: { id?: string; at: number; reason: string; note?: string | null; name: string } | null
+  /** «Хочу заплатить наличными» — деньги ждут официанта у стола. */
+  cashIntent?: { amount: number; at: number; scope: string; personaId: string; name: string } | null
 }
 
 export interface HallShift {
@@ -162,6 +164,16 @@ export function tableAlerts(card: HallCard, now: number): HallAlert[] {
       label: `${card.call.name} ${CALL_LABEL[card.call.reason] ?? CALL_LABEL.help}`,
       severity: 'danger',
       since: card.call.at
+    })
+  }
+
+  // Наличные — это человек с деньгами в руке: срочнее почти всего остального
+  if (card.cashIntent) {
+    alerts.push({
+      id: 'cash-wanted',
+      label: `${card.cashIntent.name} платит наличными`,
+      severity: 'danger',
+      since: card.cashIntent.at
     })
   }
 

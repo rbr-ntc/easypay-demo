@@ -113,19 +113,22 @@ export function computeTotals(state: MoneyState | null | undefined, priceOf: Pri
     }, 0)
   }
 
-  const ownOf = (pid: string | null) => (pid ? sumOf(bill.filter(l => !l.shared && l.personaId === pid)) : 0)
+  // Округляем в источнике, а не на витрине. Иначе у одного и того же гостя
+  // «доля» и «остаток» считались по разным правилам и расходились на копейку:
+  // share 163,34 при remaining 163,33. Деньги живут в копейках — там и округляем.
+  const ownOf = (pid: string | null) => round2(pid ? sumOf(bill.filter(l => !l.shared && l.personaId === pid)) : 0)
   const paidOf = (pid: string | null) =>
-    pid ? payments.filter(p => p.personaId === pid).reduce((s, p) => s + (Number(p.amount) || 0), 0) : 0
-  const totalOf = (pid: string | null) => ownOf(pid) + shareOf(pid)
+    round2(pid ? payments.filter(p => p.personaId === pid).reduce((s, p) => s + (Number(p.amount) || 0), 0) : 0)
+  const totalOf = (pid: string | null) => round2(ownOf(pid) + round2(shareOf(pid)))
   // Личный долг до учёта чужих платежей за стол
-  const rawRemainingOf = (pid: string | null) => Math.max(0, totalOf(pid) - paidOf(pid))
+  const rawRemainingOf = (pid: string | null) => round2(Math.max(0, totalOf(pid) - paidOf(pid)))
 
   /**
    * С гостя не могут взять больше, чем должен стол: сосед мог заплатить за всех.
    * Число, которое здесь получается, и списывается при оплате — гость видит
    * ровно ту сумму, которая уйдёт с карты.
    */
-  const remainingOf = (pid: string | null) => Math.min(rawRemainingOf(pid), remaining)
+  const remainingOf = (pid: string | null) => round2(Math.min(rawRemainingOf(pid), remaining))
 
   const draftTotal = sumOf(drafts)
   const draftOf = (pid: string | null) => (pid ? sumOf(drafts.filter(l => l.personaId === pid)) : 0)

@@ -578,3 +578,30 @@
 .ep-s-denied {
   text-align: center;
 }
+
+
+/* Просьба принять наличные: деньги ждут официанта у стола */
+.ep-w-cash {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 16px;
+  margin-bottom: 12px;
+  border-radius: 14px;
+  background: #fff6e0;
+  border: 2px solid #b07a12;
+}
+
+.ep-w-cash-title {
+  font-weight: 640;
+  font-size: 14.5px;
+  color: #7a5a12;
+}
+
+.ep-w-cash-sum {
+  font-size: 22px;
+  font-weight: 300;
+  letter-spacing: -0.6px;
+  font-variant-numeric: tabular-nums;
+}

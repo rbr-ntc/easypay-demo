@@ -61,7 +61,7 @@ function QrStage({ amount, onBack, onPaid }: { amount: number; onBack: () => voi
 }
 
 export function Payment() {
-  const { ui, patch, me, snap, totals, pay } = useStore()
+  const { ui, patch, me, snap, totals, pay, askCash } = useStore()
   // Ключ живёт до успешной оплаты: повтор после обрыва связи не создаёт второй платёж
   const payKey = useRef(newIdemKey())
   if (!me || !snap) return null
@@ -205,6 +205,33 @@ export function Payment() {
               ✓
             </div>
           )}
+        </div>
+
+        {/* Наличные телефон принять не может: их берёт человек. Кнопка зовёт
+            официанта и показывает ему сумму — деньги спишутся, когда он подтвердит. */}
+        <div
+          onClick={() => void askCash(ui.payScope === 'full' ? 'full' : 'own')}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 12,
+            padding: '13px 14px',
+            marginTop: 9,
+            borderRadius: 'var(--ep-r-card)',
+            background: 'var(--ep-surface)',
+            border: '1px solid var(--ep-border)',
+            cursor: 'pointer'
+          }}
+        >
+          <div style={{ width: 34, height: 34, borderRadius: 'var(--ep-r-xs)', background: 'var(--ep-soft)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 600, fontSize: 14, color: 'var(--ep-text-2)', flexShrink: 0 }}>
+            ₽
+          </div>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontWeight: 520, fontSize: 14.5 }}>Заплачу наличными</div>
+            <div style={{ fontSize: 12, color: 'var(--ep-muted)', marginTop: 2 }}>
+              позовём официанта — он примет деньги
+            </div>
+          </div>
         </div>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 9 }}>
