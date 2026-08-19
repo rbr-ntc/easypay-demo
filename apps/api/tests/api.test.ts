@@ -996,3 +996,23 @@ test('журнал называет гостя, а не просто «Гост�
   assert.equal(payment.name, 'Олег', 'и как его зовут')
   assert.equal(payment.amount, 590)
 })
+
+test('гостю объясняют, что стол закрыли, а не что его тут нет', async () => {
+  // Гость с полной тарелкой получал голое «unknown guest» — техническую фразу
+  // вместо человеческого объяснения. Стол умирает двумя способами, и оба
+  // должны звучать понятно.
+  const table = freshTable()
+  const { guest } = await joinGuest(table, 'Глеб', 'bear')
+  const opened = await snapshot(table)
+  await post(table, 'lines', { dishId: 'fries' }, { guest })
+  await post(table, 'send', { scope: 'mine' }, { guest })
+  await post(table, 'pay', { scope: 'full', idemKey: 'se-1' }, { guest })
+  await staffAt(table, 'close', { force: true })
+
+  // Новая посадка стирает прежнюю личность
+  await joinGuest(table, 'Другой', 'fox')
+
+  const stale = await post(table, 'lines', { dishId: 'espresso', sessionId: opened.sessionId }, { guest })
+  assert.equal(stale.status, 409)
+  assert.equal((await stale.json()).error, 'session ended', 'причина названа человеческим языком')
+})

@@ -470,8 +470,12 @@ export function mutate(
   actor: Actor | null,
   req: any
 ): MutationResult {
-  // Действие должно относиться к текущей сессии стола: uid переиспользуются после закрытия
-  if (body.sessionId && t.sessionId && body.sessionId !== t.sessionId) return fail(409, 'stale session')
+  // Действие должно относиться к текущей сессии стола: uid переиспользуются после закрытия.
+  // Гостю и персоналу нужны разные слова: сотрудник просто перезагрузит экран,
+  // а гость с полной тарелкой должен понять, что стол закрыли и надо позвать человека.
+  if (body.sessionId && t.sessionId && body.sessionId !== t.sessionId) {
+    return fail(409, actor ? 'stale session' : 'session ended', { sessionId: t.sessionId })
+  }
 
   if (STAFF_ACTIONS.has(action)) return staffAction(t, tableId, action, body, actor)
   if (action === 'join') return joinGuest(t, tableId, body)
@@ -482,7 +486,17 @@ export function mutate(
   if (!token) return fail(401, 'guest token required')
   const hash = hashToken(token)
   const persona = t.personas.find(p => p.secretHash === hash)
-  if (!persona) return fail(403, 'unknown guest')
+  if (!persona) {
+    // Стол умирает двумя способами, и гость переживает их по-разному. На сбросе
+    // позиции остаются с читаемой причиной, а на пересоздании сессии тот же
+    // токен получал голое «unknown guest» — техническую фразу вместо объяснения.
+    // Гость с полной тарелкой видел приложение, которое утверждает, что его тут нет.
+    const stale = body.sessionId && t.sessionId && body.sessionId !== t.sessionId
+    if (stale || t.status !== 'open') {
+      return fail(409, 'session ended', { sessionId: t.sessionId })
+    }
+    return fail(403, 'unknown guest')
+  }
   if (body.personaId && body.personaId !== persona.id) return fail(403, 'not your persona')
   // Чаевые — исключение: гость ещё сидит за столом, даже если зал уже его закрыл.
   // Иначе окно для благодарности схлопывается в ноль секунд ровно у того, кто

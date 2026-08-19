@@ -175,6 +175,7 @@ export function humanError(err: ApiError): string {
   const map: Record<string, string> = {
     'guest token required': 'Похоже, вы вышли из заказа. Откройте меню заново со своего QR',
     'unknown guest': 'Этот заказ принадлежит другому гостю',
+    'session ended': 'Стол закрыли. Отсканируйте QR на столе, чтобы начать заново',
     'not your persona': 'Заказывать можно только за себя',
     'table closed': 'Стол уже закрыли. Отсканируйте QR, чтобы начать заново',
     'scope required': 'Выберите, за что платите: за себя или за весь стол',

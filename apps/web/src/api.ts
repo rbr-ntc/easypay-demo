@@ -114,7 +114,11 @@ export interface Snapshot {
   totals: ServerTotals
 }
 
-async function post<T>(action: string, body: object, opts: { staff?: boolean; guest?: string } = {}): Promise<T> {
+async function post<T>(
+  action: string,
+  body: object,
+  opts: { staff?: boolean; guest?: string; sessionId?: string | null } = {}
+): Promise<T> {
   if (!API) throw new ApiError('стол не выбран', 400)
   const headers: Record<string, string> = { 'Content-Type': 'application/json' }
   if (opts.staff) headers['x-staff-token'] = getStaffToken()
@@ -122,7 +126,9 @@ async function post<T>(action: string, body: object, opts: { staff?: boolean; gu
   const res = await fetch(`${API}/${action}`, {
     method: 'POST',
     headers,
-    body: JSON.stringify(body)
+    // sessionId помогает серверу отличить «этот гость не с нашего стола» от
+    // «стол закрыли, пока вы ели» — гостю нужны разные объяснения
+    body: JSON.stringify(opts.sessionId ? { ...body, sessionId: opts.sessionId } : body)
   })
   if (!res.ok) {
     const err = (await res.json().catch(() => ({ error: res.statusText }))) as Record<string, unknown>
