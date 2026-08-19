@@ -27,7 +27,8 @@ function post(path, body = {}, opts = {}) {
 }
 
 const get = (path, token) => fetch(`${base}${path}`, token ? { headers: { 'x-staff-token': token } } : undefined)
-const snapshot = table => get(`/api/t/${table}`).then(r => r.json())
+// Снапшот стола отдаётся только своим: в тестах читаем персоналом
+const snapshot = table => get(`/api/t/${table}`, MASTER).then(r => r.json())
 
 async function login(pin) {
   const res = await post('/api/staff/login', { pin })
@@ -175,7 +176,10 @@ test('сброс стола с долгом — тоже осознанное д
   assert.equal((await post(`/api/t/${other.table}/reset`, { force: true }, { staff: MASTER })).status, 200)
 
   const hall = await (await get('/api/hall', manager.token)).json()
-  assert.equal(hall.shift.debt > 0, true, 'долг сброшенного стола виден в смене')
+  // Еду не отдали — это не долг гостя, а списание с кухни: разные деньги,
+  // и в отчётности смены они больше не свалены в одну кучу
+  assert.equal(hall.shift.writtenOff > 0, true, 'снятое с кухни видно отдельной строкой')
+  assert.equal(hall.shift.debt, 0, 'за неподанное гость ничего не должен')
 })
 
 test('чаевые адресуются официанту стола и копятся за смену', async () => {
@@ -239,4 +243,28 @@ test('подбор PIN упирается в ограничение попыто
   for (let i = 0; i < 8; i++) last = (await post('/api/staff/login', { pin: '0001' })).status
   assert.equal(last, 429)
   assert.equal((await post('/api/staff/login', { pin: '9999' })).status, 429)
+})
+
+test('промахи одного планшета не запирают вход всей смене', async () => {
+  // В ресторане вся смена за одним роутером: раньше шесть опечаток новичка
+  // перекрывали вход всем, включая управляющего.
+  const tryLogin = (pin, device) =>
+    fetch(`${base}/api/staff/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-device-id': device },
+      body: JSON.stringify({ pin })
+    })
+
+  for (let i = 0; i < 6; i++) {
+    const res = await tryLogin('0000', 'planshet-novichka')
+    assert.equal(res.status === 401 || res.status === 429, true)
+  }
+
+  const locked = await tryLogin('9999', 'planshet-novichka')
+  assert.equal(locked.status, 429, 'провинившееся устройство заблокировано')
+  const body = await locked.json()
+  assert.equal(typeof body.retryAfterSec, 'number', 'человек видит, сколько ждать')
+
+  const other = await tryLogin('9999', 'telefon-upravlyayushchey')
+  assert.equal(other.status, 200, 'другое устройство входит как ни в чём не бывало')
 })

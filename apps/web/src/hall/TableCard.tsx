@@ -8,7 +8,17 @@ import type { Animal } from '../data'
 const MAX_AVATARS = 4
 
 /** Карточка стола в зале: клик уводит на экран этого стола. */
-export function TableCard({ card, now, mine }: { card: HallCard; now: number; mine?: boolean }) {
+export function TableCard({
+  card,
+  now,
+  mine,
+  onClean
+}: {
+  card: HallCard
+  now: number
+  mine?: boolean
+  onClean?: (id: string) => void
+}) {
   const { status, since, alerts } = describeTable(card, now)
   const free = status === 'free'
   const href = `${window.location.pathname}?t=${encodeURIComponent(card.id)}#/waiter`
@@ -28,6 +38,18 @@ export function TableCard({ card, now, mine }: { card: HallCard; now: number; mi
         <span className="ep-h-status-dot" />
         {STATUS_LABEL[status]}
       </span>
+
+      {status === 'dirty' && onClean && (
+        <button
+          className="ep-h-clean"
+          onClick={e => {
+            e.preventDefault()
+            onClean(card.id)
+          }}
+        >
+          Убрано
+        </button>
+      )}
 
       <div className="ep-h-card-guests">
         {card.guests > 0 ? (

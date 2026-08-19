@@ -1,0 +1,244 @@
+/* Прогресс заказа. Анимации только на transform/opacity — телефон в зале
+   не должен греться ради красоты, а 60 кадров держатся на любом железе. */
+
+.ep-p {
+  display: flex;
+  align-items: flex-start;
+  margin-bottom: 22px;
+  padding: 0 6px;
+}
+
+.ep-p-step {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  position: relative;
+  color: var(--ep-muted);
+}
+
+.ep-p-step[data-state='done'] {
+  color: #1f9d55;
+}
+
+.ep-p-step[data-state='active'] {
+  color: var(--ep-ink, #101828);
+}
+
+/* Линия между шагами: заливается слева направо, когда предыдущий шаг закрыт */
+.ep-p-track {
+  position: absolute;
+  top: 21px;
+  right: 50%;
+  width: 100%;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--ep-border);
+  overflow: hidden;
+  z-index: 0;
+}
+
+.ep-p-fill {
+  width: 100%;
+  height: 100%;
+  background: #1f9d55;
+  transform-origin: left center;
+  transition: transform 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.ep-p-badge {
+  position: relative;
+  z-index: 1;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 9px;
+  background: var(--ep-surface);
+  border: 2px solid var(--ep-border);
+  transition: background 0.35s ease, border-color 0.35s ease, transform 0.35s ease;
+}
+
+.ep-p-step[data-state='done'] .ep-p-badge {
+  background: #e8f6ec;
+  border-color: #1f9d55;
+}
+
+.ep-p-step[data-state='active'] .ep-p-badge {
+  background: var(--ep-surface);
+  border-color: var(--ep-ink, #101828);
+  animation: ep-p-breathe 2.4s ease-in-out infinite;
+}
+
+.ep-p-label {
+  font-size: 12.5px;
+  font-weight: 480;
+  text-align: center;
+}
+
+.ep-p-step[data-state='active'] .ep-p-label {
+  font-weight: 640;
+}
+
+/* Активный шаг чуть «дышит»: показывает, что процесс идёт, а не завис */
+@keyframes ep-p-breathe {
+  0%,
+  100% {
+    transform: scale(1);
+    box-shadow: 0 0 0 0 rgba(16, 24, 40, 0.12);
+  }
+  50% {
+    transform: scale(1.06);
+    box-shadow: 0 0 0 7px rgba(16, 24, 40, 0);
+  }
+}
+
+/* Галочка на квитанции прорисовывается, а не появляется рывком */
+.ep-p-check {
+  stroke-dasharray: 22;
+  stroke-dashoffset: 22;
+}
+
+.ep-p-check--on {
+  animation: ep-p-draw 0.5s ease-out forwards;
+}
+
+@keyframes ep-p-draw {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+/* Кипение: пузыри поднимаются и лопаются */
+.ep-p-bubbles circle {
+  animation: ep-p-bubble 1.8s ease-in-out infinite;
+  transform-origin: center;
+}
+
+.ep-p-bubbles circle:nth-child(2) {
+  animation-delay: 0.55s;
+}
+
+.ep-p-bubbles circle:nth-child(3) {
+  animation-delay: 1.05s;
+}
+
+@keyframes ep-p-bubble {
+  0% {
+    transform: translateY(4px) scale(0.4);
+    opacity: 0;
+  }
+  35% {
+    opacity: 0.85;
+  }
+  100% {
+    transform: translateY(-5px) scale(1);
+    opacity: 0;
+  }
+}
+
+/* Пар над кастрюлей */
+.ep-p-steam path {
+  animation: ep-p-steam 2.6s ease-in-out infinite;
+  transform-origin: center bottom;
+  opacity: 0;
+}
+
+.ep-p-steam path:nth-child(2) {
+  animation-delay: 0.5s;
+}
+
+.ep-p-steam path:nth-child(3) {
+  animation-delay: 1s;
+}
+
+@keyframes ep-p-steam {
+  0% {
+    transform: translateY(3px) scaleY(0.7);
+    opacity: 0;
+  }
+  40% {
+    opacity: 0.7;
+  }
+  100% {
+    transform: translateY(-4px) scaleY(1.1);
+    opacity: 0;
+  }
+}
+
+/* Крышка подрагивает — как на настоящей плите */
+.ep-p-lid {
+  animation: ep-p-rattle 1.6s ease-in-out infinite;
+  transform-origin: center;
+}
+
+@keyframes ep-p-rattle {
+  0%,
+  70%,
+  100% {
+    transform: translateY(0) rotate(0deg);
+  }
+  78% {
+    transform: translateY(-0.7px) rotate(-1.2deg);
+  }
+  86% {
+    transform: translateY(-0.4px) rotate(1deg);
+  }
+}
+
+/* Тарелку подают: приборы съезжаются, блик вспыхивает */
+.ep-p-serve {
+  animation: ep-p-land 0.55s cubic-bezier(0.34, 1.4, 0.64, 1) both;
+}
+
+@keyframes ep-p-land {
+  from {
+    transform: translateY(-4px) scale(0.9);
+    opacity: 0;
+  }
+  to {
+    transform: none;
+    opacity: 1;
+  }
+}
+
+.ep-p-spark {
+  animation: ep-p-spark 1.4s ease-out 0.35s both;
+  transform-origin: 25px 10px;
+}
+
+@keyframes ep-p-spark {
+  0% {
+    transform: scale(0) rotate(-40deg);
+    opacity: 0;
+  }
+  45% {
+    transform: scale(1.15) rotate(0deg);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1) rotate(10deg);
+    opacity: 0.5;
+  }
+}
+
+/* Уважение к системной настройке: кому анимация мешает — тому статика */
+@media (prefers-reduced-motion: reduce) {
+  .ep-p-badge,
+  .ep-p-fill,
+  .ep-p-bubbles circle,
+  .ep-p-steam path,
+  .ep-p-lid,
+  .ep-p-serve,
+  .ep-p-spark,
+  .ep-p-check--on {
+    animation: none !important;
+    transition: none !important;
+  }
+
+  .ep-p-check--on {
+    stroke-dashoffset: 0;
+  }
+}

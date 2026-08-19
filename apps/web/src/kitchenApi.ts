@@ -4,14 +4,14 @@ import type { KitchenSummary, KitchenTicket } from '@easypay/domain/kitchen'
 export interface KitchenPayload {
   tickets: KitchenTicket[]
   cancelled: KitchenTicket[]
-  summary: KitchenSummary & { bar: number; kitchen: number; cancelled: number }
+  summary: KitchenSummary & { bar: number; kitchen: number; cancelled: number; warn: number; ready: number }
   now: number
 }
 
 /** Кухня действует по любому столу, поэтому шлём запрос напрямую в нужный. */
 async function tableAction(
   tableId: string,
-  action: 'start' | 'serve',
+  action: 'start' | 'ready' | 'serve' | 'dismiss',
   uid: number,
   sessionId: string
 ): Promise<boolean> {
@@ -31,8 +31,16 @@ async function tableAction(
 
 export const takeToWork = (tableId: string, uid: number, sessionId: string) =>
   tableAction(tableId, 'start', uid, sessionId)
+/** Повар закончил: блюдо на раздаче и ждёт официанта. */
 export const markReady = (tableId: string, uid: number, sessionId: string) =>
+  tableAction(tableId, 'ready', uid, sessionId)
+
+/** Официант унёс с раздачи и поставил гостю. */
+export const handOver = (tableId: string, uid: number, sessionId: string) =>
   tableAction(tableId, 'serve', uid, sessionId)
+/** Повар подтверждает отмену: пока не подтвердил, карточка висит на экране. */
+export const dismissCancelled = (tableId: string, uid: number, sessionId: string) =>
+  tableAction(tableId, 'dismiss', uid, sessionId)
 
 export function subscribeKitchen(
   onData: (p: KitchenPayload) => void,

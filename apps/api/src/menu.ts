@@ -1,16 +1,18 @@
 // Меню как данные сервера: цены, названия, цех и проверка модификаторов.
 import { menu } from '@easypay/config'
-import { allergensFor } from '@easypay/domain/allergens'
+import { ALLERGENS, allergensFor, possibleAllergensFor, removedAllergensFor } from '@easypay/domain/allergens'
 
 const MENU = menu
 
-/** Напитки готовит бар, остальное — кухня: у них разные очереди и разный темп. */
-const BAR_CATEGORIES = new Set(['Напитки'])
+/** Напитки и алкоголь готовит бар, остальное — кухня: разные очереди и темп. */
+const BAR_CATEGORIES = new Set(['Напитки', 'Вино и бар'])
 
 const DISHES = new Map<string, any>()
 for (const category of Object.keys(MENU)) {
   for (const dish of MENU[category]) {
-    DISHES.set(dish.id, { ...dish, category, station: BAR_CATEGORIES.has(category) ? 'bar' : 'kitchen' })
+    // Станцию можно задать у блюда явно — иначе решает категория
+    const station = dish.station ?? (BAR_CATEGORIES.has(category) ? 'bar' : 'kitchen')
+    DISHES.set(dish.id, { ...dish, category, station })
   }
 }
 
@@ -26,6 +28,23 @@ export function dishName(id: string) {
   return DISHES.get(id)?.name ?? id
 }
 
+/**
+ * Цена позиции с учётом модификаторов. Бутылка вина не может стоить как бокал:
+ * надбавка объявляется в меню (priceDelta у варианта опции) и прибавляется к
+ * цене блюда. Считает сервер — клиент такие вещи считать не должен.
+ */
+export function priceWithOptions(id: string, options: Record<string, string> = {}) {
+  const dish = DISHES.get(id)
+  if (!dish) return 0
+  let price = Number(dish.price) || 0
+  for (const opt of dish.options ?? []) {
+    const chosen = options[opt.id] ?? opt.default
+    const delta = opt.priceDelta?.[chosen]
+    if (typeof delta === 'number') price += delta
+  }
+  return Math.round(price * 100) / 100
+}
+
 export function stationOf(id: string) {
   return DISHES.get(id)?.station ?? 'kitchen'
 }
@@ -34,6 +53,11 @@ export function stationOf(id: string) {
  *  лактозу, миндальное добавляет орехи. Без опций получится ложь в обе стороны. */
 export function allergensOf(id: string, options: Record<string, string> = {}) {
   return allergensFor(DISHES.get(id), options)
+}
+
+/** Что аллергенного убрал выбранный модификатор — кухня обязана видеть это отдельно. */
+export function removedAllergensOf(id: string, options: Record<string, string> = {}) {
+  return removedAllergensFor(DISHES.get(id), options)
 }
 
 /**
@@ -63,4 +87,28 @@ export function checkOptions(dish: any, raw: unknown): { options?: Record<string
     options[opt.id] = value
   }
   return { options }
+}
+
+/**
+ * Меню для клиента и интеграторов: с ценами, модификаторами и аллергенами —
+ * как заявленными у блюда, так и худшим случаем по всем вариантам опций.
+ */
+export function menuPayload() {
+  const dishes = [...DISHES.values()].map(dish => ({
+    id: dish.id,
+    name: dish.name,
+    desc: dish.desc ?? null,
+    price: dish.price,
+    category: dish.category ?? null,
+    station: dish.station ?? 'kitchen',
+    stop: !!dish.stop,
+    options: dish.options ?? [],
+    // Надбавки за модификаторы: гость должен видеть цену бутылки до заказа
+    priceDeltas: Object.fromEntries(
+      (dish.options ?? []).filter((o: any) => o.priceDelta).map((o: any) => [o.id, o.priceDelta])
+    ),
+    allergens: allergensFor(dish, {}),
+    possibleAllergens: possibleAllergensFor(dish)
+  }))
+  return { dishes, allergens: ALLERGENS }
 }

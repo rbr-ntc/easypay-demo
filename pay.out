@@ -1,0 +1,2 @@
+{"ok":true,"amount":1010,"remaining":0,"receipt":{"no":"5-001-66643","at":1787158166643,"amount":1010,"scope":"own","guest":"Нина","table":"5","lines":[{"name":"Крем-суп из тыквы","qty":1,"price":450,"shared":false,"share":null},{"name":"Белое полусухое","qty":1,"price":560,"shared":false,"share":null}]}}
+HTTP 200

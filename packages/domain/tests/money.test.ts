@@ -127,3 +127,50 @@ test('round2 округляет до копеек и переживает мус
   assert.equal(round2('12.345'), 12.35)
   assert.equal(round2(undefined), 0)
 })
+
+test('копейка от деления на троих не остаётся висеть на столе', () => {
+  const t = {
+    personas: [{ id: 'a' }, { id: 'b' }, { id: 'c' }],
+    lines: [
+      { uid: 1, dishId: 'brusketta', qty: 1, price: 490, shared: true, sharedWith: ['a', 'b', 'c'], sent: true }
+    ],
+    payments: [],
+    tips: []
+  }
+  const priceOf = () => 490
+
+  // Первые двое платят свою долю как есть
+  const first = amountFor(computeTotals(t, priceOf), 'a', 'own')
+  assert.equal(first, 163.33)
+  t.payments.push({ personaId: 'a', amount: first })
+
+  const second = amountFor(computeTotals(t, priceOf), 'b', 'own')
+  assert.equal(second, 163.33)
+  t.payments.push({ personaId: 'b', amount: second })
+
+  // Третий добирает хвост округления, иначе стол закрывать через force
+  const third = amountFor(computeTotals(t, priceOf), 'c', 'own')
+  assert.equal(third, 163.34, 'последний плательщик забирает копейку округления')
+  t.payments.push({ personaId: 'c', amount: third })
+
+  assert.equal(round2(computeTotals(t, priceOf).remaining), 0, 'стол рассчитан полностью')
+})
+
+test('за кого заплатил сосед — тот больше ничего не должен', () => {
+  const t = {
+    personas: [{ id: 'a' }, { id: 'b' }],
+    lines: [
+      { uid: 1, dishId: 'steak', qty: 1, price: 1290, personaId: 'a', sent: true },
+      { uid: 2, dishId: 'pasta', qty: 1, price: 690, personaId: 'b', sent: true }
+    ],
+    // Аня платит за весь стол
+    payments: [{ personaId: 'a', amount: 1980, scope: 'full' }],
+    tips: []
+  }
+  const money = computeTotals(t, () => 0)
+
+  assert.equal(money.remaining, 0)
+  assert.equal(money.totalOf('b'), 690, 'его блюдо по-прежнему его')
+  assert.equal(money.remainingOf('b'), 0, 'но лично он уже ничего не должен')
+  assert.equal(amountFor(money, 'b', 'own'), 0)
+})

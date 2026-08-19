@@ -39,10 +39,20 @@ const SESSION_TTL = 12 * 60 * 60 * 1000 // смена
 /** @type {Map<string, {staff: object, expiresAt: number}>} */
 const sessions = new Map<string, { id: string; staffId: string; staff: any; device: string | null; expiresAt: number }>()
 
+const MAX_SESSIONS_PER_STAFF = 5
+
 export function createSession(staff: any, device: string | null = null) {
-  // Новый вход гасит прежние сессии этого сотрудника: две смены под одним PIN
-  // означали, что журнал не отличает людей, а действия наступают друг на друга.
-  for (const [token, s] of sessions) if (s.staffId === staff.id) sessions.delete(token)
+  // У повара три экрана (горячий, холодный, раздача), у официанта телефон и планшет.
+  // Гасить прежний вход при каждом новом означало, что люди выбивают друг друга
+  // посреди смены без объяснения. Разрешаем несколько устройств, но не бесконечно.
+  const own = [...sessions.entries()].filter(([, s]) => s.staffId === staff.id)
+  if (own.length >= MAX_SESSIONS_PER_STAFF) {
+    const oldest = own.sort((a, b) => a[1].expiresAt - b[1].expiresAt)[0]
+    if (oldest) {
+      sessions.delete(oldest[0])
+      revoked.set(oldest[0], Date.now())
+    }
+  }
 
   const token = crypto.randomBytes(18).toString('base64url')
   const id = crypto.randomUUID()
@@ -75,6 +85,11 @@ export function activeSessions() {
     .map(s => ({ id: s.id, staffId: s.staffId, name: s.staff.name, role: s.staff.role, device: s.device }))
 }
 
+/** Токен был погашен вытеснением — об этом надо сказать прямо. */
+export function wasRevoked(token: unknown) {
+  return revoked.has(String(token ?? ''))
+}
+
 export function dropSession(token: unknown) {
   sessions.delete(String(token ?? ''))
 }
@@ -85,25 +100,51 @@ export function sweepSessions() {
 }
 
 // --- Вход по PIN ---
+// Ограничитель считает промахи по УСТРОЙСТВУ, а не по адресу: в ресторане вся
+// смена сидит за одним роутером, и шесть опечаток новичка запирали вход всем,
+// включая управляющего. По IP оставлен грубый предохранитель с большим потолком —
+// он ловит настоящий перебор, а не заплетающиеся пальцы.
 const MAX_ATTEMPTS = 6
+const MAX_ATTEMPTS_PER_IP = 40
 const ATTEMPT_WINDOW = 5 * 60 * 1000
 /** @type {Map<string, {count: number, until: number}>} */
 const attempts = new Map<string, { count: number; until: number }>()
+// Погашенные токены помним, чтобы сказать человеку, ПОЧЕМУ его выкинуло:
+// голый 401 неотличим от «не вошёл» и «протухло»
+const revoked = new Map<string, number>()
 
-export function loginAllowed(ip: string) {
-  const rec = attempts.get(ip)
-  if (!rec) return true
-  if (rec.until < Date.now()) {
-    attempts.delete(ip)
-    return true
-  }
-  return rec.count < MAX_ATTEMPTS
+/** Сколько секунд осталось до снятия блокировки: глухой отказ бесполезен. */
+export function lockoutSeconds(ip: string, device: string | null = null) {
+  const now = Date.now()
+  const until = [deviceKey(ip, device), ipKey(ip)]
+    .map(key => attempts.get(key))
+    .filter(rec => rec && rec.until > now)
+    .map(rec => rec!.until)
+  return until.length > 0 ? Math.ceil((Math.max(...until) - now) / 1000) : 0
 }
 
-function noteFailure(ip: string) {
-  const rec = attempts.get(ip)
-  if (!rec || rec.until < Date.now()) attempts.set(ip, { count: 1, until: Date.now() + ATTEMPT_WINDOW })
-  else rec.count += 1
+export function loginAllowed(ip: string, device: string | null = null) {
+  const overLimit = (key: string, max: number) => {
+    const rec = attempts.get(key)
+    if (!rec) return false
+    if (rec.until < Date.now()) {
+      attempts.delete(key)
+      return false
+    }
+    return rec.count >= max
+  }
+  return !overLimit(deviceKey(ip, device), MAX_ATTEMPTS) && !overLimit(ipKey(ip), MAX_ATTEMPTS_PER_IP)
+}
+
+const deviceKey = (ip: string, device: string | null) => (device ? `d:${device}` : `d:${ip}`)
+const ipKey = (ip: string) => `ip:${ip}`
+
+function noteFailure(ip: string, device: string | null = null) {
+  for (const key of [deviceKey(ip, device), ipKey(ip)]) {
+    const rec = attempts.get(key)
+    if (!rec || rec.until < Date.now()) attempts.set(key, { count: 1, until: Date.now() + ATTEMPT_WINDOW })
+    else rec.count += 1
+  }
 }
 
 /** Сравнение PIN без утечки времени: одинаковая длина обязательна. */
@@ -114,18 +155,20 @@ function pinMatches(given: unknown, want: unknown) {
 }
 
 export function loginByPin(pin: unknown, ip: string, device: unknown = null) {
+  const label = typeof device === 'string' && device.length <= 40 ? device : null
   const clean = String(pin ?? '').trim()
   if (!/^\d{4,8}$/.test(clean)) {
-    noteFailure(ip)
+    noteFailure(ip, label)
     return null
   }
   const found = STAFF.find(s => pinMatches(clean, s.pin))
   if (!found) {
-    noteFailure(ip)
+    noteFailure(ip, label)
     return null
   }
-  attempts.delete(ip)
-  const label = typeof device === 'string' && device.length <= 40 ? device : null
+  // Успешный вход снимает счётчик и с устройства, и с адреса
+  attempts.delete(deviceKey(ip, label))
+  attempts.delete(ipKey(ip))
   const session = createSession(found, label)
   return { staff: publicStaff(found), token: session.token, sessionId: session.sessionId, device: label }
 }

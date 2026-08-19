@@ -2,6 +2,7 @@
 // Считается из компактной карточки стола (её отдаёт сервер) — одинаково на сервере
 // и на клиенте, поэтому статусы и таймеры на экране зала обновляются каждую секунду
 // без лишних запросов.
+import { round2 } from './money.ts'
 
 
 export type TableStatus = 'paid' | 'paying' | 'served' | 'cooking' | 'seated' | 'dirty' | 'free'
@@ -9,6 +10,8 @@ export type TableStatus = 'paid' | 'paying' | 'served' | 'cooking' | 'seated' | 
 export type AlertSeverity = 'info' | 'ok' | 'warn' | 'danger'
 
 export interface HallAlert {
+  /** С какого момента длится: чип показывает возраст, список сортируется по нему. */
+  since?: number | null
   id: string
   label: string
   severity: AlertSeverity
@@ -23,6 +26,8 @@ export interface HallCard {
   status: 'open' | 'closed'
   openedAt: number | null
   closedAt: number | null
+  /** Момент уборки: до него стол «грязный», сколько бы времени ни прошло. */
+  cleanedAt?: number | null
   guests: number
   personas: { name: string; animal: string }[]
   tableTotal: number
@@ -35,13 +40,24 @@ export interface HallCard {
   lastServedAt: number | null
   lastPaidAt: number | null
   tipsTotal: number
-  call: { at: number; reason: string; name: string } | null
+  call: { id?: string; at: number; reason: string; note?: string | null; name: string } | null
 }
 
 export interface HallShift {
   tables: number
+  /** Снятое с кухни при force-закрытии — отдельно от долга гостя. */
+  writtenOff?: number
+  /** Все деньги смены: закрытые столы плюс оплаченное на открытых. */
   revenue: number
+  /** Только закрытые столы — с этим числом сверяется реестр чеков. */
+  closedRevenue: number
+  /** Столы, где реально были деньги: делитель для среднего чека. */
+  tablesWithRevenue: number
+  debt: number
+  overpaid: number
   guests: number
+  /** Чаевые за смену: в зале их не было видно ни строкой. */
+  tips?: number
 }
 
 export interface HallSummary {
@@ -53,8 +69,17 @@ export interface HallSummary {
   kitchenPending: number
   attention: number
   shiftRevenue: number
+  closedRevenue: number
+  /** Заработанное: закрытая выручка минус то, что придётся вернуть. */
+  netRevenue: number
+  writtenOff: number
+  tips: number
+  /** true, если карточки отфильтрованы, а деньги смены — по всему заведению. */
+  venueWide: boolean
   shiftGuests: number
   closedTables: number
+  debt: number
+  overpaid: number
   avgCheck: number | null
 }
 
@@ -98,7 +123,9 @@ const NOTHING: HallAlert[] = []
 export function tableStatus(card: HallCard, now: number): TableStatus {
   if (card.status === 'closed') {
     // Только что закрытый стол ещё «грязный»: его надо убрать и подготовить
-    const justClosed = card.closedAt && now - card.closedAt < THRESHOLDS.cleanupMs
+    // Раньше стол сам становился свободным через пять минут — зал сажал гостей
+    // за неубранный. Теперь решает факт уборки, а таймер лишь страхует.
+    const justClosed = card.closedAt && !card.cleanedAt && now - card.closedAt < THRESHOLDS.cleanupMs * 4
     return justClosed ? TABLE_STATUS.DIRTY : TABLE_STATUS.FREE
   }
   // «Оплачен» = были платежи и остатка нет (одного нулевого остатка мало: пустой стол тоже нулевой)
@@ -133,7 +160,8 @@ export function tableAlerts(card: HallCard, now: number): HallAlert[] {
     alerts.push({
       id: 'call-waiter',
       label: `${card.call.name} ${CALL_LABEL[card.call.reason] ?? CALL_LABEL.help}`,
-      severity: 'danger'
+      severity: 'danger',
+      since: card.call.at
     })
   }
 
@@ -172,10 +200,24 @@ export function summarizeHall(cards: HallCard[], shift: HallShift | null, now: n
   const openBalance = open.reduce((s, d) => s + d.card.remaining, 0)
   const openPaid = open.reduce((s, d) => s + d.card.paidTotal, 0)
   const kitchenPending = cards.reduce((s, c) => s + c.kitchenPending, 0)
-  const attention = described.filter(d => d.alerts.some(a => a.severity === 'warn' || a.severity === 'danger'))
-  const shiftRevenue = (shift?.revenue ?? 0) + openPaid
+  const attention = described
+    .filter(d => d.alerts.some(a => a.severity === 'warn' || a.severity === 'danger'))
+    // Кто ждёт дольше — тот выше: порядок столов тут не значит ничего
+    .sort((a, b) => {
+      const worst = (d: typeof a) => (d.alerts.some(x => x.severity === 'danger') ? 0 : 1)
+      const oldest = (d: typeof a) => Math.min(...d.alerts.map(x => x.since ?? now))
+      return worst(a) - worst(b) || oldest(a) - oldest(b)
+    })
+  // Выручка смены собирается из первички: закрытые чеки + уже оплаченное на открытых
+  // столах. Так число живёт между запросами и не расходится с сервером.
+  const closedRevenue = shift?.closedRevenue ?? 0
+  // Деньги смены приходят по всему заведению. Складывать их с оплатой
+  // отфильтрованных столов нельзя — получалась химера «ни зал, ни мои».
+  const shiftRevenue = round2(shift?.revenue ?? closedRevenue + openPaid)
   const closedTables = shift?.tables ?? 0
-  const avgCheck = closedTables > 0 ? (shift?.revenue ?? 0) / closedTables : null
+  // Средний чек — по столам, где были деньги, иначе пустые закрытия занижают его
+  const withRevenue = shift?.tablesWithRevenue ?? 0
+  const avgCheck = withRevenue > 0 ? closedRevenue / withRevenue : null
   const seatsTotal = cards.reduce((s, c) => s + (c.seats ?? 0), 0)
 
   return {
@@ -183,12 +225,19 @@ export function summarizeHall(cards: HallCard[], shift: HallShift | null, now: n
     occupied: open.length,
     seatsTotal,
     guests,
-    openBalance,
+    openBalance: round2(openBalance),
     kitchenPending,
     attention: attention.length,
     shiftRevenue,
-    shiftGuests: (shift?.guests ?? 0) + guests,
+    closedRevenue: round2(closedRevenue),
+    netRevenue: round2(closedRevenue - (shift?.overpaid ?? 0)),
+    writtenOff: round2(shift?.writtenOff ?? 0),
+    tips: round2(shift?.tips ?? cards.reduce((s, c) => s + (c.tipsTotal ?? 0), 0)),
+    venueWide: true,
+    shiftGuests: shift?.guests ?? guests,
     closedTables,
+    debt: shift?.debt ?? 0,
+    overpaid: shift?.overpaid ?? 0,
     avgCheck
   }
 }

@@ -9,24 +9,42 @@ const MAX_QTY = 9 // столько же принимает сервер
 
 export function DishSheet() {
   const { ui, patch, me, snap, totals, addLine, toast } = useStore()
+  // За столом есть кто-то ещё — только тогда есть смысл в общем блюде
+  const companyAtTable = (snap?.personas.length ?? 0) > 1
   const dish = ui.currentDishId ? findDish(ui.currentDishId) : undefined
   const [qty, setQty] = useState(1)
   const [target, setTarget] = useState<'me' | 'table'>('me')
   const [opts, setOpts] = useState<LineOptions>(() => (dish ? defaultOptions(dish) : {}))
+  // Сервер остановил заказ: в блюде есть то, на что гость указал аллергию
+  const [blocked, setBlocked] = useState<string[] | null>(null)
   if (!dish) return null
 
   const close = () => patch({ sheet: null, currentDishId: null, pendingAdd: null })
 
   const add = async () => {
-    const shared = target === 'table'
+    const shared = companyAtTable && target === 'table'
     if (!me) {
       // Имя спрашиваем ровно в момент первой надобности; блюдо НЕ теряется
       patch({ sheet: 'name', pendingAdd: { dishId: dish.id, qty, shared, options: opts } })
       return
     }
+    const hits = await addLine(dish.id, qty, shared, opts)
+    if (hits && hits.length > 0) {
+      // Не добавляем молча и не прячем за тостом: это здоровье, а не удобство
+      setBlocked(hits)
+      return
+    }
     patch({ sheet: null, currentDishId: null })
-    await addLine(dish.id, qty, shared, opts)
     toast(shared ? `${dish.name} → общее на стол` : `${dish.name} → ${me.name}`)
+  }
+
+  /** Гость увидел предупреждение и всё равно заказывает — это его осознанный выбор. */
+  const addAnyway = async () => {
+    const shared = companyAtTable && target === 'table'
+    setBlocked(null)
+    await addLine(dish.id, qty, shared, opts, undefined, true)
+    patch({ sheet: null, currentDishId: null })
+    toast(`${dish.name} → ${me?.name ?? 'вам'}`)
   }
 
   const choiceStyle = (active: boolean): React.CSSProperties => ({
@@ -104,16 +122,74 @@ export function DishSheet() {
           <div style={{ fontSize: 12.5, color: 'var(--ep-ok)', marginBottom: 16 }}>Аллергенов из списка нет</div>
         )}
 
-        {/* Кому блюдо — витрина УТП: привязка к персоне в момент заказа */}
-        <div style={{ fontWeight: 600, fontSize: 15, marginBottom: 8 }}>Кому</div>
-        <div style={{ display: 'flex', gap: 4, background: 'var(--ep-soft)', borderRadius: 'var(--ep-r-pill)', padding: 4, marginBottom: 18 }}>
-          <button style={segStyle(target === 'me')} onClick={() => setTarget('me')}>
-            {me ? me.name : 'Себе'}
-          </button>
-          <button style={segStyle(target === 'table')} onClick={() => setTarget('table')}>
-            Общее на стол{totals.participants > 1 ? ` ÷${totals.participants}` : ''}
-          </button>
-        </div>
+        {/* Кому блюдо — витрина УТП: привязка к персоне в момент заказа.
+            В одиночку выбора нет: делить не с кем, и «÷1» только путает. */}
+        {companyAtTable && (
+          <>
+            <div style={{ fontWeight: 600, fontSize: 15, marginBottom: 8 }}>Кому</div>
+            <div style={{ display: 'flex', gap: 4, background: 'var(--ep-soft)', borderRadius: 'var(--ep-r-pill)', padding: 4, marginBottom: 18 }}>
+              <button style={segStyle(target === 'me')} onClick={() => setTarget('me')}>
+                {me ? me.name : 'Себе'}
+              </button>
+              <button style={segStyle(target === 'table')} onClick={() => setTarget('table')}>
+                Общее на стол ÷{totals.participants}
+              </button>
+            </div>
+          </>
+        )}
+
+        {blocked && (
+          <div
+            style={{
+              marginBottom: 16,
+              padding: '14px 16px',
+              borderRadius: 'var(--ep-r-card)',
+              background: '#FDECEC',
+              border: '2px solid #9B1C1C'
+            }}
+          >
+            <div style={{ fontWeight: 700, fontSize: 15, color: '#9B1C1C', marginBottom: 6 }}>
+              Здесь есть {blocked.join(' и ')}
+            </div>
+            <div style={{ fontSize: 13.5, lineHeight: 1.45, marginBottom: 12 }}>
+              Вы указали это в аллергиях. Проверьте состав или спросите официанта — если
+              уверены, можно заказать.
+            </div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button
+                onClick={() => setBlocked(null)}
+                style={{
+                  flex: 1,
+                  minHeight: 44,
+                  borderRadius: 'var(--ep-r-pill)',
+                  border: 'none',
+                  background: '#9B1C1C',
+                  color: '#fff',
+                  fontWeight: 640,
+                  fontSize: 15,
+                  cursor: 'pointer'
+                }}
+              >
+                Не буду
+              </button>
+              <button
+                onClick={() => void addAnyway()}
+                style={{
+                  flex: 1,
+                  minHeight: 44,
+                  borderRadius: 'var(--ep-r-pill)',
+                  border: '1px solid var(--ep-border)',
+                  background: 'var(--ep-surface)',
+                  fontWeight: 540,
+                  fontSize: 15,
+                  cursor: 'pointer'
+                }}
+              >
+                Всё равно заказать
+              </button>
+            </div>
+          </div>
+        )}
 
         {target === 'table' && (snap?.lines ?? []).some(l => l.shared && l.dishId === dish.id) && (
           <div style={{ marginBottom: 16 }}>

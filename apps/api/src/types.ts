@@ -9,6 +9,8 @@ export interface Persona {
   joinedAt: number
   /** Хеш личного токена гостя: сам токен отдаётся один раз при join. */
   secretHash: string
+  /** Заявленные аллергии гостя: система обязана предупреждать сама. */
+  allergies?: string[]
 }
 
 export interface Line {
@@ -31,12 +33,39 @@ export interface Line {
   /** Кто взял в работу, подал и отменил — журнал обязан отвечать на «кто». */
   startedBy?: string | null
   servedBy?: string | null
+  /** Повар закончил: блюдо на раздаче и ждёт официанта. */
+  readyAt?: number | null
+  readyBy?: string | null
   cancelledBy?: string | null
+  /** Повар подтвердил, что снял блюдо с плиты. */
+  cancelAck?: boolean
+  /** Живой текст гостя к блюду: «без орехов, аллергия». Доезжает до повара. */
+  comment?: string | null
+}
+
+export type PayMethod = 'sbp' | 'card' | 'cash'
+
+export interface ReceiptLine {
+  name: string
+  qty: number
+  price: number
+  shared: boolean
+  share: number | null
 }
 
 export interface Payment {
+  /** Чем заплатили. Наличные принимает официант, а не телефон. */
+  method?: PayMethod
+  /** Кто из персонала физически взял деньги — для сверки кассы вечером. */
+  takenBy?: string | null
+  takenByName?: string | null
+  /** Номер чека, который гость может назвать в споре. */
+  receiptNo?: string
+  /** За что именно списаны деньги. */
+  lines?: ReceiptLine[]
   id: string
-  personaId: string
+  /** Наличные могут приниматься за стол целиком, без привязки к гостю. */
+  personaId: string | null
   amount: number
   scope: string
   at: number
@@ -55,9 +84,15 @@ export interface Call {
   at: number
   personaId: string
   reason: string
+  /** Текст гостя к вызову: «аллергия на орехи». */
+  note?: string | null
 }
 
 export interface TableSession {
+  /** Момент, когда стол реально убрали: свободен по факту, а не по таймеру. */
+  cleanedAt?: number | null
+  /** Гость просит принять наличные — ждём подтверждения от официанта. */
+  cashIntent?: { personaId: string; scope: string; amount: number; at: number } | null
   sessionId: string | null
   status: 'open' | 'closed'
   openedAt: number | null
@@ -116,6 +151,10 @@ export interface Shift {
   tablesWithRevenue: number
   revenue: number
   debt: number
+  /** Стоимость снятого с кухни: еда не отдана, это не долг гостя. */
+  writtenOff?: number
+  /** Открытые столы, где уже были платежи. */
+  openTablesWithRevenue?: number
   overpaid: number
   guests: number
   guestsSeen: number

@@ -89,7 +89,10 @@ export function createMemoryStore(): Store {
       })),
       total: round2(money.tableTotal),
       paid: round2(money.paidTotal),
-      debt: round2(session.closedWithDebt ?? money.remaining),
+      // Долг чека = что гость получил и не оплатил. Снятое с кухни живёт
+      // отдельной строкой cancelledTotal и в долг не входит: одна формула
+      // на смену и на чек, иначе документ спорит сам с собой
+      debt: round2(Math.max(0, round2(money.tableTotal) - round2(money.paidTotal))),
       overpaid: round2(session.overpaid ?? 0),
       tips: round2(session.tips.reduce((s, t) => s + t.amount, 0)),
       cancelledTotal: round2(
@@ -144,9 +147,15 @@ export function createMemoryStore(): Store {
       return {
         tables: closed.length,
         closedRevenue: round2(closed.reduce((s, c) => s + c.paid, 0)),
-        tablesWithRevenue: closed.filter(c => c.paid > 0).length + openTables.filter(t => t.payments.length > 0).length,
+        // Только закрытые столы с деньгами: это знаменатель среднего чека,
+        // и он обязан считаться по тому же множеству, что и closedRevenue
+        tablesWithRevenue: closed.filter(c => c.paid > 0).length,
+        openTablesWithRevenue: openTables.filter(t => t.payments.length > 0).length,
         revenue: round2(closed.reduce((s, c) => s + c.paid, 0) + openPaid),
-        debt: round2(closed.reduce((s, c) => s + c.debt, 0)),
+        // Долг за то, что гость съел и не оплатил
+        debt: round2(closed.reduce((s, c) => s + Math.max(0, c.debt - c.cancelledTotal), 0)),
+        // Снятое с кухни: еду не отдали, ингредиенты потеряли — считается отдельно
+        writtenOff: round2(closed.reduce((s, c) => s + c.cancelledTotal, 0)),
         overpaid: round2(closed.reduce((s, c) => s + c.overpaid, 0)),
         guests: guestsSeen,
         guestsSeen,

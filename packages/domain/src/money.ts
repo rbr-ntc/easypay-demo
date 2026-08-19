@@ -23,7 +23,8 @@ export interface MoneyLine {
 }
 
 export interface MoneyPayment {
-  personaId: string
+  /** Наличные официант может принять за стол целиком, без привязки к гостю. */
+  personaId: string | null
   amount: number
 }
 
@@ -74,7 +75,7 @@ function lineAmount(line: MoneyLine, priceOf: PriceOf): number {
 }
 
 /** Между кем делится общее блюдо: список с позиции, иначе (для старых данных) — все за столом. */
-function sharersOf(line: MoneyLine, personaIds: string[]): string[] {
+export function sharersOf(line: MoneyLine, personaIds: string[]): string[] {
   const listed = (line?.sharedWith ?? []).filter(id => personaIds.includes(id))
   return listed.length > 0 ? [...listed] : personaIds
 }
@@ -116,7 +117,15 @@ export function computeTotals(state: MoneyState | null | undefined, priceOf: Pri
   const paidOf = (pid: string | null) =>
     pid ? payments.filter(p => p.personaId === pid).reduce((s, p) => s + (Number(p.amount) || 0), 0) : 0
   const totalOf = (pid: string | null) => ownOf(pid) + shareOf(pid)
-  const remainingOf = (pid: string | null) => Math.max(0, totalOf(pid) - paidOf(pid))
+  // Личный долг до учёта чужих платежей за стол
+  const rawRemainingOf = (pid: string | null) => Math.max(0, totalOf(pid) - paidOf(pid))
+
+  /**
+   * С гостя не могут взять больше, чем должен стол: сосед мог заплатить за всех.
+   * Число, которое здесь получается, и списывается при оплате — гость видит
+   * ровно ту сумму, которая уйдёт с карты.
+   */
+  const remainingOf = (pid: string | null) => Math.min(rawRemainingOf(pid), remaining)
 
   const draftTotal = sumOf(drafts)
   const draftOf = (pid: string | null) => (pid ? sumOf(drafts.filter(l => l.personaId === pid)) : 0)
@@ -144,7 +153,41 @@ export function computeTotals(state: MoneyState | null | undefined, priceOf: Pri
  * остатком стола — это защита от двойной оплаты, когда двое платят одновременно.
  */
 export function amountFor(totals: MoneyTotals, personaId: string | null, scope: PayScope): number {
-  if (scope === 'full') return round2(totals.remaining)
-  if (scope === 'equal') return round2(Math.min(totals.remaining, totals.tableTotal / totals.participants))
-  return round2(Math.min(totals.remainingOf(personaId), totals.remaining))
+  const raw =
+    scope === 'full'
+      ? totals.remaining
+      : scope === 'equal'
+        ? Math.min(totals.remaining, totals.tableTotal / totals.participants)
+        : Math.min(totals.remainingOf(personaId), totals.remaining)
+  return absorbRounding(round2(raw), totals.remaining)
+}
+
+/**
+ * Хвост от округления долей отдаём тому, кто платит последним.
+ * Иначе 490 на троих — это 163.33 × 3 = 489.99, и на столе висит копейка,
+ * из-за которой полностью рассчитавшихся гостей нельзя отпустить без force.
+ * Порог в рубль безопасен: настоящий долг такой мелочью не бывает, а ошибка
+ * округления растёт максимум по половине копейки на участника.
+ */
+function absorbRounding(amount: number, remaining: number): number {
+  if (amount <= 0) return amount
+  const rest = round2(remaining - amount)
+  return rest > 0 && rest < 1 ? round2(remaining) : amount
+}
+
+/**
+ * Разложить сумму по долям так, чтобы округлённые части складывались обратно
+ * в неё же. Хвост в одну-две копейки отдаём самой большой доле — иначе на
+ * витрине счёт 490 распадается на 163,33 × 3 = 489,99, и стол «должен» копейку,
+ * которую никому нельзя предъявить.
+ */
+export function splitRounded(shares: number[], total: number): number[] {
+  const rounded = shares.map(round2)
+  const drift = round2(total - rounded.reduce((s, x) => s + x, 0))
+  if (drift === 0 || rounded.length === 0) return rounded
+
+  let target = 0
+  for (let i = 1; i < rounded.length; i++) if (rounded[i] > rounded[target]) target = i
+  rounded[target] = round2(rounded[target] + drift)
+  return rounded
 }

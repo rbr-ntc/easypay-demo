@@ -9,6 +9,7 @@ const CHIPS = ['Вкусно', 'Быстро', 'Уютно']
 export function Done() {
   const { ui, patch, snap, totals } = useStore()
   const tip = tipAmount(ui)
+  const receipt = ui.lastReceipt
   const remaining = totals.remaining
 
   return (
@@ -45,14 +46,53 @@ export function Done() {
               🧾
             </div>
             <div style={{ flex: 1 }}>
-              <div style={{ fontWeight: 600, fontSize: 14.5 }}>Фискальный чек отправлен</div>
-              <div style={{ fontSize: 12.5, color: 'var(--ep-muted)', marginTop: 1 }}>На +7 ··· 45 и email</div>
+              <div style={{ fontWeight: 600, fontSize: 14.5 }}>
+                Чек {receipt ? `№ ${receipt.no}` : 'заказа'}
+              </div>
+              <div style={{ fontSize: 12.5, color: 'var(--ep-muted)', marginTop: 1 }}>
+                {receipt
+                  ? `${new Date(receipt.at).toLocaleString('ru-RU', { day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' })} · стол №${receipt.table}`
+                  : 'Сохраните номер операции'}
+              </div>
             </div>
           </div>
-          <div style={{ display: 'flex', gap: 9, marginTop: 13 }}>
-            <GhostButton style={{ minHeight: 44, fontSize: 13.5 }}>Открыть чек</GhostButton>
-            <GhostButton style={{ minHeight: 44, fontSize: 13.5 }}>Мои чеки (ФНС)</GhostButton>
-          </div>
+
+          {/* Раньше здесь было «фискальный чек отправлен» и две кнопки, которые
+              ничего не делали. Теперь показываем то, что действительно есть:
+              за что именно списаны деньги. Фискальный чек придёт из кассы. */}
+          {receipt && receipt.lines.length > 0 && (
+            <div style={{ marginTop: 14, borderTop: '1px solid var(--ep-soft)', paddingTop: 12 }}>
+              {receipt.lines.map((l, i) => (
+                <div
+                  key={`${l.name}-${i}`}
+                  style={{ display: 'flex', justifyContent: 'space-between', gap: 12, fontSize: 13.5, padding: '4px 0' }}
+                >
+                  <span style={{ color: 'var(--ep-text-2)' }}>
+                    {l.name}
+                    {l.qty > 1 ? ` ×${l.qty}` : ''}
+                    {l.shared ? ' · общее' : ''}
+                  </span>
+                  <span style={{ fontVariantNumeric: 'tabular-nums' }}>
+                    {fmt(l.shared && l.share !== null ? l.share : l.price * l.qty)}
+                  </span>
+                </div>
+              ))}
+              <div
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  fontWeight: 640,
+                  fontSize: 14.5,
+                  borderTop: '1px solid var(--ep-soft)',
+                  marginTop: 8,
+                  paddingTop: 8
+                }}
+              >
+                <span>Списано</span>
+                <span style={{ fontVariantNumeric: 'tabular-nums' }}>{fmt(receipt.amount)}</span>
+              </div>
+            </div>
+          )}
         </Card>
 
         <Card style={{ padding: '18px 16px' }}>

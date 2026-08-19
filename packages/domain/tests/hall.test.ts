@@ -95,7 +95,11 @@ test('сводка зала считает занятость, деньги и �
     card({ id: '3', openedAt: NOW - THRESHOLDS.noOrderMs - 1000 }),
     card({ id: '4', tableTotal: 800, paidTotal: 800, remaining: 0, sentCount: 1 })
   ]
-  const s = summarizeHall(cards, { tables: 2, revenue: 3000, guests: 5 }, NOW)
+  const s = summarizeHall(
+    cards,
+    { tables: 2, revenue: 3800, closedRevenue: 3000, tablesWithRevenue: 2, debt: 500, overpaid: 0, guests: 6 },
+    NOW
+  )
 
   assert.equal(s.tables, 4)
   assert.equal(s.occupied, 3, 'закрытый стол не занят')
@@ -103,8 +107,10 @@ test('сводка зала считает занятость, деньги и �
   assert.equal(s.openBalance, 1290)
   assert.equal(s.kitchenPending, 1)
   assert.equal(s.attention, 1, 'только стол №3 просрочил заказ')
-  assert.equal(s.shiftRevenue, 3800, 'смена + уже оплаченное на открытых столах')
-  assert.equal(s.avgCheck, 1500)
+  assert.equal(s.closedRevenue, 3000, 'закрытые столы — то, с чем сверяется касса')
+  assert.equal(s.shiftRevenue, 3800, 'закрытые столы + уже оплаченное на открытых, без задвоения')
+  assert.equal(s.avgCheck, 1500, 'средний чек — по столам, где были деньги')
+  assert.equal(s.debt, 500, 'долг смены виден в сводке')
 })
 
 test('пустой зал не ломает сводку', () => {
@@ -112,4 +118,16 @@ test('пустой зал не ломает сводку', () => {
   assert.equal(s.occupied, 0)
   assert.equal(s.avgCheck, null)
   assert.equal(s.shiftRevenue, 0)
+  assert.equal(s.debt, 0)
+})
+
+test('оплаченное на открытом столе попадает в выручку один раз', () => {
+  const cards = [card({ id: '7', tableTotal: 900, paidTotal: 900, remaining: 0, sentCount: 1 })]
+  // Сервер уже включил эти 900 в revenue — сводка не должна прибавить их ещё раз
+  const s = summarizeHall(
+    cards,
+    { tables: 1, revenue: 1900, closedRevenue: 1000, tablesWithRevenue: 1, debt: 0, overpaid: 0, guests: 2 },
+    NOW
+  )
+  assert.equal(s.shiftRevenue, 1900)
 })

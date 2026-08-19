@@ -74,3 +74,13 @@ test('пустая кухня не ломает сводку', () => {
   assert.equal(s.queued, 0)
   assert.equal(s.oldestWaitMs, null)
 })
+
+test('бар горит раньше кухни: капучино через 10 минут — уже провал', () => {
+  const wait = (ms: number, station: string) =>
+    ticketUrgency({ sentAt: NOW - ms, startedAt: null, station } as any, NOW)
+
+  assert.equal(wait(4 * 60_000, 'bar'), 'warn', 'бар предупреждает через 3 минуты')
+  assert.equal(wait(4 * 60_000, 'kitchen'), 'ok', 'для горячего цеха 4 минуты — норма')
+  assert.equal(wait(7 * 60_000, 'bar'), 'danger')
+  assert.equal(wait(21 * 60_000, 'kitchen'), 'danger')
+})
