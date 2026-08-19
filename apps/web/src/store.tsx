@@ -127,6 +127,8 @@ export interface Totals {
 // Считает ровно то же, что сервер: модель живёт в shared/money.js в одном экземпляре.
 // Клиентские суммы — только для отображения, списывает всегда сервер.
 export function computeTotals(snap: Snapshot | null, myId: string | null): Totals {
+  // Цена зафиксирована в позиции сервером и уже включает надбавку за модификатор.
+  // Меню тут только запасной вариант для позиций без цены.
   const core = computeMoney(snap ?? {}, id => findDish(id)?.price ?? 0)
   const server = snap?.totals
   const mine = myId ? server?.byPersona.find(p => p.personaId === myId) : undefined
@@ -141,7 +143,8 @@ export function computeTotals(snap: Snapshot | null, myId: string | null): Total
 
   const scopeAmount = (scope: PayScope) => {
     if (scope === 'full') return remaining
-    if (scope === 'equal') return Math.min(remaining, tableTotal / participants)
+    // Делим то, что ещё не оплачено: сосед мог заплатить свою часть раньше
+    if (scope === 'equal') return Math.min(remaining, remaining / participants || 0)
     return Math.min(myRemaining, remaining)
   }
 
@@ -172,6 +175,7 @@ export function humanError(err: ApiError): string {
   const map: Record<string, string> = {
     'guest token required': 'Похоже, вы вышли из заказа. Откройте меню заново со своего QR',
     'unknown guest': 'Этот заказ принадлежит другому гостю',
+    'session ended': 'Стол закрыли. Отсканируйте QR на столе, чтобы начать заново',
     'not your persona': 'Заказывать можно только за себя',
     'table closed': 'Стол уже закрыли. Отсканируйте QR, чтобы начать заново',
     'scope required': 'Выберите, за что платите: за себя или за весь стол',
@@ -232,7 +236,9 @@ interface Ctx {
     shared: boolean,
     options: LineOptions,
     asGuestToken?: string,
-    confirmAllergen?: boolean
+    confirmAllergen?: boolean,
+    /** Ключ намерения: один на карточку блюда, а не на каждый тап по кнопке. */
+    idemKey?: string
   ) => Promise<string[] | null>
   removeLine: (uid: number) => Promise<void>
   /** Отменить своё блюдо, пока кухня не взяла его в работу. */
@@ -368,11 +374,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         setSnap(r.snapshot)
         return r.snapshot.personas.find(p => p.id === r.personaId) ?? null
       }, null),
-    addLine: async (dishId, qty, shared, options, asGuestToken, confirmAllergen = false) => {
+    addLine: async (dishId, qty, shared, options, asGuestToken, confirmAllergen = false, idemKey) => {
       const token = asGuestToken ?? guestToken()
       if (!token) return null
       try {
-        await apiAddLine(token, dishId, qty, shared, options, newIdemKey(), confirmAllergen)
+        // Без ключа снаружи каждый повтор был бы новым намерением — и семь
+        // быстрых нажатий превращались в семь порций
+        await apiAddLine(token, dishId, qty, shared, options, idemKey ?? newIdemKey(), confirmAllergen)
         return null
       } catch (err) {
         // Аллерген — не ошибка связи: гостю нужен осознанный выбор, а не тост

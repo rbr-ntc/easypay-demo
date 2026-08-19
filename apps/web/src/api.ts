@@ -114,7 +114,11 @@ export interface Snapshot {
   totals: ServerTotals
 }
 
-async function post<T>(action: string, body: object, opts: { staff?: boolean; guest?: string } = {}): Promise<T> {
+async function post<T>(
+  action: string,
+  body: object,
+  opts: { staff?: boolean; guest?: string; sessionId?: string | null } = {}
+): Promise<T> {
   if (!API) throw new ApiError('стол не выбран', 400)
   const headers: Record<string, string> = { 'Content-Type': 'application/json' }
   if (opts.staff) headers['x-staff-token'] = getStaffToken()
@@ -122,7 +126,9 @@ async function post<T>(action: string, body: object, opts: { staff?: boolean; gu
   const res = await fetch(`${API}/${action}`, {
     method: 'POST',
     headers,
-    body: JSON.stringify(body)
+    // sessionId помогает серверу отличить «этот гость не с нашего стола» от
+    // «стол закрыли, пока вы ели» — гостю нужны разные объяснения
+    body: JSON.stringify(opts.sessionId ? { ...body, sessionId: opts.sessionId } : body)
   })
   if (!res.ok) {
     const err = (await res.json().catch(() => ({ error: res.statusText }))) as Record<string, unknown>
@@ -243,6 +249,49 @@ export async function apiStaffLogout(token: string = getStaffToken()): Promise<v
   }
 }
 
+export interface ShiftCheckLine {
+  name: string
+  qty: number
+  price: number
+  amount: number
+  guest: string | null
+  cancelled: boolean
+  cancelReason: string | null
+}
+
+export interface ShiftCheck {
+  tableId: string
+  sessionId: string
+  openedAt: number
+  closedAt: number
+  guests: number
+  waiter: string | null
+  lines: ShiftCheckLine[]
+  total: number
+  paid: number
+  debt: number
+  overpaid: number
+  tips: number
+  cancelledTotal: number
+}
+
+export interface ShiftChecksPayload {
+  shift: { closedRevenue: number; netRevenue?: number; overpaid: number; debt: number; writtenOff?: number }
+  checks: ShiftCheck[]
+  control: { checksPaid: number; closedRevenue: number; openPaid: number; matches: boolean }
+}
+
+/** Реестр чеков смены: то, чем сводят кассу. Только менеджеру. */
+export async function apiShiftChecks(): Promise<ShiftChecksPayload | null> {
+  try {
+    const res = await fetch('/api/shift/checks', { headers: { 'x-staff-token': getStaffToken() } })
+    if (!res.ok) return null
+    return (await res.json()) as ShiftChecksPayload
+  } catch {
+    return null
+  }
+}
+
 export async function apiShiftLog(): Promise<{ entries: LogEntry[] } | null> {
   try {
     const res = await fetch('/api/log', { headers: { 'x-staff-token': getStaffToken() } })
@@ -272,7 +321,9 @@ export function subscribe(
   // Состав стола и деньги видит только свой: EventSource не умеет заголовки,
   // поэтому секрет передаётся параметром — гостевой у гостя, служебный у персонала.
   // Без этого экран официанта показывал пустой стол при живых гостях в зале.
-  const staff = getStaffToken()
+  // Личный секрет гостя старше служебного: иначе на общем устройстве гость
+  // подписывался бы токеном персонала и видел состав чужого стола
+  const staff = guestToken ? null : getStaffToken()
   const params = new URLSearchParams()
   if (guestToken) params.set('g', guestToken)
   if (staff) params.set('token', staff)

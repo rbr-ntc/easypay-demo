@@ -16,6 +16,8 @@ export interface DishOption {
   default?: string
   /** Что вариант добавляет или снимает по аллергенам. */
   effects?: Record<string, { adds?: string[]; removes?: string[] }>
+  /** Надбавка к цене блюда: бутылка вина не может стоить как бокал. */
+  priceDelta?: Record<string, number>
 }
 
 export interface Dish {
@@ -86,6 +88,21 @@ export function dishMark(dish: Dish): string {
 }
 
 /** «Остро · Без льда» — короткая подпись выбранных модификаторов. */
+/**
+ * Цена позиции с учётом выбранных модификаторов — то же правило, что на сервере
+ * (apps/api/src/menu.ts). Гость обязан видеть на кнопке ту сумму, которая уйдёт
+ * в счёт: раньше карточка показывала базовые 590 ₽ за бутылку за 2800 ₽.
+ */
+export function priceWithOptions(dish: Dish, options: LineOptions = {}): number {
+  let price = dish.price
+  for (const opt of dish.options ?? []) {
+    const chosen = options[opt.id] ?? opt.default ?? opt.choices[0]
+    const delta = opt.priceDelta?.[chosen]
+    if (typeof delta === 'number') price += delta
+  }
+  return Math.round(price * 100) / 100
+}
+
 export function optionsLabel(options: LineOptions | undefined): string {
   const values = Object.values(options ?? {})
   return values.length ? values.join(' · ') : ''

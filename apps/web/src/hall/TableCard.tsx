@@ -39,6 +39,12 @@ export function TableCard({
         {STATUS_LABEL[status]}
       </span>
 
+      {/* Готово и ждёт, пока унесут: раньше это число приходило в данных
+          и не показывалось ни на одном экране */}
+      {(card.readyCount ?? 0) > 0 && (
+        <span className="ep-h-ready">на раздаче {card.readyCount}</span>
+      )}
+
       {status === 'dirty' && onClean && (
         <button
           className="ep-h-clean"
@@ -52,7 +58,10 @@ export function TableCard({
       )}
 
       <div className="ep-h-card-guests">
-        {card.guests > 0 ? (
+        {/* Освободившийся стол не должен помнить прошлых гостей: официант
+            видел «Свободен · Ретест · остаток 250 ₽» и шёл искать человека,
+            который давно ушёл */}
+        {card.guests > 0 && !free ? (
           <>
             <div className="ep-h-card-avatars">
               {shown.map((p, i) => (
@@ -69,7 +78,7 @@ export function TableCard({
         )}
       </div>
 
-      {card.tableTotal > 0 && (
+      {card.tableTotal > 0 && !free && (
         <div className="ep-h-card-money">
           <span className="ep-h-card-total">{fmt(card.tableTotal)}</span>
           <span className={card.remaining <= 0.01 ? 'ep-h-card-rest ep-h-card-rest--ok' : 'ep-h-card-rest'}>

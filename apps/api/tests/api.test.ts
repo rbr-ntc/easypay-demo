@@ -431,8 +431,15 @@ test('стол с долгом не закрыть случайно — толь
   assert.equal(forced.status, 200)
   assert.equal((await snapshot(table)).status, 'closed')
 
+  // Стейк на кухню отправили, но не подали — гость его не получил, значит
+  // и не должен за него. В журнале это списание с кухни, а не долг гостя.
   const log = await (await fetch(`${base}/api/log`, { headers: { 'x-staff-token': TOKEN } })).json()
-  assert.equal(log.entries.some(e => e.action === 'закрыл стол с долгом' && e.tableId === table), true)
+  assert.equal(log.entries.some(e => e.action === 'закрыл стол' && e.tableId === table), true)
+  assert.equal(
+    log.entries.some(e => e.action === 'списание с кухни' && e.tableId === table && e.amount === 1290),
+    true,
+    'неподанное списывается отдельной строкой'
+  )
 })
 
 test('закрытый стол не принимает заказы, а новый join открывает новую сессию', async () => {
@@ -995,4 +1002,82 @@ test('журнал называет гостя, а не просто «Гост�
   assert.equal(payment.guestId, personaId, 'видно, какой именно гость заплатил')
   assert.equal(payment.name, 'Олег', 'и как его зовут')
   assert.equal(payment.amount, 590)
+})
+
+test('гостю объясняют, что стол закрыли, а не что его тут нет', async () => {
+  // Гость с полной тарелкой получал голое «unknown guest» — техническую фразу
+  // вместо человеческого объяснения. Стол умирает двумя способами, и оба
+  // должны звучать понятно.
+  const table = freshTable()
+  const { guest } = await joinGuest(table, 'Глеб', 'bear')
+  const opened = await snapshot(table)
+  await post(table, 'lines', { dishId: 'fries' }, { guest })
+  await post(table, 'send', { scope: 'mine' }, { guest })
+  await post(table, 'pay', { scope: 'full', idemKey: 'se-1' }, { guest })
+  await staffAt(table, 'close', { force: true })
+
+  // Новая посадка стирает прежнюю личность
+  await joinGuest(table, 'Другой', 'fox')
+
+  const stale = await post(table, 'lines', { dishId: 'espresso', sessionId: opened.sessionId }, { guest })
+  assert.equal(stale.status, 409)
+  assert.equal((await stale.json()).error, 'session ended', 'причина названа человеческим языком')
+})
+
+test('семь быстрых нажатий «Добавить» — одна порция, а не семь', async () => {
+  // Ключ идемпотентности генерировался на каждый запрос, поэтому для сервера
+  // это были семь разных намерений, и он честно выполнял все семь. Количество
+  // выбирается плюсиком, а не частотой тапов по кнопке.
+  const table = freshTable()
+  const { guest } = await joinGuest(table)
+  const key = 'один-заказ-стейка'
+
+  // Гость колотит по кнопке: часть нажатий улетает параллельно
+  const rapid = await Promise.all(
+    Array.from({ length: 7 }, () => post(table, 'lines', { dishId: 'steak', qty: 1, idemKey: key }, { guest }))
+  )
+  assert.equal(rapid.every(r => r.status === 200), true, 'каждое нажатие отвечает спокойно')
+
+  const snap = await snapshot(table)
+  assert.equal(snap.lines.length, 1, 'в корзине одна позиция')
+  assert.equal(snap.lines[0].qty, 1)
+  assert.equal(snap.totals.draftTotal, 1290, 'и один счёт, а не семь')
+
+  // Осознанный повтор — это новое намерение с новым ключом
+  await post(table, 'lines', { dishId: 'steak', qty: 1, idemKey: 'второй-стейк' }, { guest })
+  assert.equal((await snapshot(table)).lines.length, 2, 'вторую порцию заказать по-прежнему можно')
+})
+
+test('стол после закрытия снова можно убрать, и он не зовёт официанта', async () => {
+  // Метка уборки переживала сессию: стол, убранный один раз за смену, после
+  // следующего закрытия убрать было нельзя — гостей сажали за неубранный.
+  // А вызов «принесите воды» висел в зале на уже свободном столе.
+  const table = '4'
+  await post(table, 'reset', { force: true }, { staff: TOKEN })
+
+  const first = await joinGuest(table, 'Первый', 'fox')
+  await post(table, 'lines', { dishId: 'fries' }, { guest: first.guest })
+  await post(table, 'send', { scope: 'mine' }, { guest: first.guest })
+  await post(table, 'pay', { scope: 'full', idemKey: 'cl-a' }, { guest: first.guest })
+  await staffAt(table, 'close', { force: true })
+  assert.equal((await staffAt(table, 'clean', {})).status, 200)
+
+  // Вторая посадка за ту же смену
+  const second = await joinGuest(table, 'Второй', 'bear')
+  await post(table, 'call', { reason: 'water' }, { guest: second.guest })
+  await post(table, 'lines', { dishId: 'espresso' }, { guest: second.guest })
+  await post(table, 'send', { scope: 'mine' }, { guest: second.guest })
+  await post(table, 'pay', { scope: 'full', idemKey: 'cl-b' }, { guest: second.guest })
+  await staffAt(table, 'close', { force: true })
+
+  const closed = await snapshot(table)
+  assert.equal(closed.calls.length, 0, 'вызовы не переживают закрытие стола')
+
+  const again = await staffAt(table, 'clean', {})
+  assert.equal(again.status, 200)
+  assert.equal((await again.json()).alreadyClean, undefined, 'убрать можно снова')
+
+  const hall = await (await fetch(`${base}/api/hall`, { headers: { 'x-staff-token': TOKEN } })).json()
+  const card = hall.tables.find(t => t.id === table)
+  assert.equal(card.cleanedAt > closed.closedAt, true, 'метка уборки от нового цикла')
 })

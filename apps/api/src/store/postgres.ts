@@ -129,7 +129,8 @@ export async function createPostgresStore(url?: string): Promise<Store> {
         amount: Number(p.amount),
         scope: p.scope,
         method: p.method ?? 'sbp',
-        takenBy: p.taken_by ?? null,
+        // В базе сотрудник — uuid, в ролях и журнале — строковый id
+        takenBy: staffExt(p.taken_by),
         // Номер и состав чека: единственный документ, который гость может предъявить
         receiptNo: p.receipt_no ?? undefined,
         lines: p.receipt_lines ?? [],
@@ -191,6 +192,16 @@ export async function createPostgresStore(url?: string): Promise<Store> {
           allergies = excluded.allergies
       `
     }
+
+    // Удалённые из корзины позиции надо именно удалить: раньше persist только
+    // вставлял и обновлял, поэтому убранное блюдо возвращалось при следующем
+    // чтении, а сервер честно отвечал «ок» — гость видел ноль реакции.
+    const keep = session.lines.map(l => l.uid)
+    await tx`
+      delete from order_lines
+      where table_session_id = ${sid}
+        ${keep.length ? tx`and seq <> all(${keep}::int[])` : tx``}
+    `
 
     for (const l of session.lines) {
       await tx`
@@ -328,7 +339,9 @@ export async function createPostgresStore(url?: string): Promise<Store> {
         )
         select
           (select count(*) from s where closed_at is not null)                        as tables,
-          (select coalesce(sum(closed_with_debt), 0) from s where closed_at is not null) as gross_debt,
+          -- closed_with_debt снимается уже после отмены неподанного, поэтому
+          -- вычитать списания здесь не нужно: в долге только то, что гость получил
+          (select coalesce(sum(closed_with_debt), 0) from s where closed_at is not null) as debt,
           (select coalesce(sum(ol.price * ol.qty), 0)
              from order_lines ol join s on s.id = ol.table_session_id
             where s.closed_at is not null and ol.cancelled_at is not null)              as written_off,
@@ -365,8 +378,9 @@ export async function createPostgresStore(url?: string): Promise<Store> {
         closedRevenue: Number(row.closed_revenue),
         tablesWithRevenue: Number(row.tables_with_revenue),
         revenue: Number(row.revenue),
-        // Долг — только за то, что гость получил: снятое с кухни он не ел
-        debt: Math.max(0, round2(Number(row.gross_debt) - Number(row.written_off))),
+        // Долг — только за то, что гость получил: снятое с кухни он не ел.
+        // Вычитание уже сделано по каждому столу отдельно, в запросе.
+        debt: round2(Number(row.debt)),
         writtenOff: round2(Number(row.written_off)),
         openTablesWithRevenue: Number(row.open_tables_with_revenue),
         overpaid: Number(row.overpaid),
@@ -457,8 +471,11 @@ export async function createPostgresStore(url?: string): Promise<Store> {
           })),
           total: round2(total),
           paid: round2(Number(payments[0].total)),
-          // Та же формула, что в памяти и в смене: получено минус оплачено
-          debt: round2(Math.max(0, Number(row.total ?? 0) - Number(row.paid ?? 0))),
+          // Долг = получено минус оплачено. Раньше здесь брались row.total и
+          // row.paid — колонок с такими именами в table_sessions нет вовсе,
+          // поэтому долг всегда выходил нулём: чек показывал счёт 250, оплату 0
+          // и долг 0 одновременно. Считаем из тех же чисел, что строкой выше.
+          debt: round2(Math.max(0, round2(total) - round2(Number(payments[0].total)))),
           overpaid: round2(Number(row.overpaid)),
           tips: round2(Number(tips[0].total)),
           cancelledTotal: round2(

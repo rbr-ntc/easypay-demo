@@ -55,7 +55,11 @@ export function OrderFeed({
                   title={l.startedAt ? 'Отметить поданным' : 'Взять в работу'}
                   onClick={() => (l.startedAt ? onServe(l.uid) : onStart(l.uid))}
                 >
-                  {l.startedAt ? 'ГОТОВИТСЯ' : 'В ОЧЕРЕДИ'} {l.sentAt ? fmtDur(now - l.sentAt) : ''}
+                  {/* Между «готовится» и «подано» есть раздача: блюдо готово и
+                      остывает под лампой, пока его не унесли гостю. Официант
+                      узнавал об этом, только дойдя до окна. */}
+                  {(l as any).readyAt ? 'НА РАЗДАЧЕ' : l.startedAt ? 'ГОТОВИТСЯ' : 'В ОЧЕРЕДИ'}{' '}
+                  {(l as any).readyAt ? fmtDur(now - (l as any).readyAt) : l.sentAt ? fmtDur(now - l.sentAt) : ''}
                   {l.startedAt ? ' → ПОДАТЬ ✓' : ' → В РАБОТУ'}
                 </button>
               ) : l.sent ? (

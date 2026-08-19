@@ -28,10 +28,16 @@ export function Status() {
   const tableStillCooking = allSent.filter(l => !l.served && !l.cancelled)
   const allServed = allSent.length > 0 && allSent.every(l => l.served || l.cancelled)
 
-  const steps = STEP_LABELS.map((label, i) => ({
-    label,
-    st: i === 0 ? ('done' as const) : mineServed ? ('done' as const) : i === 1 ? ('active' as const) : ('todo' as const)
-  }))
+  // Кухня взялась хотя бы за одно моё блюдо — только тогда «готовится».
+  // Раньше кастрюля кипела на экране, пока заказ стоял в очереди нетронутым.
+  const mineCooking = mineSent.some(l => l.startedAt && !l.served)
+
+  const steps = STEP_LABELS.map((label, i) => {
+    if (mineServed) return { label, st: 'done' as const }
+    if (i === 0) return { label, st: mineCooking ? ('done' as const) : ('active' as const) }
+    if (i === 1) return { label, st: mineCooking ? ('active' as const) : ('todo' as const) }
+    return { label, st: 'todo' as const }
+  })
   const nameOf = (pid: string) => snap.personas.find(p => p.id === pid)?.name ?? '?'
   const animalOf = (pid: string) => snap.personas.find(p => p.id === pid)?.animal ?? 'fox'
   const stillChoosing = snap.personas.filter(p => snap.lines.some(l => !l.sent && l.personaId === p.id))
@@ -44,7 +50,7 @@ export function Status() {
             ✓
           </div>
           <div style={{ fontWeight: 300, fontSize: 28, lineHeight: 1.12, letterSpacing: '-0.9px' }}>
-            {mineServed ? 'Всё подано.' : 'Заказ принят.'}
+            {mineServed ? 'Всё подано.' : mineCooking ? 'Уже готовим.' : 'Заказ принят.'}
             <br />
             Приятного аппетита!
           </div>

@@ -159,11 +159,16 @@ const snapshot = (table: string) =>
     // Стейк на кухню отправили, но не подали — гость его не получил.
     // В итогах смены это списание с кухни, а не долг гостя: разные деньги.
     assert.equal(registry.shift.writtenOff >= 1290, true, 'снятое с кухни считается отдельно')
-    assert.equal(registry.shift.debt, 0, 'за неподанное гость ничего не должен')
+    // Итог смены проверяем по этому чеку, а не по глобальной сумме: в одной
+    // смене живут и другие столы с настоящими долгами
+    assert.equal(check.debt, 0, 'за неподанное гость ничего не должен')
 
+    // Гость не получил ни грамма — значит и не должен: журнал называет это
+    // закрытием стола, а не долгом. Раньше сюда попадали до-отменочные числа,
+    // и запись утверждала, что человек ушёл должен за еду, которой не видел.
     const log = await staffGet('/api/log')
     assert.equal(
-      log.entries.some((e: any) => e.action === 'закрыл стол с долгом' && e.tableId === table),
+      log.entries.some((e: any) => e.action === 'закрыл стол' && e.tableId === table),
       true
     )
     assert.equal(
@@ -272,12 +277,28 @@ const snapshot = (table: string) =>
     assert.equal(snap.cashIntent.amount, 590, 'официант видит просьбу')
     assert.equal(snap.totals.paidTotal, 0, 'намерение — ещё не деньги')
 
-    // Официант физически взял деньги
-    await post(table, 'cash', { personaId: snap.personas[0].id, scope: 'own', sessionId: snap.sessionId }, { staff: TOKEN })
+    // Деньги принимает конкретный человек: мастер-токен для этого не годится,
+    // за ним нет сотрудника, с которого вечером спросят кассу
+    const roma = await (
+      await fetch(`${base}/api/staff/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-device-id': 'pg-test-phone' },
+        body: JSON.stringify({ pin: '3333' })
+      })
+    ).json()
+    await post(
+      table,
+      'cash',
+      { personaId: snap.personas[0].id, scope: 'own', sessionId: snap.sessionId },
+      { staff: roma.token }
+    )
 
     const after = await snapshot(table)
     assert.equal(after.totals.remaining, 0)
     assert.equal(after.payments[0].method, 'cash')
+    // Вечером по этому имени сверяют кассовый ящик: без него официант сдаёт
+    // деньги, за которые формально никто не отвечает
+    assert.equal(after.payments[0].takenByName, 'Рома', 'видно, кто именно взял деньги')
     assert.equal(after.cashIntent, null, 'просьба снята')
   })
 
@@ -399,6 +420,148 @@ const snapshot = (table: string) =>
     await post(table, 'pay', { scope: 'own', idemKey: `rc2-${Date.now()}` }, { guest: a })
     await post(table, 'pay', { scope: 'full', idemKey: `rc3-${Date.now()}` }, { guest: b })
     assert.equal((await snapshot(table)).totals.remaining, 0)
+  })
+
+  test('убранное из корзины блюдо не возвращается', async () => {
+    // Сервер отвечал «ок», позиция исчезала из памяти и оставалась в базе:
+    // гость жал крестик и не видел никакой реакции.
+    const table = '5'
+    await freeTable(table)
+    const guest = await joinGuest(table, 'Гость')
+    const added = await (await post(table, 'lines', { dishId: 'fries' }, { guest })).json()
+    await post(table, 'lines', { dishId: 'espresso' }, { guest })
+
+    assert.equal((await snapshot(table)).lines.length, 2)
+    const removed = await post(table, 'remove', { uid: added.uid }, { guest })
+    assert.equal(removed.status, 200)
+
+    const after = await snapshot(table)
+    assert.equal(after.lines.length, 1, 'позиция ушла и не вернулась при чтении')
+    assert.equal(after.lines[0].dishId, 'espresso')
+    assert.equal(after.totals.draftTotal, 180)
+  })
+
+  test('долг гостя не исчезает из сверки', async () => {
+    // Чек показывал счёт 250, оплату 0 и долг 0 одновременно: три числа,
+    // два из которых опровергают третье. Плюс списание с кухни на одном столе
+    // обнуляло настоящий долг другого — вычитание шло по всей смене сразу.
+    const eaten = '22'
+    await freeTable(eaten)
+    const guest = await joinGuest(eaten, 'Ушедший')
+    await post(eaten, 'lines', { dishId: 'lemonade' }, { guest }) // 220
+    await post(eaten, 'send', { scope: 'mine' }, { guest })
+
+    const snap = await snapshot(eaten)
+    const uid = snap.lines[0].uid
+    // Гость получил напиток и ушёл не заплатив
+    await post(eaten, 'start', { uid, sessionId: snap.sessionId }, { staff: TOKEN })
+    await post(eaten, 'serve', { uid, sessionId: snap.sessionId }, { staff: TOKEN })
+    await post(eaten, 'close', { sessionId: snap.sessionId, force: true }, { staff: TOKEN })
+
+    // Соседний стол закрывают с крупным списанием — оно не должно съесть чужой долг
+    const wasted = '21'
+    await freeTable(wasted)
+    const other = await joinGuest(wasted, 'Другой')
+    await post(wasted, 'lines', { dishId: 'steak' }, { guest: other }) // 1290, не подан
+    await post(wasted, 'send', { scope: 'mine' }, { guest: other })
+    const snap2 = await snapshot(wasted)
+    await post(wasted, 'close', { sessionId: snap2.sessionId, force: true }, { staff: TOKEN })
+
+    const registry = await staffGet('/api/shift/checks')
+    const check = registry.checks.find((c: any) => c.tableId === eaten)
+    assert.equal(check.total, 220)
+    assert.equal(check.paid, 0)
+    assert.equal(check.debt, 220, 'чек не спорит сам с собой')
+
+    assert.equal(registry.shift.debt >= 220, true, 'долг съевшего виден в смене')
+    assert.equal(registry.shift.writtenOff >= 1290, true, 'списание с кухни считается отдельно')
+  })
+
+  test('съеденное и снятое с кухни на одном столе не гасят друг друга', async () => {
+    // Спорный случай: на одном столе гость съел на 250 и не заплатил,
+    // и там же сняли с кухни блюдо на 1290. Долг обязан остаться 250,
+    // а не обнулиться вычитанием более крупного списания.
+    const table = '15'
+    await freeTable(table)
+    const guest = await joinGuest(table, 'Смешанный')
+
+    await post(table, 'lines', { dishId: 'lemonade' }, { guest }) // 220 — съест
+    await post(table, 'lines', { dishId: 'steak' }, { guest }) // 1290 — не подадут
+    await post(table, 'send', { scope: 'mine' }, { guest })
+
+    const snap = await snapshot(table)
+    const drink = snap.lines.find((l: any) => l.dishId === 'lemonade')
+    await post(table, 'start', { uid: drink.uid, sessionId: snap.sessionId }, { staff: TOKEN })
+    await post(table, 'serve', { uid: drink.uid, sessionId: snap.sessionId }, { staff: TOKEN })
+    await post(table, 'close', { sessionId: snap.sessionId, force: true }, { staff: TOKEN })
+
+    const registry = await staffGet('/api/shift/checks')
+    const check = registry.checks.find((c: any) => c.tableId === table)
+
+    assert.equal(check.debt, 220, 'долг за выпитое остался')
+    assert.equal(check.cancelledTotal, 1290, 'снятое с кухни — отдельная строка')
+    assert.equal(registry.shift.debt >= 220, true, 'и в итогах смены он не растворился')
+  })
+
+  test('отменённое самим гостём не занижает долг', async () => {
+    // Случай, на котором разошлись две версии починки: гость сам отменил блюдо
+    // задолго до закрытия. Оно никогда не входило в его долг — и вычитать его
+    // из долга второй раз тоже нельзя.
+    const table = '13'
+    await freeTable(table)
+    const guest = await joinGuest(table, 'Передумавший')
+
+    await post(table, 'lines', { dishId: 'lemonade' }, { guest }) // 220 — выпьет
+    await post(table, 'lines', { dishId: 'steak' }, { guest }) // 1290 — передумает
+    await post(table, 'send', { scope: 'mine' }, { guest })
+
+    const snap = await snapshot(table)
+    const drink = snap.lines.find((l: any) => l.dishId === 'lemonade')
+    const meat = snap.lines.find((l: any) => l.dishId === 'steak')
+
+    // Гость отменяет стейк сам, до всякого закрытия
+    await post(table, 'cancelMine', { uid: meat.uid }, { guest })
+    await post(table, 'start', { uid: drink.uid, sessionId: snap.sessionId }, { staff: TOKEN })
+    await post(table, 'serve', { uid: drink.uid, sessionId: snap.sessionId }, { staff: TOKEN })
+    await post(table, 'close', { sessionId: snap.sessionId, force: true }, { staff: TOKEN })
+
+    const registry = await staffGet('/api/shift/checks')
+    const check = registry.checks.find((c: any) => c.tableId === table)
+    assert.equal(check.total, 220, 'в счёт вошло только выпитое')
+    assert.equal(check.debt, 220, 'долг не занижен отменой, сделанной гостем')
+  })
+
+  test('после переплаты соседа долги гостей складываются в долг стола', async () => {
+    // Регресс, найденный агентом: двум гостям одновременно показывали долги,
+    // вдвое превышающие долг стола. Один платил — долг второго исчезал у него
+    // на глазах, без оплаты.
+    const table = '4'
+    await freeTable(table)
+    const a = await joinGuest(table, 'Первый')
+    const b = await joinGuest(table, 'Второй')
+    const c = await joinGuest(table, 'Третий')
+
+    await post(table, 'lines', { dishId: 'steak' }, { guest: a }) // 1290
+    await post(table, 'lines', { dishId: 'greek' }, { guest: b }) // 590
+    await post(table, 'send', { scope: 'all' }, { guest: a })
+    // Первый платит за стол целиком
+    await post(table, 'pay', { scope: 'full', idemKey: `ov-${Date.now()}` }, { guest: a })
+
+    // И только теперь третий заказывает своё
+    await post(table, 'lines', { dishId: 'espresso' }, { guest: c }) // 180
+    await post(table, 'send', { scope: 'mine' }, { guest: c })
+
+    const snap = await snapshot(table)
+    const sum = snap.totals.byPersona.reduce((s: number, p: any) => s + p.remaining, 0)
+    assert.equal(Math.round(sum * 100) / 100, snap.totals.remaining, 'сумма личных = остаток стола')
+
+    // Показанное совпадает со списываемым: платим за того, у кого есть остаток
+    const debtor = snap.totals.byPersona.find((p: any) => p.remaining > 0)
+    const token = { a, b, c }[
+      ['a', 'b', 'c'][snap.totals.byPersona.findIndex((p: any) => p.personaId === debtor.personaId)] as 'a' | 'b' | 'c'
+    ]
+    const paid = await (await post(table, 'pay', { scope: 'own', idemKey: `pay-${Date.now()}` }, { guest: token })).json()
+    assert.equal(paid.amount, debtor.remaining, 'списали ровно то, что показали')
   })
 
   test('журнал пишет, кто именно взял в работу и подал', async () => {

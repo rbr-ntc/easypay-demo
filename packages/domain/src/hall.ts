@@ -35,12 +35,16 @@ export interface HallCard {
   remaining: number
   sentCount: number
   kitchenPending: number
+  /** Готово и ждёт официанта: тарелка стоит на раздаче. */
+  readyCount?: number
   oldestPendingSentAt: number | null
   lastSentAt: number | null
   lastServedAt: number | null
   lastPaidAt: number | null
   tipsTotal: number
   call: { id?: string; at: number; reason: string; note?: string | null; name: string } | null
+  /** Сколько вызовов от стола ждёт: в зале виден только первый. */
+  calls?: number
   /** «Хочу заплатить наличными» — деньги ждут официанта у стола. */
   cashIntent?: { amount: number; at: number; scope: string; personaId: string; name: string } | null
 }
@@ -69,6 +73,8 @@ export interface HallSummary {
   guests: number
   openBalance: number
   kitchenPending: number
+  /** Готово и ждёт официанта: тарелка стоит на раздаче. */
+  readyCount?: number
   attention: number
   shiftRevenue: number
   closedRevenue: number

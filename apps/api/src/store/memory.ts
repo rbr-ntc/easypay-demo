@@ -152,8 +152,9 @@ export function createMemoryStore(): Store {
         tablesWithRevenue: closed.filter(c => c.paid > 0).length,
         openTablesWithRevenue: openTables.filter(t => t.payments.length > 0).length,
         revenue: round2(closed.reduce((s, c) => s + c.paid, 0) + openPaid),
-        // Долг за то, что гость съел и не оплатил
-        debt: round2(closed.reduce((s, c) => s + Math.max(0, c.debt - c.cancelledTotal), 0)),
+        // Долг за то, что гость получил и не оплатил: отменённое в него
+        // не входит уже на этапе закрытия стола
+        debt: round2(closed.reduce((s, c) => s + c.debt, 0)),
         // Снятое с кухни: еду не отдали, ингредиенты потеряли — считается отдельно
         writtenOff: round2(closed.reduce((s, c) => s + c.cancelledTotal, 0)),
         overpaid: round2(closed.reduce((s, c) => s + c.overpaid, 0)),

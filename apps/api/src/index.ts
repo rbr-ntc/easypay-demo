@@ -25,6 +25,7 @@ import {
   lockoutSeconds,
   loginByPin,
   sessionStaff,
+  staffName,
   staffRoster,
   sweepSessions,
   waiterOfTable
@@ -207,7 +208,8 @@ function snapshot(t: TableSession, id: string) {
       scope: p.scope,
       at: p.at,
       method: p.method ?? 'sbp',
-      takenByName: p.takenByName ?? null,
+      // Кто физически взял наличные — вечером по этому имени сверяют кассу
+      takenByName: p.takenByName ?? staffName(p.takenBy),
       receiptNo: p.receiptNo ?? null,
       lines: p.lines ?? []
     })),
@@ -243,7 +245,6 @@ function snapshot(t: TableSession, id: string) {
         // равно его счёту, а остаток — счёту минус оплаченное. Раньше доли и
         // итоги округлялись независимо: гость видел долю 163,34 при остатке 163,33.
         const shares = splitRounded(ids.map(id => money.shareOf(id)), round2(money.sharedTotal))
-        const tableLeft = round2(money.remaining)
         return t.personas.map((p, i) => {
           const own = round2(money.ownOf(p.id))
           const total = round2(own + shares[i])
@@ -254,8 +255,10 @@ function snapshot(t: TableSession, id: string) {
             share: shares[i],
             total,
             paid,
-            // С гостя не возьмут больше, чем должен стол
-            remaining: round2(Math.min(Math.max(0, round2(total - paid)), tableLeft)),
+            // Остаток берём из денежной модели, а не считаем здесь заново:
+            // именно это число списывается при оплате, и оно уже учитывает
+            // переплату соседа за стол
+            remaining: round2(money.remainingOf(p.id)),
             draft: round2(money.draftOf(p.id))
           }
         })
@@ -468,8 +471,12 @@ export function mutate(
   actor: Actor | null,
   req: any
 ): MutationResult {
-  // Действие должно относиться к текущей сессии стола: uid переиспользуются после закрытия
-  if (body.sessionId && t.sessionId && body.sessionId !== t.sessionId) return fail(409, 'stale session')
+  // Действие должно относиться к текущей сессии стола: uid переиспользуются после закрытия.
+  // Гостю и персоналу нужны разные слова: сотрудник просто перезагрузит экран,
+  // а гость с полной тарелкой должен понять, что стол закрыли и надо позвать человека.
+  if (body.sessionId && t.sessionId && body.sessionId !== t.sessionId) {
+    return fail(409, actor ? 'stale session' : 'session ended', { sessionId: t.sessionId })
+  }
 
   if (STAFF_ACTIONS.has(action)) return staffAction(t, tableId, action, body, actor)
   if (action === 'join') return joinGuest(t, tableId, body)
@@ -480,7 +487,17 @@ export function mutate(
   if (!token) return fail(401, 'guest token required')
   const hash = hashToken(token)
   const persona = t.personas.find(p => p.secretHash === hash)
-  if (!persona) return fail(403, 'unknown guest')
+  if (!persona) {
+    // Стол умирает двумя способами, и гость переживает их по-разному. На сбросе
+    // позиции остаются с читаемой причиной, а на пересоздании сессии тот же
+    // токен получал голое «unknown guest» — техническую фразу вместо объяснения.
+    // Гость с полной тарелкой видел приложение, которое утверждает, что его тут нет.
+    const stale = body.sessionId && t.sessionId && body.sessionId !== t.sessionId
+    if (stale || t.status !== 'open') {
+      return fail(409, 'session ended', { sessionId: t.sessionId })
+    }
+    return fail(403, 'unknown guest')
+  }
   if (body.personaId && body.personaId !== persona.id) return fail(403, 'not your persona')
   // Чаевые — исключение: гость ещё сидит за столом, даже если зал уже его закрыл.
   // Иначе окно для благодарности схлопывается в ноль секунд ровно у того, кто
@@ -917,7 +934,6 @@ function staffAction(t: TableSession, tableId: string, action: string, body: any
       }
 
       // Долг запоминаем до отмены: отменённые позиции выпадают из счёта
-      t.closedWithDebt = round2(money.remaining)
       const cancelled = cancelPending(t, closing ? 'стол закрыт' : 'стол сброшен', actor)
       if (cancelled.count > 0) {
         audit(
@@ -932,24 +948,42 @@ function staffAction(t: TableSession, tableId: string, action: string, body: any
       // Отмена неподанного могла уронить счёт ниже оплаченного — это переплата гостя,
       // её нельзя прятать: по 54-ФЗ нужен возврат
       const after = computeTotals(t, priceOf)
+
+      // Долг снимаем ПОСЛЕ отмены: гость должен за то, что получил, а не за то,
+      // что успело уехать на кухню. Раньше сумма бралась до отмены и включала
+      // неподанное, а витрина пыталась это компенсировать вычитанием списаний —
+      // но там суммировались и позиции, отменённые самим гостём задолго до
+      // закрытия, которые в долг не входили никогда.
+      t.closedWithDebt = round2(after.remaining)
       const overpaid = round2(Math.max(0, after.paidTotal - after.tableTotal))
       if (overpaid > 0.01) {
         t.overpaid = overpaid
         audit(actor, 'переплата к возврату', tableId, 'за отменённое', overpaid)
       }
 
-      const withDebt = money.remaining > 0.01
+      // Журнал называет тот же долг, что чек и итоги смены: раньше сюда шли
+      // до-отменочные числа, и одна и та же сумма расходилась на четырёх экранах
+      const debt = round2(after.remaining)
+      const withDebt = debt > 0.01
       audit(
         actor,
         withDebt ? `${closing ? 'закрыл' : 'сбросил'} стол с долгом` : `${closing ? 'закрыл' : 'сбросил'} стол`,
         tableId,
-        `оплачено ${round2(money.paidTotal)} ₽${withDebt ? `, долг ${round2(money.remaining)} ₽` : ''}`,
-        withDebt ? round2(money.remaining) : round2(money.paidTotal)
+        `оплачено ${round2(after.paidTotal)} ₽${withDebt ? `, долг ${debt} ₽` : ''}`,
+        withDebt ? debt : round2(after.paidTotal)
       )
     }
 
     t.status = 'closed'
     t.closedAt = Date.now()
+    // Новый цикл стола начинается грязным: метка уборки от прошлой сессии
+    // делала невозможной повторную уборку — сервер отвечал «уже убран», и
+    // гостей сажали за неубранный стол. Ровно то, ради чего кнопка и делалась.
+    t.cleanedAt = null
+    // Вызовы умирают вместе со столом: «Нина просит воды» висело в зале
+    // на уже свободном столе, и официант шёл к человеку, который ушёл
+    t.calls = []
+    t.cashIntent = null
     // Сброс освобождает стол сразу, но чистит данные хранилище — после того,
     // как зафиксирует чек смены: иначе состав закрытой сессии теряется.
     if (!closing) t.resetRequested = true
