@@ -379,10 +379,12 @@ export async function createPostgresStore(url?: string): Promise<Store> {
 
     async audit(entry) {
       await sql`
-        insert into audit_log (venue_id, at, actor_type, actor_id, actor_name, session_id, action, table_id, amount, detail)
-        values (
+        insert into audit_log (
+          venue_id, at, actor_type, actor_id, guest_id, actor_name, session_id,
+          action, table_id, amount, detail
+        ) values (
           ${venueId}, ${new Date(entry.at)}, ${entry.role ? 'staff' : 'guest'},
-          ${staffUuid(entry.staffId)},
+          ${staffUuid(entry.staffId)}, ${entry.guestId ?? null},
           ${entry.name}, ${entry.sessionId ?? null}, ${entry.action},
           ${entry.tableId ? await tableUuid(sql, entry.tableId) : null},
           ${entry.amount ?? null}, ${entry.detail}
@@ -402,6 +404,8 @@ export async function createPostgresStore(url?: string): Promise<Store> {
       return rows.map((r: any) => ({
         at: new Date(r.at).getTime(),
         staffId: r.actor_id,
+        // Гость — тоже автор: в споре о деньгах «Гость» без id не ответ
+        guestId: r.guest_id ?? null,
         name: r.actor_name ?? 'Гость',
         role: r.actor_type === 'staff' ? 'staff' : null,
         action: r.action,

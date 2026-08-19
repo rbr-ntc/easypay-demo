@@ -979,3 +979,20 @@ test('чаевые можно оставить и после того, как з
   const late = await post(table, 'lines', { dishId: 'fries' }, { guest })
   assert.equal(late.status, 409)
 })
+
+test('журнал называет гостя, а не просто «Гость»', async () => {
+  // При споре «я этот платёж не проводил» разбирать было нечем: гостевые
+  // действия ложились в журнал без единого признака автора.
+  const table = freshTable()
+  const { guest, personaId } = await joinGuest(table, 'Олег', 'bear')
+  await post(table, 'lines', { dishId: 'greek' }, { guest })
+  await post(table, 'send', { scope: 'mine' }, { guest })
+  await post(table, 'pay', { scope: 'own', idemKey: 'ga-1' }, { guest })
+
+  const log = await (await fetch(`${base}/api/log`, { headers: { 'x-staff-token': TOKEN } })).json()
+  const payment = log.entries.find(e => e.action === 'оплата' && e.tableId === table)
+
+  assert.equal(payment.guestId, personaId, 'видно, какой именно гость заплатил')
+  assert.equal(payment.name, 'Олег', 'и как его зовут')
+  assert.equal(payment.amount, 590)
+})

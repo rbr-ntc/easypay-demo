@@ -76,11 +76,20 @@ const allowed = (actor: Actor | null, permission: Permission) => !!actor && can(
 // Мутация синхронна, поэтому записи можно копить здесь и сбрасывать после сохранения.
 let pendingAudit: AuditEntry[] = []
 
-function audit(actor: Actor | null, action: string, tableId: string | null, detail: string | null = null, amount: number | null = null) {
+function audit(
+  actor: Actor | null,
+  action: string,
+  tableId: string | null,
+  detail: string | null = null,
+  amount: number | null = null,
+  guest: { id: string; name: string } | null = null
+) {
   pendingAudit.push({
     at: Date.now(),
     staffId: actor?.id ?? null,
-    name: actor?.name ?? 'Гость',
+    // Гость — тоже автор действия, и в споре о деньгах важно знать, какой именно
+    guestId: guest?.id ?? null,
+    name: actor?.name ?? guest?.name ?? 'Гость',
     role: actor?.role ?? null,
     sessionId: actor?.sessionId ?? null,
     action,
@@ -522,7 +531,7 @@ function joinGuest(t: TableSession, tableId: string, body: any): MutationResult 
     secretHash: hashToken(guestToken)
   }
   t.personas.push(persona)
-  audit(null, 'сел за стол', tableId, name)
+  audit(null, 'сел за стол', tableId, name, null, persona)
   return ok({ personaId: persona.id, guestToken, snapshot: snapshot(t, tableId) })
 }
 
@@ -569,7 +578,7 @@ function guestAction(t: TableSession, tableId: string, action: string, body: any
       servedAt: null
     }
     t.lines.push(line)
-    audit(null, 'добавил', tableId, `${persona.name}: ${dish.name}${qty > 1 ? ` ×${qty}` : ''}`, round2(line.price * qty))
+    audit(null, 'добавил', tableId, `${persona.name}: ${dish.name}${qty > 1 ? ` ×${qty}` : ''}`, round2(line.price * qty), persona)
     return ok({ ok: true, uid: line.uid, line: publicLine(line) })
   }
 
@@ -580,7 +589,7 @@ function guestAction(t: TableSession, tableId: string, action: string, body: any
     if (line.sent) return fail(409, 'already sent to kitchen')
     if (line.personaId !== persona.id) return fail(403, 'not yours')
     t.lines = t.lines.filter(l => l !== line)
-    audit(null, 'убрал', tableId, `${persona.name}: ${dishName(line.dishId)}`)
+    audit(null, 'убрал', tableId, `${persona.name}: ${dishName(line.dishId)}`, round2(line.price * line.qty), persona)
     return ok()
   }
 
@@ -601,7 +610,7 @@ function guestAction(t: TableSession, tableId: string, action: string, body: any
     // Гость с плохой связью жмёт кнопку дважды: заказ уже на кухне, и сказать
     // об этом надо спокойно, а не красной ошибкой на успешном действии
     if (sent === 0) return ok({ ok: true, sent: 0, alreadySent: true })
-    audit(null, 'отправил на кухню', tableId, `${persona.name}: ${sent} поз.`)
+    audit(null, 'отправил на кухню', tableId, `${persona.name}: ${sent} поз.`, null, persona)
     return ok({ ok: true, sent })
   }
 
@@ -645,7 +654,7 @@ function guestAction(t: TableSession, tableId: string, action: string, body: any
       }))
     }
     t.payments.push(payment)
-    audit(null, 'оплата', tableId, `${persona.name} · ${scope}`, amount)
+    audit(null, 'оплата', tableId, `${persona.name} · ${scope} · ${method}`, amount, persona)
 
     const left = round2(computeTotals(t, priceOf).remaining)
     // Причина вызова исчезла — снимаем его сам, иначе официант идёт с папкой
@@ -693,7 +702,7 @@ function guestAction(t: TableSession, tableId: string, action: string, body: any
       waiterId: waiter?.id ?? null
     }
     t.tips.push(tip)
-    audit(null, 'чаевые', tableId, `${persona.name} → ${waiter?.name ?? 'официанту'}`, amount)
+    audit(null, 'чаевые', tableId, `${persona.name} → ${waiter?.name ?? 'официанту'}`, amount, persona)
     return ok({
       ok: true,
       amount,
@@ -723,7 +732,7 @@ function guestAction(t: TableSession, tableId: string, action: string, body: any
     line.cancelled = true
     line.cancelledAt = Date.now()
     line.cancelReason = 'гость отменил'
-    audit(null, 'гость отменил блюдо', tableId, `${persona.name}: ${dishName(line.dishId)}`, round2(line.price * line.qty))
+    audit(null, 'гость отменил блюдо', tableId, `${persona.name}: ${dishName(line.dishId)}`, round2(line.price * line.qty), persona)
     return ok()
   }
 
@@ -737,7 +746,7 @@ function guestAction(t: TableSession, tableId: string, action: string, body: any
     if (amount <= 0) return fail(400, 'nothing to pay')
 
     t.cashIntent = { personaId: persona.id, scope: wanted, amount, at: Date.now() }
-    audit(null, 'просит принять наличные', tableId, `${persona.name} · ${wanted}`, amount)
+    audit(null, 'просит принять наличные', tableId, `${persona.name} · ${wanted}`, amount, persona)
     return ok({ ok: true, amount, scope: wanted })
   }
 
@@ -760,7 +769,7 @@ function guestAction(t: TableSession, tableId: string, action: string, body: any
 
   const call = { id: crypto.randomUUID(), at: Date.now(), personaId: persona.id, reason, note }
   t.calls.push(call)
-  audit(null, 'позвал официанта', tableId, `${persona.name} · ${reason}${note ? `: ${note}` : ''}`)
+  audit(null, 'позвал официанта', tableId, `${persona.name} · ${reason}${note ? `: ${note}` : ''}`, null, persona)
   return ok({ ok: true, callId: call.id, at: call.at, repeated: false })
 }
 
