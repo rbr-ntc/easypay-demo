@@ -2,14 +2,15 @@
 import { computeTotals, isBillLine, round2 } from '@easypay/domain/money'
 import { summarizeHall } from '@easypay/domain/hall'
 import { sortTickets, summarizeKitchen } from '@easypay/domain/kitchen'
-import { dishName, priceOf, stationOf, allergensOf } from './menu.mjs'
-import { HALL, metaOf, planTables } from './hallplan.mjs'
-import { waiterOfTable } from './staff.mjs'
+import { dishName, priceOf, stationOf, allergensOf } from './menu.ts'
+import { HALL, metaOf, planTables } from './hallplan.ts'
+import { waiterOfTable } from './staff.ts'
+import type { Call, TableSession } from './types.ts'
 
 /** Отменённые позиции ещё пять минут висят на кухне со статусом «отмена». */
 const CANCEL_VISIBLE_MS = 5 * 60_000
 
-function firstCall(table) {
+function firstCall(table: TableSession) {
   const call = (table.calls ?? [])[0]
   if (!call) return null
   return {
@@ -20,7 +21,7 @@ function firstCall(table) {
 }
 
 /** Компактная карточка стола: из неё shared/hall.js считает статус, таймеры и алерты. */
-export function hallCard(id, table) {
+export function hallCard(id: string, table: TableSession) {
   const meta = metaOf(id)
   const money = computeTotals(table, priceOf)
   const pending = table.lines.filter(l => isBillLine(l) && !l.served)
@@ -48,8 +49,8 @@ export function hallCard(id, table) {
     sentCount: table.lines.filter(isBillLine).length,
     kitchenPending: pending.length,
     oldestPendingSentAt: pending.length ? Math.min(...pending.map(l => l.sentAt ?? 0)) : null,
-    lastSentAt: sentAts.length ? Math.max(...sentAts) : null,
-    lastServedAt: servedAts.length ? Math.max(...servedAts) : null,
+    lastSentAt: sentAts.length ? Math.max(...(sentAts as number[])) : null,
+    lastServedAt: servedAts.length ? Math.max(...(servedAts as number[])) : null,
     lastPaidAt: payAts.length ? Math.max(...payAts) : null,
     tipsTotal: round2(table.tips.reduce((s, t) => s + t.amount, 0)),
     call: firstCall(table),
@@ -57,7 +58,7 @@ export function hallCard(id, table) {
   }
 }
 
-export function hallPayload(tables, shift) {
+export function hallPayload(tables: Map<string, TableSession>, shift: any) {
   const now = Date.now()
   const cards = planTables().map(t => hallCard(t.id, tables.get(t.id) ?? emptyLike()))
   // Столы вне плана (подделанный QR или тестовый прогон) показываем отдельно
@@ -93,15 +94,15 @@ export function hallPayload(tables, shift) {
   }
 }
 
-function emptyLike() {
-  return { status: 'closed', openedAt: null, closedAt: null, personas: [], lines: [], payments: [], tips: [], calls: [] }
+function emptyLike(): TableSession {
+  return { sessionId: null, status: 'closed', openedAt: null, closedAt: null, personas: [], lines: [], payments: [], tips: [], calls: [], seq: 1 }
 }
 
 /** Тикет = отправленная, но ещё не поданная позиция. Кухня видит весь ресторан сразу. */
-export function kitchenPayload(tables) {
+export function kitchenPayload(tables: Map<string, TableSession>) {
   const now = Date.now()
-  const tickets = []
-  const cancelled = []
+  const tickets: any[] = []
+  const cancelled: any[] = []
 
   for (const [id, table] of tables) {
     const meta = metaOf(id)

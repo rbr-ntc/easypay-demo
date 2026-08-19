@@ -3,8 +3,69 @@
 // и на клиенте, поэтому статусы и таймеры на экране зала обновляются каждую секунду
 // без лишних запросов.
 
+
+export type TableStatus = 'paid' | 'paying' | 'served' | 'cooking' | 'seated' | 'dirty' | 'free'
+
+export type AlertSeverity = 'info' | 'ok' | 'warn' | 'danger'
+
+export interface HallAlert {
+  id: string
+  label: string
+  severity: AlertSeverity
+}
+
+/** Компактная карточка стола: всё, из чего считаются статус, таймеры и алерты. */
+export interface HallCard {
+  id: string
+  zoneId: string
+  zoneName: string
+  seats: number
+  status: 'open' | 'closed'
+  openedAt: number | null
+  closedAt: number | null
+  guests: number
+  personas: { name: string; animal: string }[]
+  tableTotal: number
+  paidTotal: number
+  remaining: number
+  sentCount: number
+  kitchenPending: number
+  oldestPendingSentAt: number | null
+  lastSentAt: number | null
+  lastServedAt: number | null
+  lastPaidAt: number | null
+  tipsTotal: number
+  call: { at: number; reason: string; name: string } | null
+}
+
+export interface HallShift {
+  tables: number
+  revenue: number
+  guests: number
+}
+
+export interface HallSummary {
+  tables: number
+  occupied: number
+  seatsTotal: number
+  guests: number
+  openBalance: number
+  kitchenPending: number
+  attention: number
+  shiftRevenue: number
+  shiftGuests: number
+  closedTables: number
+  avgCheck: number | null
+}
+
+export interface TableDescription {
+  status: TableStatus
+  since: number | null
+  alerts: HallAlert[]
+}
+
 /** Порядок = приоритет отображения в зале (от «нужно действие» к «всё спокойно»). */
-export const TABLE_STATUS = {
+export const TABLE_STATUS: Record<string, TableStatus> = {
   PAID: 'paid', // оплачено полностью, можно закрывать
   PAYING: 'paying', // оплатили частично
   SERVED: 'served', // всё подано, ждём деньги
@@ -14,7 +75,7 @@ export const TABLE_STATUS = {
   FREE: 'free'
 }
 
-export const STATUS_LABEL = {
+export const STATUS_LABEL: Record<TableStatus, string> = {
   paid: 'Оплачен',
   paying: 'Частичная оплата',
   served: 'Ждёт оплаты',
@@ -32,9 +93,9 @@ export const THRESHOLDS = {
   cleanupMs: 5 * 60_000 // стол закрыт и ещё не убран
 }
 
-const NOTHING = []
+const NOTHING: HallAlert[] = []
 
-export function tableStatus(card, now) {
+export function tableStatus(card: HallCard, now: number): TableStatus {
   if (card.status === 'closed') {
     // Только что закрытый стол ещё «грязный»: его надо убрать и подготовить
     const justClosed = card.closedAt && now - card.closedAt < THRESHOLDS.cleanupMs
@@ -49,7 +110,7 @@ export function tableStatus(card, now) {
 }
 
 /** С какого момента стол находится в текущем состоянии — для таймера на карточке. */
-export function statusSince(card, status) {
+export function statusSince(card: HallCard, status: TableStatus): number | null {
   if (status === TABLE_STATUS.DIRTY || status === TABLE_STATUS.FREE) return card.closedAt
   if (status === TABLE_STATUS.PAID || status === TABLE_STATUS.PAYING) return card.lastPaidAt ?? card.openedAt
   if (status === TABLE_STATUS.COOKING) return card.oldestPendingSentAt ?? card.lastSentAt ?? card.openedAt
@@ -57,15 +118,15 @@ export function statusSince(card, status) {
   return card.openedAt
 }
 
-export const CALL_LABEL = {
+export const CALL_LABEL: Record<string, string> = {
   help: 'зовёт официанта',
   bill: 'просит счёт',
   water: 'просит воды'
 }
 
-export function tableAlerts(card, now) {
+export function tableAlerts(card: HallCard, now: number): HallAlert[] {
   const status = tableStatus(card, now)
-  const alerts = []
+  const alerts: HallAlert[] = []
 
   // Вызов гостя — самое срочное, показываем первым
   if (card.call) {
@@ -98,13 +159,13 @@ export function tableAlerts(card, now) {
   return alerts.length ? alerts : NOTHING
 }
 
-export function describeTable(card, now) {
+export function describeTable(card: HallCard, now: number): TableDescription {
   const status = tableStatus(card, now)
   return { status, since: statusSince(card, status), alerts: tableAlerts(card, now) }
 }
 
 /** Сводка по залу: занятость, деньги в работе, кухня, что горит. */
-export function summarizeHall(cards, shift, now) {
+export function summarizeHall(cards: HallCard[], shift: HallShift | null, now: number): HallSummary {
   const described = cards.map(card => ({ card, ...describeTable(card, now) }))
   const open = described.filter(d => d.card.status === 'open')
   const guests = open.reduce((s, d) => s + d.card.guests, 0)

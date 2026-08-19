@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { amountFor, computeTotals, isBillLine, round2 } from '../money.js'
+import { amountFor, computeTotals, isBillLine, round2 } from '../src/money.ts'
 
 const PRICES = { tomyam: 690, padthai: 600, steak: 1290, lemonade: 220 }
 const priceOf = id => PRICES[id] ?? 0

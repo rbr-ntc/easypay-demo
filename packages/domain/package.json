@@ -5,31 +5,18 @@
   "description": "Правила предметной области без ввода-вывода: деньги, зал, кухня, роли, аллергены",
   "type": "module",
   "exports": {
-    "./money": {
-      "types": "./money.d.ts",
-      "default": "./money.js"
-    },
-    "./hall": {
-      "types": "./hall.d.ts",
-      "default": "./hall.js"
-    },
-    "./kitchen": {
-      "types": "./kitchen.d.ts",
-      "default": "./kitchen.js"
-    },
-    "./roles": {
-      "types": "./roles.d.ts",
-      "default": "./roles.js"
-    },
-    "./allergens": {
-      "types": "./allergens.d.ts",
-      "default": "./allergens.js"
-    }
+    "./money": { "types": "./dist/money.d.ts", "default": "./dist/money.js" },
+    "./hall": { "types": "./dist/hall.d.ts", "default": "./dist/hall.js" },
+    "./kitchen": { "types": "./dist/kitchen.d.ts", "default": "./dist/kitchen.js" },
+    "./roles": { "types": "./dist/roles.d.ts", "default": "./dist/roles.js" },
+    "./allergens": { "types": "./dist/allergens.d.ts", "default": "./dist/allergens.js" }
   },
   "scripts": {
-    "test": "node --test tests/*.test.js"
+    "build": "tsc -b",
+    "test": "node --test tests/*.test.ts"
   },
   "devDependencies": {
-    "@easypay/config": "*"
+    "@easypay/config": "*",
+    "typescript": "^5.6.3"
   }
 }

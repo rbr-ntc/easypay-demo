@@ -4,7 +4,7 @@ import http from 'node:http'
 
 process.env.EASYPAY_MANAGER_TOKEN = 'test-manager-token'
 process.env.EASYPAY_ANY_TABLE = '1' // тестам нужны произвольные столы вне плана зала
-const { createServer } = await import('../src/index.mjs')
+const { createServer } = await import('../src/index.ts')
 
 const server = createServer()
 await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))

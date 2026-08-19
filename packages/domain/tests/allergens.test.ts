@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { menu as MENU } from '@easypay/config'
-import { ALLERGENS, allergensFor, dietTagsOf, isAllergen, possibleAllergensFor } from '../allergens.js'
+import { ALLERGENS, allergensFor, dietTagsOf, isAllergen, possibleAllergensFor } from '../src/allergens.ts'
 
 const dishes = Object.values(MENU).flat()
 const dish = id => dishes.find(d => d.id === id)

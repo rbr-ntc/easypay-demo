@@ -9,9 +9,11 @@ import { fileURLToPath } from 'node:url'
 import crypto from 'node:crypto'
 import { amountFor, computeTotals, PAY_SCOPES, round2 } from '@easypay/domain/money'
 import { can, ownsTable } from '@easypay/domain/roles'
-import { checkOptions, dishName, getDish, priceOf } from './menu.mjs'
-import { isKnownTable, seatsOf } from './hallplan.mjs'
-import { hallPayload, kitchenPayload } from './feeds.mjs'
+import type { Permission } from '@easypay/domain/roles'
+import { checkOptions, dishName, getDish, priceOf } from './menu.ts'
+import { isKnownTable, seatsOf } from './hallplan.ts'
+import { hallPayload, kitchenPayload } from './feeds.ts'
+import type { Actor, AuditEntry, Call, Line, MutationResult, Persona, Shift, TableSession } from './types.ts'
 import {
   dropSession,
   loginAllowed,
@@ -20,7 +22,7 @@ import {
   staffRoster,
   sweepSessions,
   waiterOfTable
-} from './staff.mjs'
+} from './staff.ts'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 // Собранный клиент лежит рядом: apps/web/dist
@@ -28,7 +30,7 @@ const DIST = path.join(__dirname, '..', '..', 'web', 'dist')
 const PORT = process.env.PORT || 8787
 
 // Итоги смены. guestsSeen считаем на входе гостя — счётчик за смену не должен уменьшаться.
-const shift = {
+const shift: Shift = {
   tables: 0,
   tablesWithRevenue: 0,
   revenue: 0,
@@ -43,7 +45,7 @@ const shift = {
 // --- Токен менеджера: сервисный вход, когда PIN-ов ещё нет ---
 export const MANAGER_TOKEN = process.env.EASYPAY_MANAGER_TOKEN || crypto.randomBytes(9).toString('base64url')
 
-function tokenMatches(token) {
+function tokenMatches(token: unknown): boolean {
   const given = Buffer.from(String(token ?? ''))
   const want = Buffer.from(MANAGER_TOKEN)
   return given.length === want.length && crypto.timingSafeEqual(given, want)
@@ -53,7 +55,7 @@ function tokenMatches(token) {
  * Кто действует: сотрудник со своей сессией (вход по PIN) или мастер-токен менеджера.
  * EventSource не умеет слать заголовки, поэтому для SSE токен принимаем и из query.
  */
-function actorFrom(req, url) {
+function actorFrom(req: any, url?: URL | null): Actor | null {
   const token =
     req.headers['x-staff-token'] ?? req.headers['x-manager-token'] ?? (url ? url.searchParams.get('token') : null)
   if (!token) return null
@@ -61,13 +63,13 @@ function actorFrom(req, url) {
   return sessionStaff(token)
 }
 
-const allowed = (actor, permission) => !!actor && can(actor.role, permission)
+const allowed = (actor: Actor | null, permission: any) => !!actor && can(actor.role, permission)
 
 // --- Журнал смены ---
 const AUDIT_MAX = 400
-const auditLog = []
+const auditLog: AuditEntry[] = []
 
-function audit(actor, action, tableId, detail = null) {
+function audit(actor: Actor | null, action: string, tableId: string | null, detail: string | null = null) {
   auditLog.push({
     at: Date.now(),
     staffId: actor?.id ?? null,
@@ -81,11 +83,11 @@ function audit(actor, action, tableId, detail = null) {
 }
 
 // --- Состояние столов ---
-const tables = new Map()
-const streams = new Map()
-const hallStreams = new Set()
-const kitchenStreams = new Set()
-const idempotency = new Map()
+const tables = new Map<string, TableSession>()
+const streams = new Map<string, Set<import("node:http").ServerResponse>>()
+const hallStreams = new Set<import("node:http").ServerResponse>()
+const kitchenStreams = new Set<import("node:http").ServerResponse>()
+const idempotency = new Map<string, { at: number; status: number; body: Record<string, unknown> }>()
 
 const MAX_TABLES = 500
 const MAX_STREAMS_PER_TABLE = 50
@@ -95,7 +97,7 @@ const IDEM_TTL = 10 * 60 * 1000
 const MAX_CALLS = 5
 const MAX_LINES = 200
 
-function emptySession(status = 'closed') {
+function emptySession(status: 'open' | 'closed' = 'closed'): TableSession {
   return {
     sessionId: null,
     status, // 'open' | 'closed'
@@ -110,7 +112,7 @@ function emptySession(status = 'closed') {
   }
 }
 
-function getTable(id, create = false) {
+function getTable(id: string, create = false): TableSession {
   if (!tables.has(id)) {
     if (!create) return emptySession()
     if (tables.size >= MAX_TABLES) {
@@ -120,7 +122,7 @@ function getTable(id, create = false) {
     }
     tables.set(id, emptySession())
   }
-  return tables.get(id)
+  return tables.get(id)!
 }
 
 const sweeper = setInterval(() => {
@@ -137,12 +139,15 @@ const sweeper = setInterval(() => {
 }, 10 * 60 * 1000)
 sweeper.unref()
 
-function idemRemember(key, status, body) {
-  if (idempotency.size >= MAX_IDEM) idempotency.delete(idempotency.keys().next().value)
+function idemRemember(key: string, status: number, body: Record<string, unknown>) {
+  if (idempotency.size >= MAX_IDEM) {
+    const oldest = idempotency.keys().next().value
+    if (oldest) idempotency.delete(oldest)
+  }
   idempotency.set(key, { at: Date.now(), status, body })
 }
 
-function openSession(id) {
+function openSession(id: string): TableSession {
   const fresh = emptySession('open')
   fresh.sessionId = crypto.randomUUID()
   fresh.openedAt = Date.now()
@@ -151,7 +156,7 @@ function openSession(id) {
 }
 
 /** Публичная позиция: без внутренних полей, зато с названием блюда. */
-function publicLine(line) {
+function publicLine(line: Line) {
   return {
     uid: line.uid,
     dishId: line.dishId,
@@ -176,7 +181,7 @@ function publicLine(line) {
  * Снапшот стола. Секреты гостей наружу не уходят, зато уходят ИТОГИ: гость должен
  * видеть ровно те числа, которые спишет сервер, а не считать их сам.
  */
-function snapshot(id) {
+function snapshot(id: string) {
   const t = getTable(id, false)
   const money = computeTotals(t, priceOf)
   const nameOf = pid => t.personas.find(p => p.id === pid)?.name ?? 'Гость'
@@ -214,7 +219,7 @@ function snapshot(id) {
   }
 }
 
-function pushTo(subscribers, payload) {
+function pushTo(subscribers: Set<any>, payload: unknown) {
   if (subscribers.size === 0) return
   const data = `data: ${JSON.stringify(payload)}\n\n`
   for (const res of subscribers) {
@@ -226,7 +231,7 @@ function pushTo(subscribers, payload) {
   }
 }
 
-function broadcast(id) {
+function broadcast(id: string) {
   const subs = streams.get(id)
   if (subs) pushTo(subs, snapshot(id))
   if (hallStreams.size > 0) pushTo(hallStreams, hallPayload(tables, shift))
@@ -234,13 +239,13 @@ function broadcast(id) {
 }
 
 // --- HTTP helpers ---
-function json(res, code, obj) {
+function json(res: any, code: number, obj: unknown) {
   const body = JSON.stringify(obj)
   res.writeHead(code, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' })
   res.end(body)
 }
 
-async function readBody(req) {
+async function readBody(req: any): Promise<any> {
   let raw = ''
   for await (const chunk of req) {
     raw += chunk
@@ -252,7 +257,7 @@ async function readBody(req) {
   return parsed
 }
 
-const MIME = {
+const MIME: Record<string, string> = {
   '.html': 'text/html; charset=utf-8',
   '.js': 'text/javascript',
   '.css': 'text/css',
@@ -265,7 +270,7 @@ const MIME = {
   '.webmanifest': 'application/manifest+json'
 }
 
-async function serveStatic(req, res, pathname) {
+async function serveStatic(req: any, res: any, pathname: string) {
   if (!existsSync(DIST)) {
     res.writeHead(503, { 'Content-Type': 'text/plain; charset=utf-8' })
     res.end('dist not built')
@@ -305,7 +310,7 @@ const IDEMPOTENT_ACTIONS = new Set(['join', 'lines', 'pay', 'tip'])
 const CALL_REASONS = new Set(['help', 'bill', 'water'])
 const MAX_QTY = 9
 
-function sanitizeName(name) {
+function sanitizeName(name: unknown): string {
   return String(name ?? '')
     .replace(/[<>]/g, '')
     // eslint-disable-next-line no-control-regex
@@ -314,14 +319,17 @@ function sanitizeName(name) {
     .slice(0, NAME_MAX)
 }
 
-const asId = v => (typeof v === 'string' && v.length > 0 && v.length <= 64 ? v : null)
-const asUid = v => (Number.isInteger(Number(v)) && Number(v) > 0 ? Number(v) : null)
+const asId = (v: unknown): string | null => (typeof v === 'string' && v.length > 0 && v.length <= 64 ? v : null)
+const asUid = (v: unknown): number | null => (Number.isInteger(Number(v)) && Number(v) > 0 ? Number(v) : null)
 
-const fail = (status, error, extra = {}) => ({ status, body: { error, ...extra } })
-const ok = (body = { ok: true }) => ({ status: 200, body })
+const fail = (status: number, error: string, extra: Record<string, unknown> = {}): MutationResult => ({
+  status,
+  body: { error, ...extra }
+})
+const ok = (body: Record<string, unknown> = { ok: true }): MutationResult => ({ status: 200, body })
 
 /** Отменяет всё, что висит на кухне: повар должен узнать, что блюдо больше не нужно. */
-function cancelPending(table, reason) {
+function cancelPending(table: TableSession, reason: string): number {
   const now = Date.now()
   let count = 0
   for (const line of table.lines) {
@@ -336,7 +344,7 @@ function cancelPending(table, reason) {
 }
 
 // --- Мутации ---
-function mutate(tableId, action, body, actor, req) {
+function mutate(tableId: string, action: string, body: any, actor: Actor | null, req: any): MutationResult {
   const t = getTable(tableId, true)
 
   // Действие должно относиться к текущей сессии стола: uid переиспользуются после закрытия
@@ -357,7 +365,7 @@ function mutate(tableId, action, body, actor, req) {
   return guestAction(t, tableId, action, body, persona)
 }
 
-function joinGuest(t, tableId, body) {
+function joinGuest(t: TableSession, tableId: string, body: any): MutationResult {
   if (!isKnownTable(tableId)) return fail(404, 'unknown table')
   const table = t.status === 'open' ? t : openSession(tableId)
   const seats = seatsOf(tableId)
@@ -381,7 +389,7 @@ function joinGuest(t, tableId, body) {
   return ok({ personaId: persona.id, guestToken: persona.secret, snapshot: snapshot(tableId) })
 }
 
-function guestAction(t, tableId, action, body, persona) {
+function guestAction(t: TableSession, tableId: string, action: string, body: any, persona: Persona): MutationResult {
   if (action === 'lines') {
     const dish = getDish(asId(body.dishId))
     if (!dish) return fail(400, 'unknown dish')
@@ -399,7 +407,7 @@ function guestAction(t, tableId, action, body, persona) {
       dishId: dish.id,
       qty,
       price: dish.price, // цена фиксируется в момент заказа
-      options: checked.options,
+      options: checked.options ?? {},
       shared: !!body.shared,
       sharedWith: [],
       personaId: persona.id,
@@ -489,9 +497,9 @@ function guestAction(t, tableId, action, body, persona) {
   return ok()
 }
 
-function staffAction(t, tableId, action, body, actor) {
+function staffAction(t: TableSession, tableId: string, action: string, body: any, actor: Actor | null): MutationResult {
   if (!actor) return fail(401, 'staff login required')
-  if (!can(actor.role, action)) return fail(403, 'role not allowed')
+  if (!can(actor.role, action as Permission)) return fail(403, 'role not allowed')
   // Закреплённые столы — ответственность, а не подсветка: чужой стол трогать нельзя
   if (!ownsTable(actor, tableId)) return fail(403, 'not your table', { waiter: waiterOfTable(tableId)?.name ?? null })
 
@@ -590,7 +598,7 @@ function staffAction(t, tableId, action, body, actor) {
 }
 
 /** Общая обвязка экранов персонала: GET-снапшот и SSE на одном payload. */
-function staffFeed(req, res, url, payloadFn, subscribers, permission) {
+function staffFeed(req: any, res: any, url: URL, payloadFn: () => unknown, subscribers: Set<any>, permission: any) {
   if (req.method !== 'GET') return json(res, 405, { error: 'method' })
   const actor = actorFrom(req, url)
   if (!actor) return json(res, 401, { error: 'staff login required' })
@@ -622,7 +630,7 @@ function staffFeed(req, res, url, payloadFn, subscribers, permission) {
 }
 
 // --- Роутер API ---
-async function handleApi(req, res, url) {
+async function handleApi(req: any, res: any, url: URL) {
   if (url.pathname === '/api/staff/login') {
     if (req.method !== 'POST') return json(res, 405, { error: 'method' })
     const ip = req.socket.remoteAddress ?? 'unknown'
@@ -683,12 +691,12 @@ async function handleApi(req, res, url) {
     })
     res.write(`data: ${JSON.stringify(snapshot(tableId))}\n\n`)
     if (!streams.has(tableId)) streams.set(tableId, new Set())
-    const subs = streams.get(tableId)
+    const subs = streams.get(tableId)!
     if (subs.size >= MAX_STREAMS_PER_TABLE) {
       res.end()
       return
     }
-    subs.add(res)
+    subs!.add(res)
     const ping = setInterval(() => {
       try {
         res.write(': ping\n\n')
@@ -725,7 +733,7 @@ async function handleApi(req, res, url) {
 
 export function createServer() {
   return http.createServer(async (req, res) => {
-    const url = new URL(req.url, `http://${req.headers.host}`)
+    const url = new URL(req.url ?? "/", `http://${req.headers.host}`)
     try {
       if (url.pathname.startsWith('/api/')) return await handleApi(req, res, url)
       return await serveStatic(req, res, url.pathname)

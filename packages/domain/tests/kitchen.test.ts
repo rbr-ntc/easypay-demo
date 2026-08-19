@@ -7,7 +7,7 @@ import {
   ticketState,
   ticketUrgency,
   ticketWait
-} from '../kitchen.js'
+} from '../src/kitchen.ts'
 
 const NOW = 1_700_000_000_000
 const min = m => m * 60_000

@@ -8,7 +8,7 @@ import { staff as RAW } from '@easypay/config'
 const PIN_OVERRIDES = new Map(
   String(process.env.EASYPAY_STAFF_PINS ?? '')
     .split(',')
-    .map(pair => pair.split('=').map(s => s.trim()))
+    .map(pair => pair.split('=').map(x => x.trim()) as [string, string])
     .filter(([id, pin]) => id && pin)
 )
 
@@ -21,7 +21,7 @@ const STAFF = RAW.staff.map(s => ({
 }))
 
 /** Публичная карточка сотрудника: без PIN-кода. */
-function publicStaff(s) {
+function publicStaff(s: any) {
   return { id: s.id, name: s.name, role: s.role, tables: s.tables }
 }
 
@@ -29,7 +29,7 @@ export function staffRoster() {
   return STAFF.map(publicStaff)
 }
 
-export function waiterOfTable(tableId) {
+export function waiterOfTable(tableId: string) {
   const found = STAFF.find(s => s.role === 'waiter' && s.tables.includes(String(tableId)))
   return found ? { id: found.id, name: found.name } : null
 }
@@ -37,15 +37,15 @@ export function waiterOfTable(tableId) {
 // --- Сессии ---
 const SESSION_TTL = 12 * 60 * 60 * 1000 // смена
 /** @type {Map<string, {staff: object, expiresAt: number}>} */
-const sessions = new Map()
+const sessions = new Map<string, { staff: any; expiresAt: number }>()
 
-export function createSession(staff) {
+export function createSession(staff: any) {
   const token = crypto.randomBytes(18).toString('base64url')
   sessions.set(token, { staff: publicStaff(staff), expiresAt: Date.now() + SESSION_TTL })
   return token
 }
 
-export function sessionStaff(token) {
+export function sessionStaff(token: unknown) {
   const found = sessions.get(String(token ?? ''))
   if (!found) return null
   if (found.expiresAt < Date.now()) {
@@ -55,7 +55,7 @@ export function sessionStaff(token) {
   return found.staff
 }
 
-export function dropSession(token) {
+export function dropSession(token: unknown) {
   sessions.delete(String(token ?? ''))
 }
 
@@ -68,9 +68,9 @@ export function sweepSessions() {
 const MAX_ATTEMPTS = 6
 const ATTEMPT_WINDOW = 5 * 60 * 1000
 /** @type {Map<string, {count: number, until: number}>} */
-const attempts = new Map()
+const attempts = new Map<string, { count: number; until: number }>()
 
-export function loginAllowed(ip) {
+export function loginAllowed(ip: string) {
   const rec = attempts.get(ip)
   if (!rec) return true
   if (rec.until < Date.now()) {
@@ -80,20 +80,20 @@ export function loginAllowed(ip) {
   return rec.count < MAX_ATTEMPTS
 }
 
-function noteFailure(ip) {
+function noteFailure(ip: string) {
   const rec = attempts.get(ip)
   if (!rec || rec.until < Date.now()) attempts.set(ip, { count: 1, until: Date.now() + ATTEMPT_WINDOW })
   else rec.count += 1
 }
 
 /** Сравнение PIN без утечки времени: одинаковая длина обязательна. */
-function pinMatches(given, want) {
+function pinMatches(given: unknown, want: unknown) {
   const a = Buffer.from(String(given))
   const b = Buffer.from(String(want))
   return a.length === b.length && crypto.timingSafeEqual(a, b)
 }
 
-export function loginByPin(pin, ip) {
+export function loginByPin(pin: unknown, ip: string) {
   const clean = String(pin ?? '').trim()
   if (!/^\d{4,8}$/.test(clean)) {
     noteFailure(ip)

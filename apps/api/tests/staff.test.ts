@@ -4,7 +4,7 @@ import { can, homeRoute, ownsTable } from '@easypay/domain/roles'
 
 process.env.EASYPAY_MANAGER_TOKEN = 'staff-test-master'
 process.env.EASYPAY_ANY_TABLE = '1'
-const { createServer } = await import('../src/index.mjs')
+const { createServer } = await import('../src/index.ts')
 
 const server = createServer()
 await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))

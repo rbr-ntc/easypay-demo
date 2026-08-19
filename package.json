@@ -9,17 +9,19 @@
     "apps/*"
   ],
   "scripts": {
-    "dev": "npm run dev --workspace @easypay/web",
-    "dev:api": "npm run dev --workspace @easypay/api",
-    "build": "npm run build --workspace @easypay/web",
-    "serve": "npm run build && npm start --workspace @easypay/api",
+    "dev": "npm run build:domain && npm run dev -w @easypay/web",
+    "dev:api": "npm run build:domain && npm run dev -w @easypay/api",
+    "build": "npm run build -w @easypay/domain && npm run build -w @easypay/api && npm run build -w @easypay/web",
+    "serve": "npm run build && npm start -w @easypay/api",
     "start": "npm start --workspace @easypay/api",
     "test": "npm test --workspaces --if-present",
     "db:up": "docker compose -f infra/docker-compose.yml up -d",
     "db:down": "docker compose -f infra/docker-compose.yml down",
     "db:migrate": "npm run migrate -w @easypay/db",
     "db:seed": "npm run seed -w @easypay/db",
-    "db:reset": "docker compose -f infra/docker-compose.yml down -v && npm run db:up && sleep 6 && npm run db:migrate && npm run db:seed"
+    "db:reset": "docker compose -f infra/docker-compose.yml down -v && npm run db:up && sleep 6 && npm run db:migrate && npm run db:seed",
+    "build:domain": "npm run build -w @easypay/domain",
+    "pretest": "npm run build:domain"
   },
   "engines": {
     "node": ">=20"

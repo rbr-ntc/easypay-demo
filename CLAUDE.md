@@ -10,10 +10,11 @@ EasyPay — заказ и оплата в ресторане по QR с прив
 Репозиторий — монорепо на npm workspaces:
 
 ```
-apps/api        — HTTP + SSE сервер: состояние столов, смена, кухня, зал
+apps/api        — HTTP + SSE сервер на TypeScript: столы, смена, кухня, зал
 apps/web        — клиент: гостевой поток по QR (screens/, sheets/) и экраны
                   персонала (hall/, kitchen/, waiter/, staff/)
-packages/domain — правила без ввода-вывода: money, hall, kitchen, roles, allergens
+packages/domain — правила без ввода-вывода (TS): money, hall, kitchen, roles, allergens
+packages/db     — Postgres: схема, миграции, наполнение из packages/config
 packages/config — данные заведения: menu.json, hall.json, staff.json
 docs/           — продуктовая часть: PRD, архитектура, план перехода на БД
 infra/          — окружение (docker-compose появится на этапе БД)
@@ -53,7 +54,8 @@ npm test
 Один пакет или один тест: `npm test -w @easypay/domain`,
 `node --test packages/domain/tests/money.test.js`.
 
-Линтера нет; типы проверяются внутри `npm run build` (`tsc -b && vite build`).
+Линтера нет. **Сервер и домен на TypeScript**: Node 22 исполняет `.ts` напрямую (тесты
+гоняются без сборки), для VPS с Node 18 собираем в JS через `npm run build`.
 
 Маршруты (hash-роутинг, роутера нет): `/` — гость, `/#/hall` — зал ресторана,
 `/#/kitchen` — очередь кухни, `/#/waiter` — экран одного стола, `/#/qr` — QR-тент стола
@@ -85,7 +87,7 @@ localStorage. Им же удобно проверять деплой curl-ом.
 Редеплой из корня после `npm run build`:
 
 ```bash
-tar czf /tmp/e.tgz apps/api apps/web/dist packages package.json && scp /tmp/e.tgz root@77.221.141.238:/tmp/ && ssh root@77.221.141.238 'tar xzf /tmp/e.tgz -C /opt/easypay && systemctl restart easypay'
+tar czf /tmp/e.tgz apps/api/dist apps/api/package.json apps/web/dist packages/domain/dist packages/domain/package.json packages/config package.json && scp /tmp/e.tgz root@77.221.141.238:/tmp/ && ssh root@77.221.141.238 'tar xzf /tmp/e.tgz -C /opt/easypay && systemctl restart easypay'
 ```
 
 Деплой статики через GitHub Pages удалён: живая версия требует Node-сервера, а workflow

@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { describeTable, summarizeHall, tableStatus, THRESHOLDS } from '../hall.js'
+import { describeTable, summarizeHall, tableStatus, THRESHOLDS } from '../src/hall.ts'
 
 const NOW = 1_700_000_000_000
 const min = m => m * 60_000
