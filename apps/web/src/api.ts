@@ -51,6 +51,8 @@ export interface ServerLine {
   served: boolean
   sentAt: number | null
   startedAt?: number | null
+  /** Готово и стоит на раздаче — гость видит «несут», а не «готовится». */
+  readyAt?: number | null
   servedAt: number | null
 }
 
@@ -264,8 +266,14 @@ export function subscribe(
 ): () => void {
   if (!API) return () => {} // стол не выбран — подписываться не на что
   // Состав стола и деньги видит только свой: EventSource не умеет заголовки,
-  // поэтому личный секрет гостя передаётся параметром
-  const url = guestToken ? `${API}/stream?g=${encodeURIComponent(guestToken)}` : `${API}/stream`
+  // поэтому секрет передаётся параметром — гостевой у гостя, служебный у персонала.
+  // Без этого экран официанта показывал пустой стол при живых гостях в зале.
+  const staff = getStaffToken()
+  const params = new URLSearchParams()
+  if (guestToken) params.set('g', guestToken)
+  if (staff) params.set('token', staff)
+  const query = params.toString()
+  const url = query ? `${API}/stream?${query}` : `${API}/stream`
   const es = new EventSource(url)
   es.onmessage = e => {
     try {

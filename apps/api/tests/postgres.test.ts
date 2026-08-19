@@ -120,7 +120,11 @@ const snapshot = (table: string) =>
     await post(table, 'send', { scope: 'mine' }, { guest })
     await post(table, 'pay', { scope: 'full', idemKey: `pg-check-${Date.now()}` }, { guest })
 
+    // Гостья поела и рассчиталась: салат подан, закрывать нечего опасаться
     const snap = await snapshot(table)
+    const uid = snap.lines[0].uid
+    await post(table, 'start', { uid, sessionId: snap.sessionId }, { staff: TOKEN })
+    await post(table, 'serve', { uid, sessionId: snap.sessionId }, { staff: TOKEN })
     await post(table, 'close', { sessionId: snap.sessionId }, { staff: TOKEN })
 
     const registry = await staffGet('/api/shift/checks')
@@ -142,12 +146,16 @@ const snapshot = (table: string) =>
     const snap = await snapshot(table)
     const refused = await post(table, 'close', { sessionId: snap.sessionId }, { staff: TOKEN })
     assert.equal(refused.status, 409)
+    assert.equal((await refused.json()).error, 'unpaid')
 
     await post(table, 'close', { sessionId: snap.sessionId, force: true }, { staff: TOKEN })
 
     const registry = await staffGet('/api/shift/checks')
     const check = registry.checks.find((c: any) => c.tableId === table)
-    assert.equal(check.debt, 1290, 'в чеке видна вся непокрытая сумма стола')
+    // Одна формула на смену и на чек: долг = получено минус оплачено.
+    // Стейк сняли с кухни, гость его не получил — это списание, а не долг.
+    assert.equal(check.debt, 0, 'чек не спорит с итогами смены')
+    assert.equal(check.cancelledTotal, 1290, 'снятое живёт отдельной строкой')
     // Стейк на кухню отправили, но не подали — гость его не получил.
     // В итогах смены это списание с кухни, а не долг гостя: разные деньги.
     assert.equal(registry.shift.writtenOff >= 1290, true, 'снятое с кухни считается отдельно')

@@ -3,7 +3,7 @@
 // одинаково понимали, что «горит».
 
 
-export type TicketStateName = 'queued' | 'cooking'
+export type TicketStateName = 'queued' | 'cooking' | 'ready'
 export type TicketUrgency = 'ok' | 'warn' | 'danger'
 
 export interface KitchenTicket {
@@ -23,6 +23,8 @@ export interface KitchenTicket {
   animal: string
   sentAt: number | null
   startedAt: number | null
+  /** Повар закончил: блюдо на раздаче и ждёт официанта. */
+  readyAt?: number | null
   waveAt?: number | null
   cancelledAt?: number
   reason?: string
@@ -31,6 +33,8 @@ export interface KitchenTicket {
 export interface KitchenSummary {
   queued: number
   cooking: number
+  /** Готово и стоит на раздаче. */
+  ready: number
   positions: number
   tables: number
   oldestWaitMs: number | null
@@ -49,10 +53,21 @@ export function thresholdsFor(station: string | undefined) {
   return STATION_THRESHOLDS[station ?? 'kitchen'] ?? STATION_THRESHOLDS.kitchen
 }
 
-export const TICKET_STATE: { QUEUED: "queued"; COOKING: "cooking" } = { QUEUED: 'queued', COOKING: 'cooking' }
+export const TICKET_STATE: { QUEUED: 'queued'; COOKING: 'cooking'; READY: 'ready' } = {
+  QUEUED: 'queued',
+  COOKING: 'cooking',
+  // Готово и стоит на раздаче: повар своё сделал, ждём официанта
+  READY: 'ready'
+}
 
 export function ticketState(ticket: KitchenTicket): TicketStateName {
+  if (ticket.readyAt) return TICKET_STATE.READY
   return ticket.startedAt ? TICKET_STATE.COOKING : TICKET_STATE.QUEUED
+}
+
+/** Сколько тарелка стоит на раздаче: остывает — значит зал не успевает. */
+export function passWait(ticket: KitchenTicket, now: number): number {
+  return ticket.readyAt ? Math.max(0, now - ticket.readyAt) : 0
 }
 
 /** Сколько позиция ждёт с момента отправки на кухню. */
@@ -76,11 +91,14 @@ export function sortTickets(tickets: KitchenTicket[]): KitchenTicket[] {
 export function summarizeKitchen(tickets: KitchenTicket[], now: number): KitchenSummary {
   const queued = tickets.filter(t => ticketState(t) === TICKET_STATE.QUEUED)
   const cooking = tickets.filter(t => ticketState(t) === TICKET_STATE.COOKING)
+  const ready = tickets.filter(t => ticketState(t) === TICKET_STATE.READY)
   const waits = tickets.map(t => ticketWait(t, now))
   const tables = new Set(tickets.map(t => t.tableId))
   return {
     queued: queued.length,
     cooking: cooking.length,
+    // Готово и ждёт официанта: тарелка на раздаче остывает
+    ready: ready.length,
     positions: tickets.reduce((s, t) => s + (Number(t.qty) || 0), 0),
     tables: tables.size,
     oldestWaitMs: waits.length ? Math.max(...waits) : null,

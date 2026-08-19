@@ -70,6 +70,8 @@ export interface HallSummary {
   attention: number
   shiftRevenue: number
   closedRevenue: number
+  /** Заработанное: закрытая выручка минус то, что придётся вернуть. */
+  netRevenue: number
   writtenOff: number
   tips: number
   /** true, если карточки отфильтрованы, а деньги смены — по всему заведению. */
@@ -228,6 +230,7 @@ export function summarizeHall(cards: HallCard[], shift: HallShift | null, now: n
     attention: attention.length,
     shiftRevenue,
     closedRevenue: round2(closedRevenue),
+    netRevenue: round2(closedRevenue - (shift?.overpaid ?? 0)),
     writtenOff: round2(shift?.writtenOff ?? 0),
     tips: round2(shift?.tips ?? cards.reduce((s, c) => s + (c.tipsTotal ?? 0), 0)),
     venueWide: true,

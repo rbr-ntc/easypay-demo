@@ -4,13 +4,15 @@ import { ALLERGENS, allergensFor, possibleAllergensFor, removedAllergensFor } fr
 
 const MENU = menu
 
-/** Напитки готовит бар, остальное — кухня: у них разные очереди и разный темп. */
-const BAR_CATEGORIES = new Set(['Напитки'])
+/** Напитки и алкоголь готовит бар, остальное — кухня: разные очереди и темп. */
+const BAR_CATEGORIES = new Set(['Напитки', 'Вино и бар'])
 
 const DISHES = new Map<string, any>()
 for (const category of Object.keys(MENU)) {
   for (const dish of MENU[category]) {
-    DISHES.set(dish.id, { ...dish, category, station: BAR_CATEGORIES.has(category) ? 'bar' : 'kitchen' })
+    // Станцию можно задать у блюда явно — иначе решает категория
+    const station = dish.station ?? (BAR_CATEGORIES.has(category) ? 'bar' : 'kitchen')
+    DISHES.set(dish.id, { ...dish, category, station })
   }
 }
 
@@ -24,6 +26,23 @@ export function priceOf(id: string) {
 
 export function dishName(id: string) {
   return DISHES.get(id)?.name ?? id
+}
+
+/**
+ * Цена позиции с учётом модификаторов. Бутылка вина не может стоить как бокал:
+ * надбавка объявляется в меню (priceDelta у варианта опции) и прибавляется к
+ * цене блюда. Считает сервер — клиент такие вещи считать не должен.
+ */
+export function priceWithOptions(id: string, options: Record<string, string> = {}) {
+  const dish = DISHES.get(id)
+  if (!dish) return 0
+  let price = Number(dish.price) || 0
+  for (const opt of dish.options ?? []) {
+    const chosen = options[opt.id] ?? opt.default
+    const delta = opt.priceDelta?.[chosen]
+    if (typeof delta === 'number') price += delta
+  }
+  return Math.round(price * 100) / 100
 }
 
 export function stationOf(id: string) {
@@ -84,6 +103,10 @@ export function menuPayload() {
     station: dish.station ?? 'kitchen',
     stop: !!dish.stop,
     options: dish.options ?? [],
+    // Надбавки за модификаторы: гость должен видеть цену бутылки до заказа
+    priceDeltas: Object.fromEntries(
+      (dish.options ?? []).filter((o: any) => o.priceDelta).map((o: any) => [o.id, o.priceDelta])
+    ),
     allergens: allergensFor(dish, {}),
     possibleAllergens: possibleAllergensFor(dish)
   }))

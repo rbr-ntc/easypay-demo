@@ -14,6 +14,7 @@ export function Ticket({
   onAction: () => void
 }) {
   const cooking = !!ticket.startedAt
+  const onPass = !!ticket.readyAt
   const mods = Object.values(ticket.options ?? {})
   const cancelled = !!ticket.cancelledAt
 
@@ -61,7 +62,11 @@ export function Ticket({
         <div className="ep-k-guest">
           {ticket.shared ? 'общее на стол' : ticket.guest}
           {ticket.waiterName ? ` · официант ${ticket.waiterName}` : ''}
-          {cooking && ticket.startedAt ? ` · в работе ${fmtDur(now - ticket.startedAt)}` : ''}
+          {onPass && ticket.readyAt
+            ? ` · на раздаче ${fmtDur(now - ticket.readyAt)}`
+            : cooking && ticket.startedAt
+              ? ` · в работе ${fmtDur(now - ticket.startedAt)}`
+              : ''}
         </div>
       </div>
 
@@ -78,11 +83,11 @@ export function Ticket({
         </div>
       ) : (
       <button
-        className={cooking ? 'ep-k-btn ep-k-btn--ready' : 'ep-k-btn'}
+        className={onPass ? 'ep-k-btn ep-k-btn--pass' : cooking ? 'ep-k-btn ep-k-btn--ready' : 'ep-k-btn'}
         disabled={busy}
         onClick={onAction}
       >
-        {cooking ? 'Готово' : 'В работу'}
+        {onPass ? 'Унёс гостю' : cooking ? 'Готово' : 'В работу'}
       </button>
       )}
     </div>

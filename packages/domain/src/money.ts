@@ -23,7 +23,8 @@ export interface MoneyLine {
 }
 
 export interface MoneyPayment {
-  personaId: string
+  /** Наличные официант может принять за стол целиком, без привязки к гостю. */
+  personaId: string | null
   amount: number
 }
 
@@ -118,16 +119,13 @@ export function computeTotals(state: MoneyState | null | undefined, priceOf: Pri
   const totalOf = (pid: string | null) => ownOf(pid) + shareOf(pid)
   // Личный долг до учёта чужих платежей за стол
   const rawRemainingOf = (pid: string | null) => Math.max(0, totalOf(pid) - paidOf(pid))
-  const rawRemainingTotal = personaIds.reduce((s, id) => s + rawRemainingOf(id), 0)
 
-  // Сосед мог заплатить за стол (scope full) — тогда личные долги гасятся
-  // пропорционально, и сумма по персонам сходится с остатком стола до копейки
-  const remainingOf = (pid: string | null) => {
-    const raw = rawRemainingOf(pid)
-    if (raw === 0 || rawRemainingTotal === 0) return 0
-    if (rawRemainingTotal <= remaining) return raw
-    return (raw * remaining) / rawRemainingTotal
-  }
+  /**
+   * С гостя не могут взять больше, чем должен стол: сосед мог заплатить за всех.
+   * Число, которое здесь получается, и списывается при оплате — гость видит
+   * ровно ту сумму, которая уйдёт с карты.
+   */
+  const remainingOf = (pid: string | null) => Math.min(rawRemainingOf(pid), remaining)
 
   const draftTotal = sumOf(drafts)
   const draftOf = (pid: string | null) => (pid ? sumOf(drafts.filter(l => l.personaId === pid)) : 0)
@@ -175,4 +173,21 @@ function absorbRounding(amount: number, remaining: number): number {
   if (amount <= 0) return amount
   const rest = round2(remaining - amount)
   return rest > 0 && rest < 1 ? round2(remaining) : amount
+}
+
+/**
+ * Разложить сумму по долям так, чтобы округлённые части складывались обратно
+ * в неё же. Хвост в одну-две копейки отдаём самой большой доле — иначе на
+ * витрине счёт 490 распадается на 163,33 × 3 = 489,99, и стол «должен» копейку,
+ * которую никому нельзя предъявить.
+ */
+export function splitRounded(shares: number[], total: number): number[] {
+  const rounded = shares.map(round2)
+  const drift = round2(total - rounded.reduce((s, x) => s + x, 0))
+  if (drift === 0 || rounded.length === 0) return rounded
+
+  let target = 0
+  for (let i = 1; i < rounded.length; i++) if (rounded[i] > rounded[target]) target = i
+  rounded[target] = round2(rounded[target] + drift)
+  return rounded
 }

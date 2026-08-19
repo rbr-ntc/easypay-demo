@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { dismissCancelled, markReady, subscribeKitchen, takeToWork } from '../kitchenApi'
+import { dismissCancelled, handOver, markReady, subscribeKitchen, takeToWork } from '../kitchenApi'
 import type { KitchenPayload } from '../kitchenApi'
 import { useStore } from '../store'
 import { fmtDur } from '../waiter/duration'
@@ -38,6 +38,9 @@ export function Kitchen() {
   const warn = (data?.summary as any)?.warn ?? 0
   const queued = tickets.filter(t => ticketState(t) === 'queued')
   const cooking = tickets.filter(t => ticketState(t) === 'cooking')
+  // Готово, но ещё не унесли: раньше этого состояния не существовало вовсе —
+  // повар нажимал «готово», и блюдо мгновенно считалось поданным гостю
+  const ready = tickets.filter(t => ticketState(t) === 'ready')
 
   /**
    * Волна = один стол, одна отправка. Такие позиции обязаны выйти вместе:
@@ -56,9 +59,11 @@ export function Kitchen() {
 
   const act = async (ticket: (typeof tickets)[number]) => {
     setBusy(ticket.uid)
-    const done = ticket.startedAt
-      ? await markReady(ticket.tableId, ticket.uid, ticket.sessionId)
-      : await takeToWork(ticket.tableId, ticket.uid, ticket.sessionId)
+    const done = ticket.readyAt
+      ? await handOver(ticket.tableId, ticket.uid, ticket.sessionId)
+      : ticket.startedAt
+        ? await markReady(ticket.tableId, ticket.uid, ticket.sessionId)
+        : await takeToWork(ticket.tableId, ticket.uid, ticket.sessionId)
     if (!done) console.error('действие кухни не прошло')
     setBusy(null)
   }
@@ -85,6 +90,7 @@ export function Kitchen() {
         <div className="ep-k-counters">
           <Counter label="В очереди" value={String(summary.queued)} />
           <Counter label="В работе" value={String(summary.cooking)} />
+          <Counter label="На раздаче" value={String(ready.length)} alert={ready.length > 2} />
           <Counter label="Столов" value={String(summary.tables)} />
           <Counter label="Бар" value={String(tickets.filter(t => t.station === 'bar').length)} />
           {/* Жёлтые считались только красными: к моменту сигнала кофе уже нельзя пить */}
@@ -115,6 +121,25 @@ export function Kitchen() {
           <div className="ep-k-list">
             {cancelled.map(t => (
               <Ticket key={`c-${t.tableId}-${t.uid}`} ticket={t} now={now} busy={busy === t.uid} onAction={() => void dismiss(t)} />
+            ))}
+          </div>
+        </div>
+      )}
+
+      {ready.length > 0 && (
+        <div className="ep-k-pass">
+          <div className="ep-k-lane-title">
+            На раздаче · забрать в зал <span>{ready.length}</span>
+          </div>
+          <div className="ep-k-list">
+            {ready.map(t => (
+              <Ticket
+                key={`r-${t.tableId}-${t.uid}`}
+                ticket={t}
+                now={now}
+                busy={busy === t.uid}
+                onAction={() => void act(t)}
+              />
             ))}
           </div>
         </div>

@@ -113,6 +113,16 @@ const attempts = new Map<string, { count: number; until: number }>()
 // голый 401 неотличим от «не вошёл» и «протухло»
 const revoked = new Map<string, number>()
 
+/** Сколько секунд осталось до снятия блокировки: глухой отказ бесполезен. */
+export function lockoutSeconds(ip: string, device: string | null = null) {
+  const now = Date.now()
+  const until = [deviceKey(ip, device), ipKey(ip)]
+    .map(key => attempts.get(key))
+    .filter(rec => rec && rec.until > now)
+    .map(rec => rec!.until)
+  return until.length > 0 ? Math.ceil((Math.max(...until) - now) / 1000) : 0
+}
+
 export function loginAllowed(ip: string, device: string | null = null) {
   const overLimit = (key: string, max: number) => {
     const rec = attempts.get(key)
@@ -145,18 +155,20 @@ function pinMatches(given: unknown, want: unknown) {
 }
 
 export function loginByPin(pin: unknown, ip: string, device: unknown = null) {
+  const label = typeof device === 'string' && device.length <= 40 ? device : null
   const clean = String(pin ?? '').trim()
   if (!/^\d{4,8}$/.test(clean)) {
-    noteFailure(ip)
+    noteFailure(ip, label)
     return null
   }
   const found = STAFF.find(s => pinMatches(clean, s.pin))
   if (!found) {
-    noteFailure(ip)
+    noteFailure(ip, label)
     return null
   }
-  attempts.delete(ip)
-  const label = typeof device === 'string' && device.length <= 40 ? device : null
+  // Успешный вход снимает счётчик и с устройства, и с адреса
+  attempts.delete(deviceKey(ip, label))
+  attempts.delete(ipKey(ip))
   const session = createSession(found, label)
   return { staff: publicStaff(found), token: session.token, sessionId: session.sessionId, device: label }
 }

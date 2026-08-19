@@ -9,6 +9,8 @@ export type Permission =
   | 'kitchen'
   | 'dismiss'
   | 'clean'
+  | 'ready'
+  | 'cash'
   | 'table'
   | 'start'
   | 'serve'
@@ -46,11 +48,12 @@ export const ROLE_LABEL: Record<RoleName, string> = {
  *  log            — журнал действий смены
  */
 export const PERMISSIONS: Record<RoleName, Permission[]> = {
-  manager: ['hall', 'kitchen', 'table', 'start', 'serve', 'dismiss', 'ack', 'close', 'clean', 'reset', 'log'],
+  manager: ['hall', 'kitchen', 'table', 'start', 'ready', 'serve', 'dismiss', 'ack', 'close', 'clean', 'cash', 'reset', 'log'],
   // Убрать стол — работа зала: пока это делал таймер, гостей сажали за грязный
-  waiter: ['hall', 'kitchen', 'table', 'start', 'serve', 'dismiss', 'ack', 'close', 'clean'],
+  waiter: ['hall', 'kitchen', 'table', 'start', 'ready', 'serve', 'dismiss', 'ack', 'close', 'clean', 'cash'],
   // Повар подтверждает отмену сам: снять блюдо с плиты — его работа, не менеджерская
-  cook: ['kitchen', 'start', 'serve', 'dismiss']
+  // Повар доводит блюдо до раздачи; «унёс гостю» отмечает зал
+  cook: ['kitchen', 'start', 'ready', 'serve', 'dismiss']
 }
 
 export function can(role: RoleName | undefined | null, permission: Permission): boolean {

@@ -396,7 +396,8 @@ export async function createPostgresStore(url?: string): Promise<Store> {
           })),
           total: round2(total),
           paid: round2(Number(payments[0].total)),
-          debt: round2(Number(row.closed_with_debt)),
+          // Та же формула, что в памяти и в смене: получено минус оплачено
+          debt: round2(Math.max(0, Number(row.total ?? 0) - Number(row.paid ?? 0))),
           overpaid: round2(Number(row.overpaid)),
           tips: round2(Number(tips[0].total)),
           cancelledTotal: round2(

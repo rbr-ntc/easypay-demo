@@ -329,3 +329,18 @@
   color: var(--ep-muted);
   margin: 2px 0 8px 4px;
 }
+
+
+/* Раздача: тарелка готова и остывает, пока её не унесли */
+.ep-k-pass {
+  border: 2px solid #1f9d55;
+  border-radius: 14px;
+  padding: 10px;
+  margin-bottom: 14px;
+  background: rgba(31, 157, 85, 0.06);
+}
+
+.ep-k-btn--pass {
+  background: #1f9d55;
+  color: #fff;
+}

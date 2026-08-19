@@ -89,7 +89,10 @@ export function createMemoryStore(): Store {
       })),
       total: round2(money.tableTotal),
       paid: round2(money.paidTotal),
-      debt: round2(session.closedWithDebt ?? money.remaining),
+      // Долг чека = что гость получил и не оплатил. Снятое с кухни живёт
+      // отдельной строкой cancelledTotal и в долг не входит: одна формула
+      // на смену и на чек, иначе документ спорит сам с собой
+      debt: round2(Math.max(0, round2(money.tableTotal) - round2(money.paidTotal))),
       overpaid: round2(session.overpaid ?? 0),
       tips: round2(session.tips.reduce((s, t) => s + t.amount, 0)),
       cancelledTotal: round2(

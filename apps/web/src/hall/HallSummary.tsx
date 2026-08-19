@@ -42,9 +42,9 @@ export function HallSummary({ summary }: { summary: Summary }) {
       <Stat
         label="Выручка смены"
         value={fmt(summary.shiftRevenue)}
-        hint={`по всему залу · закрыто ${fmt(summary.closedRevenue)} · средний чек ${
-          summary.avgCheck ? fmt(summary.avgCheck) : '—'
-        }`}
+        hint={`по всему залу · закрыто ${fmt(summary.closedRevenue)}${
+          summary.overpaid > 0 ? ` · заработано ${fmt(summary.netRevenue)}` : ''
+        } · средний чек ${summary.avgCheck ? fmt(summary.avgCheck) : '—'}`}
         tone="money"
       />
       {summary.debt > 0 && (

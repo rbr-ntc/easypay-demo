@@ -52,6 +52,8 @@ export function hallCard(id: string, table: TableSession) {
     draftTotal: round2(money.draftTotal),
     sentCount: table.lines.filter(isBillLine).length,
     kitchenPending: pending.length,
+    // Готово и ждёт официанта: между плитой и столом раньше была дыра
+    readyCount: pending.filter(l => l.readyAt && !l.served).length,
     oldestPendingSentAt: pending.length ? Math.min(...pending.map(l => l.sentAt ?? 0)) : null,
     lastSentAt: sentAts.length ? Math.max(...(sentAts as number[])) : null,
     lastServedAt: servedAts.length ? Math.max(...(servedAts as number[])) : null,
@@ -132,6 +134,7 @@ export function kitchenPayload(tables: Map<string, TableSession>) {
         animal: persona?.animal ?? 'fox',
         sentAt: line.sentAt,
         startedAt: line.startedAt ?? null,
+        readyAt: line.readyAt ?? null,
         // Позиции одной отправки идут вместе: это «волна» подачи
         waveAt: line.sentAt
       }
@@ -165,7 +168,9 @@ export function kitchenPayload(tables: Map<string, TableSession>) {
       bar: sorted.filter(t => t.station === 'bar').length,
       kitchen: sorted.filter(t => t.station === 'kitchen').length,
       cancelled: cancelled.length,
-      warn: sorted.filter(x => ticketUrgency(x as any, now) === 'warn').length
+      warn: sorted.filter(x => ticketUrgency(x as any, now) === 'warn').length,
+      // Сколько тарелок стоит на раздаче и ждёт официанта
+      ready: sorted.filter(x => x.readyAt).length
     },
     now
   }
