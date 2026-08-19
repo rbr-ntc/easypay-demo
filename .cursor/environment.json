@@ -1,0 +1,20 @@
+{
+  "name": "EasyPay",
+  "install": "export NVM_DIR=\"$HOME/.nvm\"; [ -s \"$NVM_DIR/nvm.sh\" ] && . \"$NVM_DIR/nvm.sh\"; nvm install 22 >/dev/null 2>&1; nvm alias default 22 >/dev/null 2>&1; nvm use 22 >/dev/null; export PATH=\"$NVM_DIR/versions/node/$(nvm version 22)/bin:$PATH\"; node -v; npm install",
+  "terminals": [
+    {
+      "name": "api",
+      "command": "export NVM_DIR=\"$HOME/.nvm\"; . \"$NVM_DIR/nvm.sh\"; nvm use 22 >/dev/null; export PATH=\"$NVM_DIR/versions/node/$(nvm version 22)/bin:$PATH\"; npm run dev:api",
+      "description": "EasyPay HTTP + SSE API server (in-memory store) on :8787"
+    },
+    {
+      "name": "web",
+      "command": "export NVM_DIR=\"$HOME/.nvm\"; . \"$NVM_DIR/nvm.sh\"; nvm use 22 >/dev/null; export PATH=\"$NVM_DIR/versions/node/$(nvm version 22)/bin:$PATH\"; npm run dev",
+      "description": "Vite dev server on :5173, proxies /api to :8787"
+    }
+  ],
+  "ports": [
+    { "name": "web", "port": 5173 },
+    { "name": "api", "port": 8787 }
+  ]
+}
