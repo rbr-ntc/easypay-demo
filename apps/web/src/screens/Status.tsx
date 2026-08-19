@@ -144,7 +144,7 @@ export function Status() {
           </GhostButton>
           <GhostButton
             style={{ flex: 1, opacity: snap.call ? 0.6 : 1 }}
-            onClick={() => !snap.call && void callWaiter('help')}
+            onClick={() => !snap.call && patch({ sheet: 'call' })}
           >
             {snap.call ? 'Официант идёт ✓' : 'Позвать официанта'}
           </GhostButton>

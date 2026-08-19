@@ -10,6 +10,7 @@ import { Done } from './screens/Done'
 import { DishSheet } from './sheets/DishSheet'
 import { NameSheet } from './sheets/NameSheet'
 import { SendSheet } from './sheets/SendSheet'
+import { CallSheet } from './sheets/CallSheet'
 import { Waiter } from './Waiter'
 import { Hall } from './hall/Hall'
 import { Kitchen } from './kitchen/Kitchen'
@@ -78,6 +79,7 @@ function Guest() {
       {ui.sheet === 'dish' && <DishSheet />}
       {ui.sheet === 'name' && <NameSheet />}
       {ui.sheet === 'send' && <SendSheet />}
+      {ui.sheet === 'call' && <CallSheet />}
 
       {ui.toast && <Toast msg={ui.toast} />}
     </div>

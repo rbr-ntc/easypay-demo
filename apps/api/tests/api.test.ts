@@ -960,3 +960,22 @@ test('переплата видна сразу, а не только в закр
   assert.equal(snap.totals.tableTotal, 0)
   assert.equal(snap.totals.overpaid, 590, 'эти деньги надо вернуть, и это видно')
 })
+
+test('чаевые можно оставить и после того, как зал закрыл стол', async () => {
+  // Тот, кто заплатил за всех, физически ещё сидит за столом. Раньше окно для
+  // благодарности схлопывалось в ноль секунд, если менеджер успевал закрыть.
+  const table = freshTable()
+  const { guest } = await joinGuest(table)
+  await post(table, 'lines', { dishId: 'greek' }, { guest })
+  await post(table, 'send', { scope: 'mine' }, { guest })
+  await post(table, 'pay', { scope: 'full', idemKey: 'tc-1' }, { guest })
+  await staffAt(table, 'close', { force: true })
+
+  const tip = await post(table, 'tip', { amount: 500, idemKey: 'tc-tip' }, { guest })
+  assert.equal(tip.status, 200, 'официанту можно сказать спасибо')
+  assert.equal((await tip.json()).amount, 500)
+
+  // А заказывать на закрытом столе по-прежнему нельзя
+  const late = await post(table, 'lines', { dishId: 'fries' }, { guest })
+  assert.equal(late.status, 409)
+})

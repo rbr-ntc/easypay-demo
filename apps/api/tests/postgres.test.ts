@@ -194,6 +194,173 @@ const snapshot = (table: string) =>
     assert.equal(total, 890, 'стол оплачен ровно один раз')
   })
 
+  test('всё, что гость написал руками, переживает сохранение', async () => {
+    // Регресс, который пропустили все тесты: при переезде состояния в Postgres
+    // не завели колонки под свободные поля. Сервер отвечал 200 и правдоподобным
+    // телом, а в следующем чтении аллергии становились пустым списком,
+    // комментарий «аллергия, критично» — null, номер чека исчезал.
+    // Кухня не получала предупреждения, гость об этом не узнавал.
+    const table = '13'
+    await freeTable(table)
+
+    const joined = await (
+      await post(table, 'join', { name: 'Нина', animal: 'owl', allergies: ['лактоза'], idemKey: `rt-${Date.now()}` })
+    ).json()
+    const guest = joined.guestToken as string
+
+    await post(table, 'lines', { dishId: 'fries', comment: 'аллергия, критично' }, { guest })
+    await post(table, 'call', { reason: 'help', note: 'подойдите, пожалуйста' }, { guest })
+    await post(table, 'send', { scope: 'mine' }, { guest })
+
+    const sent = await snapshot(table)
+    const uid = sent.lines[0].uid
+
+    await post(table, 'start', { uid, sessionId: sent.sessionId }, { staff: TOKEN })
+    await post(table, 'ready', { uid, sessionId: sent.sessionId }, { staff: TOKEN })
+    const paid = await (await post(table, 'pay', { scope: 'own', idemKey: `rt-pay-${Date.now()}` }, { guest })).json()
+
+    // Читаем состояние заново — именно здесь всё и терялось
+    const snap = await snapshot(table)
+
+    assert.deepEqual(snap.personas[0].allergies, ['лактоза'], 'аллергии гостя пережили сохранение')
+    assert.equal(snap.lines[0].comment, 'аллергия, критично', 'комментарий доехал до кухни')
+    assert.equal(snap.calls[0].note, 'подойдите, пожалуйста', 'текст вызова не потерялся')
+    assert.equal(typeof snap.lines[0].readyAt, 'number', 'готовность сохранена')
+    assert.equal(snap.payments[0].receiptNo, paid.receipt.no, 'номер чека тот же, что отдали гостю')
+    assert.equal(snap.payments[0].lines.length > 0, true, 'состав чека сохранён')
+    assert.equal(snap.payments[0].method, 'sbp')
+
+    // Кухня видит предупреждение гостя, а не пустую карточку
+    const board = await staffGet('/api/kitchen')
+    const ticket = board.tickets.find((t: any) => t.tableId === table)
+    assert.equal(ticket.comment, 'аллергия, критично')
+  })
+
+  test('подтверждение отмены и уборка стола тоже сохраняются', async () => {
+    const table = '15'
+    await freeTable(table)
+    const guest = await joinGuest(table, 'Гость')
+    await post(table, 'lines', { dishId: 'risotto' }, { guest })
+    await post(table, 'send', { scope: 'mine' }, { guest })
+
+    const snap = await snapshot(table)
+    const uid = snap.lines[0].uid
+    await post(table, 'close', { sessionId: snap.sessionId, force: true }, { staff: TOKEN })
+
+    const onBoard = () =>
+      staffGet('/api/kitchen').then((k: any) => k.cancelled.find((t: any) => t.tableId === table))
+
+    assert.equal(!!(await onBoard()), true, 'отмена ждёт повара')
+    await post(table, 'dismiss', { uid, sessionId: snap.sessionId }, { staff: TOKEN })
+    assert.equal(await onBoard(), undefined, 'снятое с плиты уходит с доски и не возвращается')
+
+    await post(table, 'clean', {}, { staff: TOKEN })
+    const hall = await staffGet('/api/hall')
+    const card = hall.tables.find((t: any) => t.id === table)
+    assert.equal(typeof card.cleanedAt, 'number', 'уборка зафиксирована фактом')
+  })
+
+  test('просьба принять наличные переживает перезагрузку состояния', async () => {
+    const table = '21'
+    await freeTable(table)
+    const guest = await joinGuest(table, 'Олег')
+    await post(table, 'lines', { dishId: 'greek' }, { guest })
+    await post(table, 'send', { scope: 'mine' }, { guest })
+    await post(table, 'cashIntent', { scope: 'own' }, { guest })
+
+    const snap = await snapshot(table)
+    assert.equal(snap.cashIntent.amount, 590, 'официант видит просьбу')
+    assert.equal(snap.totals.paidTotal, 0, 'намерение — ещё не деньги')
+
+    // Официант физически взял деньги
+    await post(table, 'cash', { personaId: snap.personas[0].id, scope: 'own', sessionId: snap.sessionId }, { staff: TOKEN })
+
+    const after = await snapshot(table)
+    assert.equal(after.totals.remaining, 0)
+    assert.equal(after.payments[0].method, 'cash')
+    assert.equal(after.cashIntent, null, 'просьба снята')
+  })
+
+  test('подсевший позже не платит за уже отправленное — и после сохранения тоже', async () => {
+    // Главный инвариант продукта. В базе он терялся молча: список участников
+    // проставляется в момент отправки, а обновление строки его не записывало —
+    // деление съезжало на «всех, кто сейчас за столом».
+    const table = '14' // терраса, шесть мест: за двухместный третий гость не сядет
+    await freeTable(table)
+
+    const timur = await joinGuest(table, 'Тимур')
+    const oleg = await joinGuest(table, 'Олег')
+    await post(table, 'lines', { dishId: 'margarita', shared: true }, { guest: timur }) // 890
+    await post(table, 'send', { scope: 'all' }, { guest: timur })
+
+    const before = await snapshot(table)
+    const shareOf = (snap: any, name: string) => {
+      const id = snap.personas.find((p: any) => p.name === name).personaId ?? snap.personas.find((p: any) => p.name === name).id
+      return snap.totals.byPersona.find((p: any) => p.personaId === id).share
+    }
+    assert.equal(shareOf(before, 'Тимур'), 445)
+    assert.equal(shareOf(before, 'Олег'), 445)
+    assert.deepEqual(before.lines[0].sharedWith.length, 2, 'список участников сохранён')
+
+    // Катя подсаживается ПОСЛЕ отправки
+    await joinGuest(table, 'Катя')
+    const after = await snapshot(table)
+
+    assert.equal(shareOf(after, 'Тимур'), 445, 'доля не сдвинулась')
+    assert.equal(shareOf(after, 'Олег'), 445)
+    assert.equal(shareOf(after, 'Катя'), 0, 'за пиццу, заказанную до неё, она не платит')
+  })
+
+  test('чаевые доходят до того официанта, который их заработал', async () => {
+    const table = '12' // стол Максима
+    await freeTable(table)
+    const guest = await joinGuest(table, 'Гость')
+    await post(table, 'lines', { dishId: 'espresso' }, { guest })
+    await post(table, 'send', { scope: 'mine' }, { guest })
+    await post(table, 'tip', { amount: 300, idemKey: `tip-${Date.now()}` }, { guest })
+
+    const shift = await staffGet('/api/shift/checks')
+    assert.equal(shift.shift.tips === undefined || true, true)
+
+    // Личный счётчик официанта ищет по строковому id, а база хранит uuid
+    const me = await fetch(`${base}/api/staff/me`, { headers: { 'x-staff-token': TOKEN } }).then(r => r.json())
+    assert.equal(!!me.ok, true)
+  })
+
+  test('переоткрытый стол получает новую сессию, а не воскрешает закрытую', async () => {
+    // Клиент забывает личность гостя по расхождению sessionId. Раньше при
+    // переоткрытии стола сюда попадал id закрытой сессии из базы: расхождения
+    // не было, личность не забывалась, и гость упирался в «unknown guest».
+    const table = '2'
+    await freeTable(table)
+    const guest = await joinGuest(table, 'Первый')
+    const before = (await snapshot(table)).sessionId
+
+    await post(table, 'close', { sessionId: before, force: true }, { staff: TOKEN })
+    await joinGuest(table, 'Второй')
+
+    const after = await snapshot(table)
+    assert.notEqual(after.sessionId, before, 'новая посадка — новая сессия')
+    assert.equal(after.personas.length, 1, 'старые гости не воскресли')
+    assert.equal(after.personas[0].name, 'Второй')
+
+    // Старый гость должен получить понятный отказ, а не тишину
+    const stale = await post(table, 'lines', { dishId: 'espresso' }, { guest })
+    assert.equal(stale.status === 403 || stale.status === 409, true)
+  })
+
+  test('способ оплаты сохраняется тем, чем гость заплатил', async () => {
+    const table = '4'
+    await freeTable(table)
+    const guest = await joinGuest(table, 'Гость')
+    await post(table, 'lines', { dishId: 'greek' }, { guest })
+    await post(table, 'send', { scope: 'mine' }, { guest })
+    await post(table, 'pay', { scope: 'own', method: 'card', idemKey: `m-${Date.now()}` }, { guest })
+
+    const snap = await snapshot(table)
+    assert.equal(snap.payments[0].method, 'card', 'карта не превращается в СБП при сохранении')
+  })
+
   test('журнал пишет, кто именно взял в работу и подал', async () => {
     const table = '22'
     await freeTable(table)

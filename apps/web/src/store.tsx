@@ -14,6 +14,7 @@ import {
   apiJoin,
   apiPay,
   apiCancelMine,
+  apiCashIntent,
   apiRemoveLine,
   apiReset,
   apiSend,
@@ -31,7 +32,7 @@ import type { Animal, LineOptions } from './data'
 import { amountFor, computeTotals as computeMoney } from '@easypay/domain/money'
 
 export type Screen = 'welcome' | 'menu' | 'cart' | 'status' | 'payment' | 'tips' | 'done'
-export type Sheet = null | 'dish' | 'name' | 'send'
+export type Sheet = null | 'dish' | 'name' | 'send' | 'call'
 export type PayStage = 'form' | 'qr' | 'processing'
 export type PayScope = 'own' | 'equal' | 'full'
 export type PayMethod = 'sbp' | 'card' | 'tpay' | 'sber' | 'mir'
@@ -236,10 +237,12 @@ interface Ctx {
   removeLine: (uid: number) => Promise<void>
   /** Отменить своё блюдо, пока кухня не взяла его в работу. */
   cancelMine: (uid: number) => Promise<void>
+  /** Позвать официанта с наличными: сумма ждёт подтверждения человека. */
+  askCash: (scope: 'own' | 'full') => Promise<number>
   sendWave: (scope: 'mine' | 'all') => Promise<void>
   pay: (scope: PayScope, idemKey: string) => Promise<number>
   leaveTip: (amount: number, idemKey: string) => Promise<number>
-  callWaiter: (reason: 'help' | 'bill' | 'water') => Promise<void>
+  callWaiter: (reason: 'help' | 'bill' | 'water', note?: string) => Promise<void>
   forgetMe: () => void // «Я другой гость» — телефон передали новому человеку
   // смена сотрудника: вход по PIN, права роли
   staff: Staff | null
@@ -392,6 +395,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         if (!guestToken()) return
         await apiCancelMine(guestToken()!, uid)
       }, undefined),
+    askCash: scope =>
+      guard(async () => {
+        if (!guestToken()) return 0
+        const r = await apiCashIntent(guestToken()!, scope)
+        toastRef.current?.('Официант подойдёт за наличными')
+        return r.amount
+      }, 0),
     sendWave: scope =>
       guard(async () => {
         if (!guestToken()) return
@@ -410,7 +420,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         const r = await apiTip(guestToken()!, amount, idemKey)
         return r.amount
       }, 0),
-    callWaiter: reason =>
+    callWaiter: (reason, note) =>
       guard(async () => {
         if (!guestToken()) return
         await apiCall(guestToken()!, reason)

@@ -3,6 +3,7 @@ import { HALL_LABEL, WAITER_NAME } from './data'
 import { tableId } from './api'
 import { useStore } from './store'
 import { fmt } from './format'
+import { getStaffToken } from './staff'
 import { GuestList } from './waiter/GuestList'
 import { MetricsRow } from './waiter/Metrics'
 import { OrderFeed } from './waiter/OrderFeed'
@@ -15,6 +16,44 @@ import './waiter.css'
 
 // Экран менеджера/официанта: живой снапшот стола со всех телефонов.
 // Доступ и кнопки зависят от роли вошедшего сотрудника (shared/roles.js).
+/**
+ * Просьба принять наличные. Деньги появляются в счёте только после того, как
+ * официант подтвердил, что физически их взял, — телефон гостя наличные не видит.
+ */
+function CashRequest({ table, snap, onTaken }: { table: string; snap: any; onTaken: () => void }) {
+  const [busy, setBusy] = useState(false)
+  const intent = snap?.cashIntent
+  if (!intent) return null
+
+  const name = snap.personas?.find((p: any) => p.id === intent.personaId)?.name ?? 'Гость'
+  const take = async () => {
+    setBusy(true)
+    try {
+      await fetch(`/api/t/${encodeURIComponent(table)}/cash`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-staff-token': getStaffToken() },
+        body: JSON.stringify({ personaId: intent.personaId, scope: intent.scope, sessionId: snap.sessionId })
+      })
+      onTaken()
+    } catch (err) {
+      console.error('не удалось принять наличные:', err)
+    }
+    setBusy(false)
+  }
+
+  return (
+    <div className="ep-w-cash">
+      <div>
+        <div className="ep-w-cash-title">{name} платит наличными</div>
+        <div className="ep-w-cash-sum">{fmt(intent.amount)}</div>
+      </div>
+      <button className="ep-w-btn" disabled={busy} onClick={() => void take()}>
+        Принял деньги
+      </button>
+    </div>
+  )
+}
+
 export function Waiter() {
   const {
     snap,
@@ -142,6 +181,8 @@ export function Waiter() {
 
       <div className="ep-w-body">
         <div className="ep-w-side">
+          {/* Гость с деньгами в руке — это срочнее всего остального на экране */}
+          <CashRequest table={tableId ?? ''} snap={snap} onTaken={() => {}} />
           <GuestList personas={personas} lines={lines} totals={totals} tableOpen={isOpen} />
         </div>
         <div className="ep-w-main">

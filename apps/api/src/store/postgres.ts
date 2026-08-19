@@ -31,6 +31,12 @@ export async function createPostgresStore(url?: string): Promise<Store> {
   }
   await refreshStaff()
   const staffUuid = (extId: string | null | undefined) => (extId ? staffByExt.get(extId) ?? null : null)
+  /** Обратное соответствие: в базе сотрудник — uuid, в ролях и сессиях — строковый id. */
+  const staffExt = (uuid: string | null | undefined) => {
+    if (!uuid) return null
+    for (const [ext, id] of staffByExt) if (id === uuid) return ext
+    return null
+  }
 
   async function tableUuid(tx: any, number: string): Promise<string | null> {
     const [row] = await tx`
@@ -90,6 +96,7 @@ export async function createPostgresStore(url?: string): Promise<Store> {
         name: g.name,
         animal: g.animal,
         joinedAt: ms(g.joined_at) ?? 0,
+        allergies: g.allergies ?? [],
         secretHash: g.secret_hash
       })),
       lines: lines.map((l: any) => ({
@@ -98,6 +105,7 @@ export async function createPostgresStore(url?: string): Promise<Store> {
         qty: l.qty,
         price: Number(l.price),
         options: l.options ?? {},
+        comment: l.comment ?? null,
         shared: l.shared,
         sharedWith: l.shared_with ?? [],
         personaId: l.guest_id,
@@ -106,6 +114,9 @@ export async function createPostgresStore(url?: string): Promise<Store> {
         cancelled: !!l.cancelled_at,
         sentAt: ms(l.sent_at),
         startedAt: ms(l.started_at),
+        readyAt: ms(l.ready_at),
+        readyBy: l.ready_by,
+        cancelAck: !!l.cancel_ack,
         servedAt: ms(l.served_at),
         cancelledAt: ms(l.cancelled_at),
         cancelReason: l.cancel_reason,
@@ -117,6 +128,11 @@ export async function createPostgresStore(url?: string): Promise<Store> {
         personaId: p.guest_id,
         amount: Number(p.amount),
         scope: p.scope,
+        method: p.method ?? 'sbp',
+        takenBy: p.taken_by ?? null,
+        // Номер и состав чека: единственный документ, который гость может предъявить
+        receiptNo: p.receipt_no ?? undefined,
+        lines: p.receipt_lines ?? [],
         at: ms(p.created_at) ?? 0
       })),
       tips: tips.map((t: any) => ({
@@ -130,10 +146,13 @@ export async function createPostgresStore(url?: string): Promise<Store> {
         id: c.id,
         at: ms(c.created_at) ?? 0,
         personaId: c.guest_id,
-        reason: c.reason
+        reason: c.reason,
+        note: c.note ?? null
       })),
       seq: (lines.at(-1)?.seq ?? 0) + 1,
       overpaid: Number(row.overpaid ?? 0),
+      cleanedAt: ms(row.cleaned_at),
+      cashIntent: row.cash_intent ?? null,
       db: { tableUuid: tid, sessionUuid: row.id }
     }
     return session
@@ -161,41 +180,65 @@ export async function createPostgresStore(url?: string): Promise<Store> {
 
     for (const p of session.personas) {
       await tx`
-        insert into guests (id, table_session_id, name, animal, secret_hash, joined_at)
-        values (${p.id}, ${sid}, ${p.name}, ${p.animal}, ${p.secretHash}, ${new Date(p.joinedAt)})
-        on conflict (id) do update set name = excluded.name, animal = excluded.animal
+        insert into guests (id, table_session_id, name, animal, allergies, secret_hash, joined_at)
+        values (
+          ${p.id}, ${sid}, ${p.name}, ${p.animal}, ${p.allergies ?? []},
+          ${p.secretHash}, ${new Date(p.joinedAt)}
+        )
+        on conflict (id) do update set
+          name = excluded.name,
+          animal = excluded.animal,
+          allergies = excluded.allergies
       `
     }
 
     for (const l of session.lines) {
       await tx`
         insert into order_lines (
-          table_session_id, guest_id, seq, dish_id, name, price, qty, options,
-          shared, shared_with, sent_at, started_at, started_by, served_at, served_by,
-          cancelled_at, cancelled_by, cancel_reason
+          table_session_id, guest_id, seq, dish_id, name, price, qty, options, comment,
+          shared, shared_with, sent_at, started_at, started_by, ready_at, ready_by,
+          served_at, served_by, cancelled_at, cancelled_by, cancel_reason, cancel_ack
         ) values (
           ${sid}, ${l.personaId}, ${l.uid}, ${l.dishId}, ${dishName(l.dishId)}, ${l.price}, ${l.qty},
-          ${tx.json(l.options ?? {})}, ${l.shared}, ${l.sharedWith ?? []},
+          ${tx.json(l.options ?? {})}, ${l.comment ?? null}, ${l.shared}, ${l.sharedWith ?? []},
           ${l.sentAt ? new Date(l.sentAt) : null}, ${l.startedAt ? new Date(l.startedAt) : null},
-          ${staffUuid(l.startedBy)}, ${l.servedAt ? new Date(l.servedAt) : null}, ${staffUuid(l.servedBy)},
-          ${l.cancelledAt ? new Date(l.cancelledAt) : null}, ${staffUuid(l.cancelledBy)}, ${l.cancelReason ?? null}
+          ${staffUuid(l.startedBy)}, ${l.readyAt ? new Date(l.readyAt) : null}, ${staffUuid(l.readyBy)},
+          ${l.servedAt ? new Date(l.servedAt) : null}, ${staffUuid(l.servedBy)},
+          ${l.cancelledAt ? new Date(l.cancelledAt) : null}, ${staffUuid(l.cancelledBy)},
+          ${l.cancelReason ?? null}, ${!!l.cancelAck}
         )
         on conflict (table_session_id, seq) do update set
+          comment = excluded.comment,
+          -- Список участников общего блюда проставляется ПОЗЖЕ, в момент отправки
+          -- на кухню. Без него в обновлении доля навсегда оставалась пустой, и
+          -- деление съезжало на «всех, кто сейчас за столом»: подсевший позже
+          -- начинал платить за уже заказанное. Это главный инвариант продукта.
+          shared = excluded.shared,
+          shared_with = excluded.shared_with,
           sent_at = excluded.sent_at,
           started_at = excluded.started_at,
           started_by = excluded.started_by,
+          ready_at = excluded.ready_at,
+          ready_by = excluded.ready_by,
           served_at = excluded.served_at,
           served_by = excluded.served_by,
           cancelled_at = excluded.cancelled_at,
           cancelled_by = excluded.cancelled_by,
-          cancel_reason = excluded.cancel_reason
+          cancel_reason = excluded.cancel_reason,
+          cancel_ack = excluded.cancel_ack
       `
     }
 
     for (const p of session.payments) {
       await tx`
-        insert into payments (id, table_session_id, guest_id, amount, scope, created_at)
-        values (${p.id}, ${sid}, ${p.personaId}, ${p.amount}, ${p.scope}, ${new Date(p.at)})
+        insert into payments (
+          id, table_session_id, guest_id, amount, scope, method, taken_by,
+          receipt_no, receipt_lines, created_at
+        ) values (
+          ${p.id}, ${sid}, ${p.personaId}, ${p.amount}, ${p.scope},
+          ${p.method ?? "sbp"}, ${staffUuid(p.takenBy)},
+          ${p.receiptNo ?? null}, ${tx.json(p.lines ?? [])}, ${new Date(p.at)}
+        )
         on conflict (id) do nothing
       `
     }
@@ -217,11 +260,19 @@ export async function createPostgresStore(url?: string): Promise<Store> {
     `
     for (const c of session.calls) {
       await tx`
-        insert into calls (id, table_session_id, guest_id, reason, created_at)
-        values (${c.id}, ${sid}, ${c.personaId}, ${c.reason}, ${new Date(c.at)})
-        on conflict (id) do nothing
+        insert into calls (id, table_session_id, guest_id, reason, note, created_at)
+        values (${c.id}, ${sid}, ${c.personaId}, ${c.reason}, ${c.note ?? null}, ${new Date(c.at)})
+        on conflict (id) do update set note = coalesce(excluded.note, calls.note)
       `
     }
+
+    // Уборка стола и просьба принять наличные — состояние сессии, а не позиций
+    await tx`
+      update table_sessions set
+        cleaned_at = ${session.cleanedAt ? new Date(session.cleanedAt) : null},
+        cash_intent = ${session.cashIntent ? tx.json(session.cashIntent) : null}
+      where id = ${sid}
+    `
 
     if (session.resetRequested) session.resetRequested = false // стол освобождён закрытием сессии
     if (session.status === 'closed') {
@@ -301,7 +352,13 @@ export async function createPostgresStore(url?: string): Promise<Store> {
         group by t.waiter_id
       `
       const tipsByStaff: Record<string, number> = Object.create(null)
-      for (const r of tipRows) tipsByStaff[r.waiter_id] = Number(r.amount)
+      // Чаевые копятся под uuid сотрудника, а личный счётчик официанта ищет по
+      // строковому id из конфига: без обратного перевода деньги приходили в
+      // заведение и не доезжали до человека, который их заработал.
+      for (const r of tipRows) {
+        const ext = staffExt(r.waiter_id)
+        if (ext) tipsByStaff[ext] = Number(r.amount)
+      }
 
       return {
         tables: Number(row.tables),

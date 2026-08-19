@@ -126,7 +126,10 @@ function idemRemember(key: string, status: number, body: Record<string, unknown>
 
 /** Открывает новую сессию прямо в объекте: хранилище не должно подменять ссылки. */
 function openSessionInPlace(t: TableSession) {
-  t.sessionId = t.db?.sessionUuid ?? crypto.randomUUID()
+  // Новая посадка — всегда новая сессия. Раньше при переоткрытии стола сюда
+  // попадал id ЗАКРЫТОЙ сессии из базы: клиент не видел расхождения, не забывал
+  // мёртвую личность и упирался в «unknown guest» на каждом действии.
+  t.sessionId = crypto.randomUUID()
   t.status = 'open'
   t.openedAt = Date.now()
   t.closedAt = null
@@ -462,7 +465,12 @@ export function mutate(
   const persona = t.personas.find(p => p.secretHash === hash)
   if (!persona) return fail(403, 'unknown guest')
   if (body.personaId && body.personaId !== persona.id) return fail(403, 'not your persona')
-  if (t.status !== 'open') return fail(409, 'table closed')
+  // Чаевые — исключение: гость ещё сидит за столом, даже если зал уже его закрыл.
+  // Иначе окно для благодарности схлопывается в ноль секунд ровно у того, кто
+  // заплатил за всех, — а чаевые идут официанту мимо счёта и ничего не ломают.
+  const TIP_AFTER_CLOSE_MS = 30 * 60_000
+  const justClosed = t.status === 'closed' && t.closedAt && Date.now() - t.closedAt < TIP_AFTER_CLOSE_MS
+  if (t.status !== 'open' && !(action === 'tip' && justClosed)) return fail(409, 'table closed')
 
   return guestAction(t, tableId, action, body, persona)
 }

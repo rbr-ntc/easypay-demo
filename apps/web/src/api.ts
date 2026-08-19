@@ -178,11 +178,15 @@ export interface Receipt {
 export const apiPay = (guest: string, scope: 'own' | 'equal' | 'full', idemKey: string) =>
   post<{ ok: true; amount: number; remaining: number ; receipt?: Receipt }>('pay', { scope, idemKey }, { guest })
 
+/** «Заплачу наличными»: просьба к официанту, деньги не списываются. */
+export const apiCashIntent = (guest: string, scope: 'own' | 'full') =>
+  post<{ ok: true; amount: number; scope: string }>('cashIntent', { scope }, { guest })
+
 export const apiTip = (guest: string, amount: number, idemKey: string) =>
   post<{ ok: true; amount: number }>('tip', { amount, idemKey }, { guest })
 
-export const apiCall = (guest: string, reason: 'help' | 'bill' | 'water') =>
-  post<{ ok: true }>('call', { reason }, { guest })
+export const apiCall = (guest: string, reason: 'help' | 'bill' | 'water', note?: string) =>
+  post<{ ok: true; callId: string; repeated: boolean }>('call', { reason, note }, { guest })
 
 // Действия персонала — с сессией сотрудника и привязкой к сессии стола
 export const apiStart = (uid: number, sessionId: string) =>
