@@ -14,7 +14,12 @@
     "build": "npm run build --workspace @easypay/web",
     "serve": "npm run build && npm start --workspace @easypay/api",
     "start": "npm start --workspace @easypay/api",
-    "test": "npm test --workspaces --if-present"
+    "test": "npm test --workspaces --if-present",
+    "db:up": "docker compose -f infra/docker-compose.yml up -d",
+    "db:down": "docker compose -f infra/docker-compose.yml down",
+    "db:migrate": "npm run migrate -w @easypay/db",
+    "db:seed": "npm run seed -w @easypay/db",
+    "db:reset": "docker compose -f infra/docker-compose.yml down -v && npm run db:up && sleep 6 && npm run db:migrate && npm run db:seed"
   },
   "engines": {
     "node": ">=20"

@@ -1,0 +1,36 @@
+# Локальное окружение EasyPay. Порты смещены, чтобы не конфликтовать
+# с уже установленными локально Postgres и Redis.
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: easypay-postgres
+    environment:
+      POSTGRES_USER: easypay
+      POSTGRES_PASSWORD: easypay
+      POSTGRES_DB: easypay
+      # Деньги считаем в минорных единицах, но локаль всё равно фиксируем
+      LANG: C.UTF-8
+    ports:
+      - '5433:5432'
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U easypay -d easypay']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: easypay-redis
+    command: ['redis-server', '--appendonly', 'no']
+    ports:
+      - '6380:6379'
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  pgdata:
