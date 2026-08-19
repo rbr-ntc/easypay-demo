@@ -1,0 +1,1042 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="_ds/figma-marketing-design-system-ce7fb35a-e096-4153-b9d9-b5ad397203cb/tokens/fonts.css">
+<link rel="stylesheet" href="_ds/figma-marketing-design-system-ce7fb35a-e096-4153-b9d9-b5ad397203cb/tokens/colors.css">
+<link rel="stylesheet" href="_ds/figma-marketing-design-system-ce7fb35a-e096-4153-b9d9-b5ad397203cb/tokens/typography.css">
+<link rel="stylesheet" href="_ds/figma-marketing-design-system-ce7fb35a-e096-4153-b9d9-b5ad397203cb/tokens/radius.css">
+<link rel="stylesheet" href="_ds/figma-marketing-design-system-ce7fb35a-e096-4153-b9d9-b5ad397203cb/styles.css">
+<script src="_ds/figma-marketing-design-system-ce7fb35a-e096-4153-b9d9-b5ad397203cb/_ds_bundle.js"></script>
+<script src="image-slot.js"></script>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; }
+  ::-webkit-scrollbar { width: 0; height: 0; }
+  @keyframes ep-spin { to { transform: rotate(360deg); } }
+  @keyframes ep-pop { 0% { transform: scale(0.4); opacity: 0; } 60% { transform: scale(1.08); } 100% { transform: scale(1); opacity: 1; } }
+  @keyframes ep-fade { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+  @keyframes ep-pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.35; } }
+</style>
+</helmet>
+
+<div style="display:flex; height:100vh; width:100%; background:#EAEAEE; font-family:var(--font-sans); color:#1F1D3D; overflow:hidden;">
+
+  <sc-if value="{{ showNav }}" hint-placeholder-val="{{ true }}">
+  <aside style="width:286px; flex-shrink:0; height:100%; background:#F4F4F6; border-right:1px solid #E2E2E6; display:flex; flex-direction:column; padding:22px 18px; overflow-y:auto;">
+    <div style="display:flex; align-items:center; gap:9px; margin-bottom:4px;">
+      <div style="width:30px; height:30px; border-radius:9px; background:#1F1D3D; color:#fff; display:flex; align-items:center; justify-content:center; font-weight:700; font-size:16px;">e</div>
+      <div style="font-weight:680; font-size:18px; letter-spacing:-0.4px;">EasyPay</div>
+    </div>
+    <div style="font-family:var(--font-mono); font-size:10.5px; letter-spacing:0.5px; color:#9A9AA4; text-transform:uppercase; margin:2px 0 18px 39px;">Прототип демо</div>
+
+    <div style="font-family:var(--font-mono); font-size:10.5px; letter-spacing:0.6px; color:#9A9AA4; text-transform:uppercase; margin-bottom:8px; padding-left:6px;">Гость · 390×844</div>
+    <div style="display:flex; flex-direction:column; gap:2px; margin-bottom:20px;">
+      <sc-for list="{{ navMobile }}" as="n" hint-placeholder-count="9">
+        <button onClick="{{ n.onClick }}" style="{{ n.rowStyle }}" style-hover="background:#fff;">
+          <span style="{{ n.numStyle }}">{{ n.num }}</span>
+          <span style="{{ n.labelStyle }}">{{ n.label }}</span>
+        </button>
+      </sc-for>
+    </div>
+
+    <div style="font-family:var(--font-mono); font-size:10.5px; letter-spacing:0.6px; color:#9A9AA4; text-transform:uppercase; margin-bottom:8px; padding-left:6px;">Планшет · официант</div>
+    <div style="display:flex; flex-direction:column; gap:2px; margin-bottom:22px;">
+      <sc-for list="{{ navTablet }}" as="n" hint-placeholder-count="2">
+        <button onClick="{{ n.onClick }}" style="{{ n.rowStyle }}" style-hover="background:#fff;">
+          <span style="{{ n.numStyle }}">{{ n.num }}</span>
+          <span style="{{ n.labelStyle }}">{{ n.label }}</span>
+        </button>
+      </sc-for>
+    </div>
+
+    <div style="height:1px; background:#E2E2E6; margin:0 4px 18px;"></div>
+    <div style="font-family:var(--font-mono); font-size:10.5px; letter-spacing:0.6px; color:#9A9AA4; text-transform:uppercase; margin-bottom:11px; padding-left:6px;">Варианты и состояния</div>
+    <div style="display:flex; flex-direction:column; gap:13px; padding:0 4px;">
+      <div>
+        <div style="font-size:12px; color:#7A7A84; margin-bottom:6px;">Экран оплаты</div>
+        <x-import component-from-global-scope="FigmaMarketingDesignSystem_ce7fb3.PillToggle" options="{{ payVarOptions }}" value="{{ payVariant }}" on-change="{{ setPayVariant }}" hint-size="auto,38px"></x-import>
+      </div>
+      <div>
+        <div style="font-size:12px; color:#7A7A84; margin-bottom:6px;">Оплата стола</div>
+        <x-import component-from-global-scope="FigmaMarketingDesignSystem_ce7fb3.PillToggle" options="{{ partialOptions }}" value="{{ partialValue }}" on-change="{{ setPartial }}" hint-size="auto,38px"></x-import>
+      </div>
+    </div>
+    <div style="flex:1;"></div>
+    <div style="font-size:11.5px; color:#A6A6AE; line-height:1.5; padding:14px 6px 0;">Тапайте кнопки на экране, чтобы пройти сквозной сценарий: меню → заказ → кухня → статус → оплата.</div>
+  </aside>
+  </sc-if>
+
+  <main style="flex:1; min-width:0; height:100%; display:flex; align-items:center; justify-content:center; overflow:auto; padding:28px;">
+
+    <!-- ============ MOBILE ============ -->
+    <sc-if value="{{ isMobile }}" hint-placeholder-val="{{ true }}">
+    <div style="width:412px; height:858px; flex-shrink:0; background:#0B0B12; border-radius:54px; padding:11px; box-shadow:0 34px 80px rgba(20,18,45,.30); transform:scale(0.92); transform-origin:center;">
+      <div style="width:100%; height:100%; background:#fff; border-radius:44px; overflow:hidden; display:flex; flex-direction:column; position:relative;">
+
+        <sc-if value="{{ showStatusBar }}" hint-placeholder-val="{{ true }}">
+        <div style="height:46px; flex-shrink:0; display:flex; align-items:center; justify-content:space-between; padding:0 26px 0 28px; font-weight:600; font-size:14.5px; color:#0B0B12; z-index:5;">
+          <span>19:30</span>
+          <div style="display:flex; align-items:center; gap:7px;">
+            <span style="font-size:9px; letter-spacing:1px;">▮▮▮</span>
+            <span style="font-family:var(--font-mono); font-size:11px;">5G</span>
+            <div style="width:24px; height:12px; border:1.5px solid #0B0B12; border-radius:3px; position:relative; display:flex; align-items:center; padding:1.5px;"><div style="width:64%; height:100%; background:#0B0B12; border-radius:1px;"></div></div>
+          </div>
+        </div>
+        </sc-if>
+
+        <div style="flex:1; min-height:0; position:relative; overflow:hidden;">
+
+          <!-- ===== 1 WELCOME ===== -->
+          <sc-if value="{{ isWelcome }}" hint-placeholder-val="{{ true }}">
+          <div style="height:100%; display:flex; flex-direction:column;">
+            <div style="flex:1; overflow-y:auto; padding:10px 24px 24px;">
+              <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:26px;">
+                <div style="font-weight:680; font-size:19px; letter-spacing:-0.4px;">{{ restaurant }}</div>
+                <div style="display:flex; gap:2px; background:#F2F2F4; border-radius:50px; padding:3px;">
+                  <span style="font-size:12px; font-weight:600; padding:5px 11px; border-radius:50px; background:#1F1D3D; color:#fff;">RU</span>
+                  <span style="font-size:12px; font-weight:500; padding:5px 11px; color:#8A8A92;">EN</span>
+                </div>
+              </div>
+              <div style="font-family:var(--font-mono); font-size:11px; letter-spacing:0.5px; color:#9A9AA4; text-transform:uppercase; margin-bottom:6px;">Ваш стол</div>
+              <div style="font-weight:300; font-size:46px; line-height:1; letter-spacing:-1.8px; margin-bottom:22px;">Стол №12<br><span style="font-size:30px; color:#7A7A84;">Терраса</span></div>
+              <image-slot id="ep-hero" style="width:100%; height:230px; display:block; margin-bottom:22px;" shape="rounded" radius="24" placeholder="Фото зала / блюда"></image-slot>
+              <div style="font-weight:540; font-size:24px; letter-spacing:-0.7px; margin-bottom:8px;">Добро пожаловать!</div>
+              <div style="font-weight:330; font-size:15.5px; line-height:1.5; color:#42424C; margin-bottom:18px;">Закажите и оплатите прямо со своего телефона — быстро и без очереди.</div>
+              <div style="display:flex; gap:11px; background:#F4F1FE; border-radius:18px; padding:15px 16px; margin-bottom:16px;">
+                <div style="width:30px; height:30px; border-radius:9px; background:#EDE7FD; display:flex; align-items:center; justify-content:center; flex-shrink:0;">
+                  <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#7C5CFC" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8h.01M11 12h1v4h1"/></svg>
+                </div>
+                <div style="font-size:13.5px; line-height:1.5; color:#3A3458;">Можно заказать за весь стол отсюда. А если каждый хочет заказать сам — пусть отсканирует этот же QR со своего телефона.</div>
+              </div>
+            </div>
+            <div style="padding:14px 22px 28px; border-top:1px solid #F0F0F2;">
+              <button onClick="{{ goMenu }}" style="width:100%; min-height:56px; border:none; border-radius:50px; background:#1F1D3D; color:#fff; font-family:var(--font-sans); font-weight:560; font-size:17px; cursor:pointer;" style-active="transform:scale(0.985);">Открыть меню</button>
+              <div style="text-align:center; font-size:11.5px; color:#A0A0A8; margin-top:11px; line-height:1.45;">Продолжая, вы соглашаетесь на обработку данных по <span style="text-decoration:underline;">152-ФЗ</span></div>
+            </div>
+          </div>
+          </sc-if>
+
+          <!-- ===== 2 MENU ===== -->
+          <sc-if value="{{ isMenu }}" hint-placeholder-val="{{ false }}">
+          <div style="height:100%; display:flex; flex-direction:column; background:#F7F7F9;">
+            <div style="flex-shrink:0; background:#fff; border-bottom:1px solid #ECECEF; padding:10px 20px 12px;">
+              <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:12px;">
+                <sc-if value="{{ named }}" hint-placeholder-val="{{ false }}">
+                  <div style="display:flex; align-items:center; gap:9px;">
+                    <div style="width:32px; height:32px; flex-shrink:0;">{{ guestAvatar }}</div>
+                    <div>
+                      <div style="font-size:11px; color:#8A8A92;">Заказ · Стол №12</div>
+                      <div style="font-weight:600; font-size:14.5px; line-height:1.1;">{{ guestName }}</div>
+                    </div>
+                  </div>
+                </sc-if>
+                <sc-if value="{{ notNamed }}" hint-placeholder-val="{{ true }}">
+                  <div>
+                    <div style="font-weight:680; font-size:17px; letter-spacing:-0.3px;">Меню</div>
+                    <div style="font-size:12px; color:#8A8A92;">Стол №12 · Терраса</div>
+                  </div>
+                </sc-if>
+                <div style="width:42px; height:42px; border-radius:50%; background:#F2F2F4; display:flex; align-items:center; justify-content:center;">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#1F1D3D" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="20" r="1.3"/><circle cx="18" cy="20" r="1.3"/><path d="M2.5 3.5H5l2 11.2a1.4 1.4 0 0 0 1.4 1.1h8.3a1.4 1.4 0 0 0 1.4-1.1L21 7H6"/></svg>
+                </div>
+              </div>
+              <div style="display:flex; gap:8px; overflow-x:auto; padding-bottom:2px;">
+                <sc-for list="{{ cats }}" as="c" hint-placeholder-count="5">
+                  <button onClick="{{ c.onClick }}" style="{{ c.chipStyle }}">{{ c.name }}</button>
+                </sc-for>
+              </div>
+            </div>
+            <div style="flex:1; overflow-y:auto; padding:14px 20px 22px; display:flex; flex-direction:column; gap:11px;">
+              <sc-if value="{{ menuEmpty }}" hint-placeholder-val="{{ false }}">
+                <div style="text-align:center; padding:64px 20px; color:#9A9AA4;">
+                  <div style="font-weight:540; font-size:15px; color:#5C5C66;">В этой категории пока пусто</div>
+                  <div style="font-size:13px; margin-top:4px;">Загляните в другие разделы меню</div>
+                </div>
+              </sc-if>
+              <sc-for list="{{ items }}" as="it" hint-placeholder-count="4">
+                <div style="{{ it.rowStyle }}">
+                  <image-slot id="{{ it.slotId }}" style="width:74px; height:74px; flex-shrink:0; display:block;" shape="rounded" radius="14" placeholder="фото"></image-slot>
+                  <div style="flex:1; min-width:0; display:flex; flex-direction:column;">
+                    <div style="display:flex; align-items:center; gap:7px;">
+                      <span style="font-weight:580; font-size:15px;">{{ it.name }}</span>
+                      <sc-if value="{{ it.stop }}" hint-placeholder-val="{{ false }}">
+                        <span style="font-family:var(--font-mono); font-size:9.5px; letter-spacing:0.4px; text-transform:uppercase; background:#F2F2F4; color:#8A8A92; padding:3px 7px; border-radius:50px;">Нет в наличии</span>
+                      </sc-if>
+                    </div>
+                    <div style="font-size:12.5px; color:#7A7A84; line-height:1.4; margin:3px 0 8px;">{{ it.desc }}</div>
+                    <div style="display:flex; align-items:flex-end; justify-content:space-between; margin-top:auto;">
+                      <span style="font-weight:620; font-size:15px;">{{ it.priceStr }}</span>
+                      <button onClick="{{ it.onClick }}" style="{{ it.addStyle }}">+</button>
+                    </div>
+                  </div>
+                </div>
+              </sc-for>
+            </div>
+            <sc-if value="{{ named }}" hint-placeholder-val="{{ false }}">
+            <div style="padding:12px 20px 26px; background:#F7F7F9;">
+              <button onClick="{{ goCart }}" style="width:100%; min-height:56px; border:none; border-radius:50px; background:#1F1D3D; color:#fff; font-weight:560; font-size:16px; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:10px;" style-active="transform:scale(0.985);">
+                <span style="background:rgba(255,255,255,.2); padding:3px 10px; border-radius:50px; font-size:14px;">Корзина</span>
+                <span>{{ cartBadgeStr }}</span>
+                <span style="margin-left:2px;">→</span>
+              </button>
+            </div>
+            </sc-if>
+          </div>
+          </sc-if>
+
+          <!-- ===== 4 CART (view C) ===== -->
+          <sc-if value="{{ isCart }}" hint-placeholder-val="{{ false }}">
+          <div style="height:100%; display:flex; flex-direction:column; background:#F7F7F9;">
+            <div style="flex-shrink:0; padding:14px 20px; background:#fff; border-bottom:1px solid #ECECEF;">
+              <div style="font-weight:680; font-size:20px; letter-spacing:-0.5px;">Заказ · Стол №12</div>
+            </div>
+            <div style="flex:1; overflow-y:auto; padding:14px 20px 20px; display:flex; flex-direction:column; gap:13px;">
+              <div style="background:#fff; border:1px solid #ECECEF; border-radius:20px; padding:16px;">
+                <div style="display:flex; align-items:center; gap:11px; margin-bottom:14px;">
+                  <div style="width:40px; height:40px; flex-shrink:0;">{{ guestAvatar }}</div>
+                  <div><div style="font-weight:620; font-size:16px;">{{ guestName }}</div><div style="font-size:12px; color:#8A8A92;">мой заказ</div></div>
+                  <span style="margin-left:auto; font-weight:680; font-size:18px;">690 ₽</span>
+                </div>
+                <div style="display:flex; align-items:center; gap:12px; padding:13px; background:#FAFAFB; border-radius:14px;">
+                  <span style="flex:1; font-weight:520; font-size:15px;">Том ям</span>
+                  <span style="font-size:14.5px; color:#42424C;">690 ₽</span>
+                  <div style="display:flex; gap:6px; color:#9A9AA4;">
+                    <span style="cursor:pointer; font-size:13px;">Изм.</span>
+                    <span style="cursor:pointer; font-size:13px;">✕</span>
+                  </div>
+                </div>
+              </div>
+
+              <div style="background:#fff; border:1px solid #ECECEF; border-radius:18px; overflow:hidden;">
+                <div onClick="{{ toggleTable }}" style="display:flex; align-items:center; gap:10px; padding:14px 16px; cursor:pointer;">
+                  <div style="display:flex;">
+                    <div style="width:26px; height:26px; flex-shrink:0;">{{ dimaMini }}</div>
+                    <div style="width:26px; height:26px; flex-shrink:0; margin-left:-7px;">{{ lenaMini }}</div>
+                  </div>
+                  <span style="font-weight:560; font-size:14.5px;">Весь стол</span>
+                  <span style="font-size:13px; color:#8A8A92;">· ещё 2 гостя</span>
+                  <span style="margin-left:auto; font-size:13px; color:#8A8A92; transform:{{ caretRotate }}; transition:transform 160ms;">▾</span>
+                </div>
+                <sc-if value="{{ tableOpen }}" hint-placeholder-val="{{ false }}">
+                <div style="padding:0 16px 8px;">
+                  <sc-for list="{{ tableGuests }}" as="g" hint-placeholder-count="2">
+                    <div style="display:flex; align-items:center; gap:11px; padding:11px 0; border-top:1px solid #F2F2F4;">
+                      <div style="width:30px; height:30px; flex-shrink:0;">{{ g.avatar }}</div>
+                      <div style="flex:1;"><div style="font-weight:520; font-size:14px;">{{ g.name }}</div><div style="font-size:12px; color:#9A9AA4;">{{ g.dish }}</div></div>
+                      <span style="font-size:14px; color:#42424C;">{{ g.sumStr }}</span>
+                    </div>
+                  </sc-for>
+                </div>
+                </sc-if>
+              </div>
+
+              <div style="background:#FFF; border:1px dashed #C9C4E8; border-radius:18px; overflow:hidden;">
+                <div style="display:flex; align-items:center; gap:9px; padding:12px 14px; background:#F4F1FE;">
+                  <div style="width:30px; height:30px; border-radius:9px; background:#EDE7FD; color:#7C5CFC; display:flex; align-items:center; justify-content:center; font-size:15px;">◍</div>
+                  <span style="font-weight:600; font-size:14.5px;">Общие блюда</span>
+                  <span style="margin-left:auto; font-weight:620; font-size:15px;">{{ sharedTotalStr }}</span>
+                </div>
+                <div style="padding:6px 14px;">
+                  <sc-for list="{{ sharedItems }}" as="sh" hint-placeholder-count="3">
+                    <div style="display:flex; align-items:center; gap:10px; padding:9px 0; border-bottom:1px solid #F2F2F4;">
+                      <span style="flex:1; font-size:14px;">{{ sh.name }}</span>
+                      <span style="font-size:14px; color:#42424C;">{{ sh.priceStr }}</span>
+                    </div>
+                  </sc-for>
+                </div>
+                <div style="padding:8px 14px 14px;">
+                  <div style="display:flex; gap:4px; background:#F2F2F4; border-radius:50px; padding:4px;">
+                    <sc-for list="{{ splitOpts }}" as="o" hint-placeholder-count="3">
+                      <div onClick="{{ o.onClick }}" style="{{ o.style }}">{{ o.name }}</div>
+                    </sc-for>
+                  </div>
+                  <div style="font-size:12.5px; color:#7A7A84; margin-top:9px; padding-left:2px;">Поровну по {{ sharedPerStr }} на троих</div>
+                </div>
+              </div>
+            </div>
+            <div style="padding:12px 20px 26px; background:#fff; border-top:1px solid #ECECEF; display:flex; flex-direction:column; gap:10px;">
+              <div style="display:flex; align-items:baseline; justify-content:space-between; padding:0 4px;">
+                <span style="font-size:13px; color:#7A7A84;">Мой итог: 690 ₽ своё + 666,67 ₽ доля общего</span>
+                <span style="font-weight:700; font-size:20px; letter-spacing:-0.5px;">1 357 ₽</span>
+              </div>
+              <div style="display:flex; gap:10px;">
+              <button onClick="{{ goMenu }}" style="flex:1; min-height:54px; border:1px solid #DDDDE2; border-radius:50px; background:#fff; color:#1F1D3D; font-weight:540; font-size:15px; cursor:pointer;">Дозаказать</button>
+              <button onClick="{{ openSend }}" style="flex:1.5; min-height:54px; border:none; border-radius:50px; background:#1F1D3D; color:#fff; font-weight:560; font-size:15.5px; cursor:pointer;" style-active="transform:scale(0.985);">На кухню</button>
+              </div>
+            </div>
+          </div>
+          </sc-if>
+
+          <!-- ===== 6 STATUS ===== -->
+          <sc-if value="{{ isStatus }}" hint-placeholder-val="{{ false }}">
+          <div style="height:100%; display:flex; flex-direction:column; background:#F7F7F9;">
+            <div style="flex:1; overflow-y:auto; padding:22px 22px 18px;">
+              <div style="display:flex; flex-direction:column; align-items:center; text-align:center; margin-bottom:22px;">
+                <div style="width:78px; height:78px; border-radius:50%; background:#DCEEB1; display:flex; align-items:center; justify-content:center; margin-bottom:16px;">
+                  <svg width="38" height="38" viewBox="0 0 24 24" fill="none" stroke="#3A6B12" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l4 4L19 7"/></svg>
+                </div>
+                <div style="font-weight:300; font-size:28px; line-height:1.12; letter-spacing:-0.9px;">Заказ принят.<br>Приятного аппетита!</div>
+              </div>
+              <div style="display:flex; align-items:flex-start; margin-bottom:22px; padding:0 6px;">
+                <sc-for list="{{ steps }}" as="st" hint-placeholder-count="3">
+                  <div style="flex:1; display:flex; flex-direction:column; align-items:center; position:relative;">
+                    <sc-if value="{{ st.hasLine }}" hint-placeholder-val="{{ false }}">
+                      <div style="{{ st.lineStyle }}"></div>
+                    </sc-if>
+                    <div style="{{ st.dotStyle }}">{{ st.glyph }}</div>
+                    <div style="{{ st.labelStyle }}">{{ st.label }}</div>
+                  </div>
+                </sc-for>
+              </div>
+              <div style="background:#fff; border:1px solid #ECECEF; border-radius:18px; padding:6px 16px; margin-bottom:14px;">
+                <sc-for list="{{ statusItems }}" as="r" hint-placeholder-count="2">
+                  <div style="display:flex; align-items:center; gap:12px; padding:13px 0; border-bottom:1px solid #F2F2F4;">
+                    <div style="width:32px; height:32px; flex-shrink:0;">{{ r.avatar }}</div>
+                    <div style="flex:1; min-width:0;"><div style="font-weight:540; font-size:14.5px;">{{ r.item }}</div><div style="font-size:12px; color:#9A9AA4;">{{ r.who }}</div></div>
+                    <span style="{{ r.badgeStyle }}">{{ r.status }}</span>
+                  </div>
+                </sc-for>
+              </div>
+              <div style="display:flex; align-items:center; gap:10px; background:#FFF6E6; border:1px solid #F4E2BD; border-radius:14px; padding:11px 14px;">
+                <div style="width:26px; height:26px; flex-shrink:0;">{{ dimaMini }}</div>
+                <span style="font-size:13px; color:#7A5A12;"><b style="font-weight:620;">Дима</b> ещё выбирает блюда</span>
+              </div>
+            </div>
+            <div style="padding:12px 20px 26px; background:#fff; border-top:1px solid #ECECEF;">
+              <button onClick="{{ goMenu }}" style="width:100%; min-height:50px; border:1px solid #DDDDE2; border-radius:50px; background:#fff; color:#1F1D3D; font-weight:540; font-size:15px; cursor:pointer; margin-bottom:9px;">Дозаказать</button>
+              <button onClick="{{ goPayment }}" style="width:100%; min-height:54px; border:none; border-radius:50px; background:#1F1D3D; color:#fff; font-weight:560; font-size:16px; cursor:pointer;" style-active="transform:scale(0.985);">Оплатить, когда будете готовы</button>
+            </div>
+          </div>
+          </sc-if>
+
+          <!-- ===== 7 PAYMENT ===== -->
+          <sc-if value="{{ isPayment }}" hint-placeholder-val="{{ false }}">
+          <div style="height:100%; display:flex; flex-direction:column; background:#F7F7F9;">
+
+            <sc-if value="{{ payForm }}" hint-placeholder-val="{{ true }}">
+            <div style="flex:1; overflow-y:auto; padding:14px 20px 20px;">
+              <div style="font-weight:680; font-size:24px; letter-spacing:-0.6px; margin-bottom:16px;">Оплата</div>
+
+              <sc-if value="{{ partial }}" hint-placeholder-val="{{ false }}">
+                <div style="display:flex; gap:10px; align-items:center; background:#FFF6E6; border:1px solid #F4E2BD; border-radius:14px; padding:12px 14px; margin-bottom:16px;">
+                  <div style="width:26px; height:26px; flex-shrink:0;">{{ dimaMini }}</div>
+                  <span style="font-size:13px; line-height:1.45; color:#7A5A12;"><b style="font-weight:640;">Дима</b> уже оплатил свою часть. Осталось <b style="font-weight:640;">{{ partialRemainStr }}</b></span>
+                </div>
+              </sc-if>
+
+              <div style="font-family:var(--font-mono); font-size:10.5px; letter-spacing:0.6px; text-transform:uppercase; color:#9A9AA4; margin-bottom:9px;">Что оплачиваем</div>
+
+              <sc-if value="{{ isPayA }}" hint-placeholder-val="{{ true }}">
+              <div style="display:flex; flex-direction:column; gap:9px; margin-bottom:22px;">
+                <sc-for list="{{ scopes }}" as="o" hint-placeholder-count="3">
+                  <div onClick="{{ o.onClick }}" style="{{ o.rowStyle }}">
+                    <div style="{{ o.dotStyle }}"></div>
+                    <div style="flex:1; min-width:0;">
+                      <div style="font-weight:560; font-size:15px;">{{ o.label }}</div>
+                      <div style="font-size:12px; color:#8A8A92; margin-top:2px;">{{ o.sub }}</div>
+                    </div>
+                    <span style="font-weight:660; font-size:16px;">{{ o.amtStr }}</span>
+                  </div>
+                </sc-for>
+              </div>
+              </sc-if>
+
+              <sc-if value="{{ isPayB }}" hint-placeholder-val="{{ false }}">
+              <div style="margin-bottom:22px;">
+                <div style="display:flex; gap:7px; margin-bottom:14px;">
+                  <sc-for list="{{ scopes }}" as="o" hint-placeholder-count="3">
+                    <button onClick="{{ o.onClick }}" style="{{ o.pillStyle }}">{{ o.label }}</button>
+                  </sc-for>
+                </div>
+                <div style="background:#1F1D3D; border-radius:20px; padding:20px; color:#fff;">
+                  <div style="font-size:13px; opacity:0.7;">К оплате</div>
+                  <div style="font-weight:300; font-size:40px; letter-spacing:-1.4px; margin:4px 0 10px;">{{ payAmtStr }}</div>
+                  <div style="font-size:12.5px; opacity:0.7; line-height:1.4; border-top:1px solid rgba(255,255,255,.14); padding-top:10px;">690 ₽ ваше блюдо + 666,67 ₽ — ваша доля общих блюд на троих</div>
+                </div>
+              </div>
+              </sc-if>
+
+              <div style="font-family:var(--font-mono); font-size:10.5px; letter-spacing:0.6px; text-transform:uppercase; color:#9A9AA4; margin-bottom:9px;">Способ оплаты</div>
+              <div onClick="{{ selectSbp }}" style="{{ sbpRowStyle }}">
+                <div style="width:46px; height:46px; border-radius:13px; background:{{ SBP }}; display:flex; align-items:center; justify-content:center; flex-shrink:0; color:#fff; font-weight:700; font-size:15px; letter-spacing:-0.3px;">СБП</div>
+                <div style="flex:1; min-width:0;">
+                  <div style="display:flex; align-items:center; gap:7px;">
+                    <span style="font-weight:620; font-size:15.5px;">СБП</span>
+                    <span style="font-family:var(--font-mono); font-size:9px; letter-spacing:0.3px; text-transform:uppercase; background:{{ SBP }}; color:#fff; padding:3px 8px; border-radius:50px;">Рекомендуем</span>
+                  </div>
+                  <div style="font-size:12.5px; color:#7A7A84; margin-top:2px;">Оплата по QR или кнопке банка</div>
+                </div>
+                <sc-if value="{{ sbpSelected }}" hint-placeholder-val="{{ true }}">
+                  <div style="width:22px; height:22px; border-radius:50%; background:#B5249C; color:#fff; display:flex; align-items:center; justify-content:center; font-size:12px; font-weight:700; flex-shrink:0;">✓</div>
+                </sc-if>
+              </div>
+
+              <div style="display:flex; flex-direction:column; gap:8px; margin-top:9px;">
+                <sc-for list="{{ otherMethods }}" as="m" hint-placeholder-count="4">
+                  <div onClick="{{ m.onClick }}" style="display:flex; align-items:center; gap:12px; padding:13px 14px; border-radius:16px; background:#fff; border:1px solid #ECECEF; cursor:pointer;">
+                    <div style="width:34px; height:34px; border-radius:9px; background:#F2F2F4; display:flex; align-items:center; justify-content:center; font-weight:600; font-size:14px; color:#5C5C66; flex-shrink:0;">{{ m.glyph }}</div>
+                    <span style="flex:1; font-weight:520; font-size:14.5px;">{{ m.label }}</span>
+                    <div style="{{ m.dotStyle }}"></div>
+                  </div>
+                </sc-for>
+              </div>
+
+              <div style="display:flex; align-items:center; gap:10px; margin-top:18px; padding:0 2px;">
+                <div style="width:20px; height:20px; border-radius:6px; background:#1F1D3D; color:#fff; display:flex; align-items:center; justify-content:center; font-size:12px; flex-shrink:0;">✓</div>
+                <span style="font-size:13.5px; color:#42424C;">Отправить чек на телефон или email</span>
+              </div>
+            </div>
+            <div style="padding:12px 20px 26px; background:#fff; border-top:1px solid #ECECEF;">
+              <button onClick="{{ payBtn }}" style="{{ payBtnStyle }}" style-active="transform:scale(0.985);">{{ payBtnLabel }}</button>
+            </div>
+            </sc-if>
+
+            <sc-if value="{{ payQr }}" hint-placeholder-val="{{ false }}">
+            <div style="flex:1; display:flex; flex-direction:column; padding:18px 24px 26px;">
+              <div style="display:flex; align-items:center; gap:12px; margin-bottom:8px;">
+                <button onClick="{{ backToForm }}" style="width:38px; height:38px; border-radius:50%; border:1px solid #ECECEF; background:#fff; font-size:18px; cursor:pointer;">←</button>
+                <div style="font-weight:640; font-size:18px;">Оплата по СБП</div>
+              </div>
+              <div style="flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center;">
+                <div style="width:60px; height:24px; border-radius:7px; background:{{ SBP }}; color:#fff; display:flex; align-items:center; justify-content:center; font-weight:700; font-size:12px; margin-bottom:18px;">СБП</div>
+                <div style="padding:18px; background:#fff; border-radius:24px; box-shadow:0 10px 30px rgba(20,18,45,.12); margin-bottom:18px;">
+                  <div style="width:208px; height:208px; border-radius:12px; background-image:repeating-conic-gradient(#1F1D3D 0% 25%, #fff 0% 50%); background-size:17px 17px; border:8px solid #fff;"></div>
+                </div>
+                <div style="font-weight:300; font-size:34px; letter-spacing:-1px; margin-bottom:6px;">{{ payAmtStr }}</div>
+                <div style="font-size:13.5px; color:#7A7A84; margin-bottom:4px;">Наведите камеру или откройте приложение банка</div>
+                <div style="font-family:var(--font-mono); font-size:12px; color:#B5249C;">Код действителен 04:58</div>
+              </div>
+              <button onClick="{{ bankApp }}" style="width:100%; min-height:56px; border:none; border-radius:50px; background:{{ SBP }}; color:#fff; font-weight:560; font-size:16px; cursor:pointer;" style-active="transform:scale(0.985);">Открыть приложение банка</button>
+            </div>
+            </sc-if>
+
+            <sc-if value="{{ payProcessing }}" hint-placeholder-val="{{ false }}">
+            <div style="flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:22px; padding:24px;">
+              <div style="width:62px; height:62px; border-radius:50%; border:5px solid #ECECEF; border-top-color:#1F1D3D; animation:ep-spin 0.9s linear infinite;"></div>
+              <div style="text-align:center;"><div style="font-weight:600; font-size:19px; margin-bottom:5px;">Проводим оплату…</div><div style="font-size:14px; color:#7A7A84;">Не закрывайте экран</div></div>
+            </div>
+            </sc-if>
+
+          </div>
+          </sc-if>
+
+          <!-- ===== 8 TIPS ===== -->
+          <sc-if value="{{ isTips }}" hint-placeholder-val="{{ false }}">
+          <div style="height:100%; display:flex; flex-direction:column; background:#F7F7F9;">
+            <div style="flex:1; overflow-y:auto; padding:24px 24px 20px;">
+              <div style="display:flex; flex-direction:column; align-items:center; text-align:center; margin-bottom:24px;">
+                <div style="display:inline-flex; align-items:center; gap:7px; background:#E4F6EA; color:#1F9D55; border-radius:50px; padding:7px 14px; font-size:13px; font-weight:560; margin-bottom:16px;">✓ Оплачено · {{ payAmtStr }}</div>
+                <image-slot id="ep-waiter" style="width:88px; height:88px; display:block; margin-bottom:14px;" shape="circle" placeholder="фото"></image-slot>
+                <div style="display:inline-flex; align-items:center; gap:6px; background:#fff; border:1px solid #ECECEF; border-radius:50px; padding:5px 12px; margin-bottom:16px;">
+                  <span style="color:#F4B400; font-size:13px;">★</span>
+                  <span style="font-size:12.5px; font-weight:560;">4.9</span>
+                  <span style="font-size:12.5px; color:#9A9AA4;">· официант Максим</span>
+                </div>
+                <div style="font-weight:300; font-size:28px; line-height:1.1; letter-spacing:-0.9px;">Поблагодарить<br>официанта?</div>
+              </div>
+              <div style="display:flex; gap:9px; margin-bottom:16px;">
+                <sc-for list="{{ tipPresets }}" as="t" hint-placeholder-count="4">
+                  <button onClick="{{ t.onClick }}" style="{{ t.style }}">
+                    <sc-if value="{{ t.popular }}" hint-placeholder-val="{{ false }}">
+                      <span style="position:absolute; top:-9px; left:50%; transform:translateX(-50%); font-family:var(--font-mono); font-size:8px; letter-spacing:0.3px; text-transform:uppercase; background:#1F9D55; color:#fff; padding:2px 7px; border-radius:50px; white-space:nowrap;">популярно</span>
+                    </sc-if>
+                    {{ t.label }}
+                  </button>
+                </sc-for>
+              </div>
+              <sc-if value="{{ tipCustom }}" hint-placeholder-val="{{ false }}">
+                <div style="background:#fff; border:1px solid #ECECEF; border-radius:16px; padding:14px 16px; display:flex; align-items:center; gap:8px; margin-bottom:16px;">
+                  <input placeholder="Введите сумму" style="flex:1; border:none; outline:none; font-family:var(--font-sans); font-size:18px; font-weight:540; color:#1F1D3D;">
+                  <span style="font-size:18px; color:#9A9AA4;">₽</span>
+                </div>
+              </sc-if>
+              <sc-if value="{{ tipAmt }}" hint-placeholder-val="{{ false }}">
+                <div style="text-align:center; font-weight:300; font-size:42px; letter-spacing:-1.4px; margin:6px 0 10px;">{{ tipStr }}</div>
+              </sc-if>
+              <div style="display:flex; align-items:center; justify-content:center; gap:7px; font-size:12.5px; color:#9A9AA4;">Чаевые поступают напрямую официанту</div>
+            </div>
+            <div style="padding:14px 22px 26px; background:#fff; border-top:1px solid #ECECEF;">
+              <button onClick="{{ goDone }}" style="width:100%; min-height:56px; border:none; border-radius:50px; background:#1F1D3D; color:#fff; font-weight:560; font-size:17px; cursor:pointer; margin-bottom:8px;" style-active="transform:scale(0.985);">{{ tipCtaStr }}</button>
+              <button onClick="{{ skipTips }}" style="width:100%; min-height:46px; border:none; background:transparent; color:#8A8A92; font-weight:520; font-size:15px; cursor:pointer;">Пропустить</button>
+            </div>
+          </div>
+          </sc-if>
+
+          <!-- ===== 9 DONE ===== -->
+          <sc-if value="{{ isDone }}" hint-placeholder-val="{{ false }}">
+          <div style="height:100%; display:flex; flex-direction:column; background:#F7F7F9;">
+            <div style="flex:1; overflow-y:auto; padding:30px 22px 20px;">
+              <div style="display:flex; flex-direction:column; align-items:center; text-align:center; margin-bottom:22px;">
+                <div style="width:74px; height:74px; border-radius:50%; background:#1F9D55; color:#fff; display:flex; align-items:center; justify-content:center; font-size:38px; margin-bottom:16px; animation:ep-pop 0.5s ease both;">✓</div>
+                <div style="font-weight:300; font-size:18px; color:#5C5C66;">Оплачено</div>
+                <div style="font-weight:300; font-size:44px; letter-spacing:-1.6px; line-height:1;">{{ doneAmtStr }}</div>
+                <sc-if value="{{ tipLine }}" hint-placeholder-val="{{ false }}">
+                  <div style="display:inline-flex; align-items:center; gap:6px; margin-top:12px; background:#EDE7FD; color:#7C5CFC; border-radius:50px; padding:6px 13px; font-size:13px; font-weight:540;">+ {{ tipStrDone }} чаевых официанту Максиму</div>
+                </sc-if>
+              </div>
+
+              <sc-if value="{{ partial }}" hint-placeholder-val="{{ false }}">
+                <div style="display:flex; align-items:center; gap:10px; background:#FFF6E6; border:1px solid #F4E2BD; border-radius:14px; padding:12px 14px; margin-bottom:14px;">
+                  <div style="width:26px; height:26px; flex-shrink:0;">{{ guestAvatar }}</div>
+                  <span style="flex:1; font-size:13px; color:#7A5A12; line-height:1.4;">Ваша часть оплачена. По столу осталось <b style="font-weight:640;">{{ doneRemainStr }}</b></span>
+                  <span style="font-size:12px; font-weight:600; color:#1F1D3D; white-space:nowrap;">Поделиться →</span>
+                </div>
+              </sc-if>
+
+              <div style="background:#fff; border:1px solid #ECECEF; border-radius:18px; padding:16px; margin-bottom:16px;">
+                <div style="display:flex; align-items:center; gap:11px;">
+                  <div style="width:40px; height:40px; border-radius:11px; background:#E4F6EA; display:flex; align-items:center; justify-content:center; flex-shrink:0;">
+                    <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="#1F9D55" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2.5h12v19l-3-2-3 2-3-2-3 2z"/><path d="M9 7h6M9 11h6"/></svg>
+                  </div>
+                  <div style="flex:1;"><div style="font-weight:580; font-size:14.5px;">Фискальный чек отправлен</div><div style="font-size:12.5px; color:#8A8A92; margin-top:1px;">На +7 ··· 45 и email</div></div>
+                </div>
+                <div style="display:flex; gap:9px; margin-top:13px;">
+                  <button style="flex:1; min-height:44px; border:1px solid #DDDDE2; border-radius:50px; background:#fff; font-weight:540; font-size:13.5px; cursor:pointer;">Открыть чек</button>
+                  <button style="flex:1; min-height:44px; border:1px solid #DDDDE2; border-radius:50px; background:#fff; font-weight:540; font-size:13.5px; cursor:pointer;">Мои чеки (ФНС)</button>
+                </div>
+              </div>
+
+              <div style="background:#fff; border:1px solid #ECECEF; border-radius:18px; padding:18px 16px;">
+                <div style="text-align:center; font-weight:560; font-size:16px; margin-bottom:13px;">Как всё прошло?</div>
+                <div style="display:flex; justify-content:center; gap:8px; margin-bottom:14px;">
+                  <sc-for list="{{ stars }}" as="st" hint-placeholder-count="5">
+                    <button onClick="{{ st.onClick }}" style="border:none; background:transparent; cursor:pointer; font-size:34px; line-height:1; color:{{ st.color }};">★</button>
+                  </sc-for>
+                </div>
+                <div style="display:flex; justify-content:center; gap:8px; flex-wrap:wrap;">
+                  <sc-for list="{{ reviewChips }}" as="ch" hint-placeholder-count="3">
+                    <span style="font-size:13px; font-weight:520; padding:8px 15px; border-radius:50px; background:#F2F2F4; color:#42424C; cursor:pointer;">{{ ch }}</span>
+                  </sc-for>
+                </div>
+              </div>
+            </div>
+            <div style="padding:12px 22px 26px; background:#fff; border-top:1px solid #ECECEF; display:flex; gap:10px;">
+              <button onClick="{{ goMenu }}" style="flex:1; min-height:54px; border:1px solid #DDDDE2; border-radius:50px; background:#fff; color:#1F1D3D; font-weight:540; font-size:15px; cursor:pointer;">Заказать ещё</button>
+              <button onClick="{{ goWelcome }}" style="flex:1; min-height:54px; border:none; border-radius:50px; background:#1F1D3D; color:#fff; font-weight:560; font-size:16px; cursor:pointer;" style-active="transform:scale(0.985);">Готово</button>
+            </div>
+          </div>
+          </sc-if>
+
+        </div>
+
+        <!-- ===== DISH SHEET ===== -->
+        <sc-if value="{{ sheetDish }}" hint-placeholder-val="{{ false }}">
+        <div style="position:absolute; inset:0; z-index:20; display:flex; flex-direction:column; justify-content:flex-end;">
+          <div onClick="{{ closeSheet }}" style="position:absolute; inset:0; background:rgba(11,11,18,.45);"></div>
+          <div style="position:relative; background:#fff; border-radius:28px 28px 0 0; max-height:88%; display:flex; flex-direction:column; animation:ep-fade 0.25s ease both;">
+            <div style="display:flex; justify-content:center; padding:10px;"><div style="width:40px; height:4px; border-radius:4px; background:#E0E0E4;"></div></div>
+            <div style="flex:1; overflow-y:auto; padding:4px 22px 16px;">
+              <image-slot id="{{ dish.slotId }}" style="width:100%; height:170px; display:block; margin-bottom:16px;" shape="rounded" radius="18" placeholder="Фото блюда"></image-slot>
+              <div style="font-weight:660; font-size:22px; letter-spacing:-0.5px;">{{ dish.name }}</div>
+              <div style="font-size:14px; color:#7A7A84; line-height:1.5; margin:6px 0 18px;">{{ dish.desc }}</div>
+              <div style="font-weight:580; font-size:15px; margin-bottom:10px;">Острота</div>
+              <div style="display:flex; gap:8px; margin-bottom:18px;">
+                <span style="flex:1; text-align:center; padding:10px; border-radius:12px; border:1px solid #ECECEF; font-size:14px;">Слабо</span>
+                <span style="flex:1; text-align:center; padding:10px; border-radius:12px; border:2px solid #1F1D3D; font-weight:560; font-size:14px;">Средне</span>
+                <span style="flex:1; text-align:center; padding:10px; border-radius:12px; border:1px solid #ECECEF; font-size:14px;">Остро</span>
+              </div>
+              <div style="display:flex; align-items:center; gap:11px; padding:13px 14px; border:1px solid #ECECEF; border-radius:14px; margin-bottom:18px;">
+                <div style="width:20px; height:20px; border-radius:6px; border:2px solid #CFCFD6;"></div>
+                <span style="flex:1; font-size:14.5px;">Доп. креветки</span>
+                <span style="font-weight:600; font-size:14.5px;">+150 ₽</span>
+              </div>
+              <div style="font-weight:580; font-size:15px; margin-bottom:10px;">Заметка к кухне</div>
+              <div style="background:#F7F7F9; border-radius:12px; padding:12px 14px; font-size:13.5px; color:#9A9AA4;">Например, без кинзы…</div>
+            </div>
+            <div style="padding:12px 22px 24px; border-top:1px solid #ECECEF; display:flex; align-items:center; gap:14px;">
+              <div style="display:flex; align-items:center; gap:14px; border:1px solid #ECECEF; border-radius:50px; padding:7px 12px;">
+                <span style="font-size:20px; color:#9A9AA4; cursor:pointer;">−</span>
+                <span style="font-weight:600; font-size:16px; min-width:14px; text-align:center;">1</span>
+                <span style="font-size:20px; color:#1F1D3D; cursor:pointer;">+</span>
+              </div>
+              <button onClick="{{ addDish }}" style="flex:1; min-height:52px; border:none; border-radius:50px; background:#1F1D3D; color:#fff; font-weight:560; font-size:14.5px; cursor:pointer;" style-active="transform:scale(0.985);">{{ dish.ctaStr }}</button>
+            </div>
+          </div>
+        </div>
+        </sc-if>
+
+        <!-- ===== NAME + AVATAR SHEET ===== -->
+        <sc-if value="{{ sheetName }}" hint-placeholder-val="{{ false }}">
+        <div style="position:absolute; inset:0; z-index:21; display:flex; flex-direction:column; justify-content:flex-end;">
+          <div onClick="{{ closeSheet }}" style="position:absolute; inset:0; background:rgba(11,11,18,.45);"></div>
+          <div style="position:relative; background:#fff; border-radius:28px 28px 0 0; display:flex; flex-direction:column; animation:ep-fade 0.25s ease both; padding:0 22px 26px;">
+            <div style="display:flex; justify-content:center; padding:10px;"><div style="width:40px; height:4px; border-radius:4px; background:#E0E0E4;"></div></div>
+            <div style="font-weight:660; font-size:22px; letter-spacing:-0.5px; margin-bottom:4px;">За кем записать заказ?</div>
+            <div style="font-size:14px; color:#7A7A84; margin-bottom:18px;">Выберите зверюшку и впишите имя — за ним закрепятся блюда</div>
+            <div style="display:flex; gap:11px; overflow-x:auto; padding:4px 2px 14px;">
+              <sc-for list="{{ pickerAnimals }}" as="a" hint-placeholder-count="6">
+                <div onClick="{{ a.onClick }}" style="{{ a.wrapStyle }}">{{ a.avatar }}</div>
+              </sc-for>
+            </div>
+            <div style="background:#F7F7F9; border:1px solid #ECECEF; border-radius:14px; padding:14px 16px; margin-bottom:14px;">
+              <input placeholder="Ваше имя" defaultValue="Аня" style="width:100%; border:none; outline:none; background:transparent; font-family:var(--font-sans); font-size:17px; font-weight:540; color:#1F1D3D;">
+            </div>
+            <div style="font-size:12.5px; color:#9A9AA4; margin-bottom:18px;">или записать за: Дима · Лена</div>
+            <button onClick="{{ confirmName }}" style="width:100%; min-height:54px; border:none; border-radius:50px; background:#1F1D3D; color:#fff; font-weight:560; font-size:16px; cursor:pointer;" style-active="transform:scale(0.985);">Готово</button>
+          </div>
+        </div>
+        </sc-if>
+
+        <!-- ===== SEND TO KITCHEN MODAL ===== -->
+        <sc-if value="{{ sheetSend }}" hint-placeholder-val="{{ false }}">
+        <div style="position:absolute; inset:0; z-index:22; display:flex; flex-direction:column; justify-content:flex-end;">
+          <div onClick="{{ closeSheet }}" style="position:absolute; inset:0; background:rgba(11,11,18,.45);"></div>
+          <div style="position:relative; background:#fff; border-radius:28px 28px 0 0; display:flex; flex-direction:column; animation:ep-fade 0.25s ease both; padding:0 22px 26px;">
+            <div style="display:flex; justify-content:center; padding:10px;"><div style="width:40px; height:4px; border-radius:4px; background:#E0E0E4;"></div></div>
+            <div style="font-weight:660; font-size:22px; letter-spacing:-0.5px; margin-bottom:16px;">Отправить заказ на кухню?</div>
+            <div style="display:flex; flex-direction:column; gap:9px; margin-bottom:14px;">
+              <sc-for list="{{ sendScopes }}" as="o" hint-placeholder-count="2">
+                <div onClick="{{ o.onClick }}" style="{{ o.rowStyle }}">
+                  <div style="{{ o.dotStyle }}"></div>
+                  <div style="flex:1;"><div style="font-weight:560; font-size:15px;">{{ o.label }}</div><div style="font-size:12px; color:#8A8A92; margin-top:2px;">{{ o.sub }}</div></div>
+                </div>
+              </sc-for>
+            </div>
+            <sc-if value="{{ sendAll }}" hint-placeholder-val="{{ false }}">
+              <div style="display:flex; align-items:center; gap:10px; background:#FFF6E6; border:1px solid #F4E2BD; border-radius:14px; padding:12px 14px; margin-bottom:14px;">
+                <div style="width:26px; height:26px; flex-shrink:0;">{{ dimaMini }}</div>
+                <span style="font-size:13px; color:#7A5A12; line-height:1.4;"><b style="font-weight:640;">Дима</b> ещё не отправлял свой заказ. Все точно выбрали?</span>
+              </div>
+            </sc-if>
+            <div onClick="{{ toggleSendCheck }}" style="display:flex; align-items:center; gap:11px; margin-bottom:18px; cursor:pointer;">
+              <div style="{{ sendCheckStyle }}">✓</div>
+              <span style="font-size:14.5px;">Я всё выбрал(а)</span>
+            </div>
+            <div style="font-size:12.5px; color:#9A9AA4; margin-bottom:14px;">Уже на кухне (не отправится повторно): Пицца «Маргарита»</div>
+            <button onClick="{{ sendOrder }}" style="width:100%; min-height:54px; border:none; border-radius:50px; background:#1F1D3D; color:#fff; font-weight:560; font-size:16px; cursor:pointer; margin-bottom:8px;" style-active="transform:scale(0.985);">Отправить</button>
+            <button onClick="{{ closeSheet }}" style="width:100%; min-height:44px; border:none; background:transparent; color:#8A8A92; font-weight:520; font-size:15px; cursor:pointer;">Ещё подумаю</button>
+          </div>
+        </div>
+        </sc-if>
+
+        <!-- ===== SENDING LOADER ===== -->
+        <sc-if value="{{ sheetSending }}" hint-placeholder-val="{{ false }}">
+        <div style="position:absolute; inset:0; z-index:23; background:rgba(255,255,255,.92); display:flex; flex-direction:column; align-items:center; justify-content:center; gap:20px;">
+          <div style="width:56px; height:56px; border-radius:50%; border:5px solid #ECECEF; border-top-color:#1F1D3D; animation:ep-spin 0.9s linear infinite;"></div>
+          <div style="font-weight:600; font-size:18px;">Передаём на кухню…</div>
+        </div>
+        </sc-if>
+
+        <sc-if value="{{ toastShow }}" hint-placeholder-val="{{ false }}">
+        <div style="position:absolute; left:20px; right:20px; bottom:24px; z-index:30; background:#1F1D3D; color:#fff; border-radius:16px; padding:13px 18px; font-size:14px; font-weight:540; text-align:center; box-shadow:0 10px 30px rgba(20,18,45,.35); animation:ep-fade 0.25s ease both;">{{ toastMsg }}</div>
+        </sc-if>
+
+      </div>
+    </div>
+    </sc-if>
+
+    <!-- ============ TABLET ============ -->
+    <sc-if value="{{ isTablet }}" hint-placeholder-val="{{ false }}">
+    <div style="width:1280px; height:800px; flex-shrink:0; background:#0B0B12; border-radius:30px; padding:13px; box-shadow:0 34px 80px rgba(20,18,45,.30); transform:scale(0.64); transform-origin:center;">
+      <div style="width:100%; height:100%; background:#F4F4F6; border-radius:18px; overflow:hidden; display:flex; flex-direction:column;">
+
+        <div style="flex-shrink:0; display:flex; align-items:center; gap:20px; padding:18px 26px; background:#fff; border-bottom:1px solid #ECECEF;">
+          <div style="display:flex; align-items:center; gap:10px;">
+            <div style="width:34px; height:34px; border-radius:10px; background:#1F1D3D; color:#fff; display:flex; align-items:center; justify-content:center; font-weight:700; font-size:18px;">e</div>
+            <div>
+              <div style="font-weight:660; font-size:17px; letter-spacing:-0.3px;">Стол №12 · Терраса</div>
+              <div style="font-size:12.5px; color:#8A8A92;">официант Максим</div>
+            </div>
+          </div>
+          <div style="flex:1; max-width:420px; margin-left:20px;">
+            <div style="display:flex; align-items:center; justify-content:space-between; font-size:12.5px; margin-bottom:6px;">
+              <span style="color:#7A7A84;">Оплачено по столу</span>
+              <span style="font-weight:620;">{{ paidTabStr }} / {{ totalTabStr }}</span>
+            </div>
+            <div style="height:8px; border-radius:50px; background:#ECECEF; overflow:hidden;"><div style="height:100%; width:{{ tabProgress }}; background:#1F9D55; border-radius:50px;"></div></div>
+          </div>
+          <div style="flex:1;"></div>
+          <button style="min-height:42px; padding:0 18px; border-radius:50px; border:1px solid #DDDDE2; background:#fff; color:#1F1D3D; font-family:var(--font-sans); font-weight:600; font-size:14px; cursor:pointer; margin-right:10px;">Закрыть стол</button>
+          <div style="display:flex; align-items:center; gap:8px; background:#F2F2F4; border-radius:50px; padding:6px 7px;">
+            <span style="font-size:12.5px; font-weight:560; padding:6px 13px; border-radius:50px; background:#1F1D3D; color:#fff;">Официант</span>
+            <span style="font-size:12.5px; font-weight:500; padding:6px 13px; color:#7A7A84;">Гость</span>
+          </div>
+        </div>
+
+        <!-- МЕТРИКИ СТОЛА (live-аналитика для официанта/менеджера) -->
+        <div style="flex-shrink:0; display:flex; gap:10px; padding:14px 26px 4px; background:#F4F4F6;">
+          <div style="flex:1; background:#fff; border:1px solid #ECECEF; border-radius:16px; padding:12px 14px;">
+            <div style="font-family:var(--font-mono); font-size:9.5px; letter-spacing:0.5px; text-transform:uppercase; color:#9A9AA4; margin-bottom:5px;">Стол открыт</div>
+            <div style="font-weight:680; font-size:21px; letter-spacing:-0.6px;">42:18</div>
+            <div style="font-size:11px; color:#A6A6AE; margin-top:3px;">идёт сейчас</div>
+          </div>
+          <div style="flex:1; background:#fff; border:1px solid #ECECEF; border-radius:16px; padding:12px 14px;">
+            <div style="font-family:var(--font-mono); font-size:9.5px; letter-spacing:0.5px; text-transform:uppercase; color:#9A9AA4; margin-bottom:5px;">До первого заказа</div>
+            <div style="font-weight:680; font-size:21px; letter-spacing:-0.6px;">4:05</div>
+            <div style="font-size:11px; color:#A6A6AE; margin-top:3px;">сели → на кухню</div>
+          </div>
+          <div style="flex:1; background:#fff; border:1px solid #ECECEF; border-radius:16px; padding:12px 14px;">
+            <div style="font-family:var(--font-mono); font-size:9.5px; letter-spacing:0.5px; text-transform:uppercase; color:#9A9AA4; margin-bottom:5px;">Кухня, среднее</div>
+            <div style="font-weight:680; font-size:21px; letter-spacing:-0.6px;">11:32</div>
+            <div style="font-size:11px; color:#A6A6AE; margin-top:3px;">по 4 поз.</div>
+          </div>
+          <div style="flex:1; background:#fff; border:1px solid #ECECEF; border-radius:16px; padding:12px 14px;">
+            <div style="font-family:var(--font-mono); font-size:9.5px; letter-spacing:0.5px; text-transform:uppercase; color:#9A9AA4; margin-bottom:5px;">Подача → оплата</div>
+            <div style="font-weight:680; font-size:21px; letter-spacing:-0.6px;">2:47</div>
+            <div style="font-size:11px; color:#A6A6AE; margin-top:3px;">ожидание денег</div>
+          </div>
+          <div style="flex:1; background:#fff; border:1px solid #ECECEF; border-radius:16px; padding:12px 14px;">
+            <div style="font-family:var(--font-mono); font-size:9.5px; letter-spacing:0.5px; text-transform:uppercase; color:#9A9AA4; margin-bottom:5px;">Темп выручки</div>
+            <div style="font-weight:680; font-size:21px; letter-spacing:-0.6px; color:#1F9D55;">6 540 ₽/ч</div>
+            <div style="font-size:11px; color:#A6A6AE; margin-top:3px;">оплачено / время стола</div>
+          </div>
+          <div style="flex:1; background:#fff; border:1px solid #ECECEF; border-radius:16px; padding:12px 14px;">
+            <div style="font-family:var(--font-mono); font-size:9.5px; letter-spacing:0.5px; text-transform:uppercase; color:#9A9AA4; margin-bottom:5px;">Чек на гостя</div>
+            <div style="font-weight:680; font-size:21px; letter-spacing:-0.6px;">1 527 ₽</div>
+            <div style="font-size:11px; color:#A6A6AE; margin-top:3px;">счёт / 3 гостя</div>
+          </div>
+        </div>
+
+        <div style="flex:1; min-height:0; display:flex;">
+
+          <!-- TABLET A -->
+          <sc-if value="{{ isTabPlan }}" hint-placeholder-val="{{ true }}">
+          <div style="width:460px; flex-shrink:0; border-right:1px solid #ECECEF; padding:22px; overflow-y:auto; background:#FAFAFB;">
+            <div style="font-family:var(--font-mono); font-size:11px; letter-spacing:0.6px; text-transform:uppercase; color:#9A9AA4; margin-bottom:14px;">План персон</div>
+            <div style="display:flex; flex-direction:column; gap:12px;">
+              <sc-for list="{{ tabPersonas }}" as="p" hint-placeholder-count="3">
+                <div style="{{ p.cardStyle }}">
+                  <div style="width:46px; height:46px; flex-shrink:0;">{{ p.avatar }}</div>
+                  <div style="flex:1; min-width:0;">
+                    <div style="font-weight:600; font-size:16px;">{{ p.name }}</div>
+                    <div style="font-size:12.5px; color:#8A8A92; margin-top:2px;">1 блюдо · {{ p.sumStr }}</div>
+                  </div>
+                  <div style="display:flex; flex-direction:column; gap:5px; align-items:flex-end;">
+                    <span style="{{ p.orderStyle }}">{{ p.orderLabel }}</span>
+                    <span style="{{ p.payStyle }}">{{ p.payLabel }}</span>
+                  </div>
+                </div>
+              </sc-for>
+              <div style="display:flex; align-items:center; gap:13px; padding:15px; border-radius:18px; border:1.5px dashed #CFCFD6; cursor:pointer;">
+                <div style="width:44px; height:44px; border-radius:50%; background:#F0F0F2; display:flex; align-items:center; justify-content:center; font-size:24px; color:#9A9AA4;">+</div>
+                <span style="font-weight:540; font-size:15px; color:#7A7A84;">Добавить гостя</span>
+              </div>
+            </div>
+            <div style="height:1px; background:#ECECEF; margin:22px 0;"></div>
+            <div style="display:flex; align-items:center; justify-content:space-between;">
+              <span style="font-size:15px; color:#42424C;">Итого по столу</span>
+              <span style="font-weight:700; font-size:22px; letter-spacing:-0.5px;">{{ totalTabStr }}</span>
+            </div>
+          </div>
+          <div style="flex:1; min-width:0; padding:26px 30px; overflow-y:auto;">
+            <div style="display:flex; align-items:center; gap:12px; margin-bottom:22px;">
+              <div style="width:48px; height:48px; flex-shrink:0;">{{ guestAvatar }}</div>
+              <div>
+                <div style="font-weight:660; font-size:22px; letter-spacing:-0.4px;">Заказ · Аня</div>
+                <div style="font-size:13px; color:#8A8A92;">отправлено на кухню · готовится</div>
+              </div>
+              <div style="flex:1;"></div>
+              <button style="min-height:46px; padding:0 20px; border:1px solid #DDDDE2; border-radius:50px; background:#fff; font-weight:540; font-size:15px; cursor:pointer;">+ Добавить блюдо</button>
+            </div>
+            <div style="background:#fff; border:1px solid #ECECEF; border-radius:20px; padding:6px 20px; margin-bottom:18px;">
+              <div style="display:flex; align-items:center; gap:14px; padding:16px 0; border-bottom:1px solid #F2F2F4;">
+                <image-slot id="ep-tab-tomyam" style="width:54px; height:54px; display:block;" shape="rounded" radius="12" placeholder="фото"></image-slot>
+                <div style="flex:1;"><div style="font-weight:560; font-size:16px;">Том ям</div><div style="font-size:13px; color:#8A8A92; margin-top:2px;">Своё блюдо</div></div>
+                <button style="font-family:var(--font-mono); font-size:10px; padding:5px 10px; border-radius:50px; background:#FFF2DA; color:#B07A12; border:1px dashed #E8C87A; cursor:pointer; margin-right:6px;">ГОТОВИТСЯ 03:12 → ПОДАТЬ ✓</button>
+                <span style="font-weight:620; font-size:16px;">690 ₽</span>
+              </div>
+              <div style="display:flex; align-items:center; gap:14px; padding:16px 0;">
+                <div style="width:54px; height:54px; border-radius:12px; background:#F4F1FE; color:#7C5CFC; display:flex; align-items:center; justify-content:center; font-size:22px;">◍</div>
+                <div style="flex:1;"><div style="font-weight:560; font-size:16px;">Доля общих блюд</div><div style="font-size:13px; color:#8A8A92; margin-top:2px;">Спринг-роллы, лимонад, пицца · ÷3</div></div>
+                <span style="font-family:var(--font-mono); font-size:10px; padding:4px 9px; border-radius:50px; background:#E4F6EA; color:#1F9D55; margin-right:6px;">ПОДАНО · 5:40</span>
+                <span style="font-weight:620; font-size:16px;">666,67 ₽</span>
+              </div>
+            </div>
+            <div style="display:flex; align-items:center; justify-content:space-between; background:#1F1D3D; border-radius:20px; padding:22px 24px; color:#fff;">
+              <div>
+                <div style="font-size:13px; opacity:0.7;">К оплате · Аня</div>
+                <div style="font-weight:300; font-size:34px; letter-spacing:-1px; margin-top:2px;">1 357 ₽</div>
+              </div>
+              <div style="display:flex; gap:10px;">
+                <button style="min-height:50px; padding:0 22px; border:1px solid rgba(255,255,255,.22); border-radius:50px; background:transparent; color:#fff; font-weight:540; font-size:15px; cursor:pointer;">Оплатить</button>
+                <button onClick="{{ goTabPay }}" style="min-height:50px; padding:0 24px; border:none; border-radius:50px; background:{{ SBP }}; color:#fff; font-weight:560; font-size:15px; cursor:pointer;">Показать QR СБП</button>
+              </div>
+            </div>
+          </div>
+          </sc-if>
+
+          <!-- TABLET B -->
+          <sc-if value="{{ isTabPay }}" hint-placeholder-val="{{ false }}">
+          <div style="flex:1; display:flex; align-items:center; justify-content:center; padding:30px;">
+            <div style="display:flex; gap:40px; align-items:center; max-width:880px;">
+              <div style="flex:1; text-align:center;">
+                <div style="display:inline-block; width:64px; height:26px; border-radius:8px; background:{{ SBP }}; color:#fff; line-height:26px; font-weight:700; font-size:13px; margin-bottom:18px;">СБП</div>
+                <div style="padding:22px; background:#fff; border-radius:26px; box-shadow:0 14px 40px rgba(20,18,45,.12); display:inline-block;">
+                  <div style="width:248px; height:248px; border-radius:14px; background-image:repeating-conic-gradient(#1F1D3D 0% 25%, #fff 0% 50%); background-size:19px 19px; border:9px solid #fff;"></div>
+                </div>
+              </div>
+              <div style="flex:1; max-width:340px;">
+                <div style="font-family:var(--font-mono); font-size:11px; letter-spacing:0.6px; text-transform:uppercase; color:#9A9AA4; margin-bottom:10px;">Оплата · Аня</div>
+                <div style="font-weight:300; font-size:54px; letter-spacing:-2px; line-height:1; margin-bottom:8px;">1 357 ₽</div>
+                <div style="display:inline-flex; align-items:center; gap:9px; background:#FFF6E6; border:1px solid #F4E2BD; border-radius:50px; padding:8px 15px; margin-bottom:24px;">
+                  <span style="width:9px; height:9px; border-radius:50%; background:#F4B400;"></span>
+                  <span style="font-size:13.5px; color:#7A5A12; font-weight:540;">Ожидаем оплату…</span>
+                </div>
+                <div style="font-size:15px; color:#42424C; line-height:1.55; margin-bottom:24px;">Отсканируйте QR в приложении банка или оплатите альтернативным способом.</div>
+                <button style="width:100%; min-height:54px; border:1px solid #DDDDE2; border-radius:50px; background:#fff; font-weight:540; font-size:15px; cursor:pointer; margin-bottom:11px;">Оплата картой на терминале</button>
+                <button style="width:100%; min-height:54px; border:none; border-radius:50px; background:#1F1D3D; color:#fff; font-weight:560; font-size:15px; cursor:pointer;">Отправить чек</button>
+              </div>
+            </div>
+          </div>
+          </sc-if>
+
+        </div>
+      </div>
+    </div>
+    </sc-if>
+
+  </main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1280,&quot;height&quot;:864},&quot;showNav&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Презентация&quot;},&quot;showStatusBar&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Презентация&quot;}}">
+class Component extends DCLogic {
+  state = {
+    screen: 'welcome', sheet: 'none', dish: null, toast: null,
+    named: false, pickAnimal: 'fox',
+    payVariant: 'A', payScope: 'own', payMethod: 'sbp', partial: false, payStage: 'form',
+    tableOpen: false, split: 'Поровну', sendScope: 'mine', sendChecked: false,
+    tip: '10', rating: 4, menuCat: 'Основное',
+  };
+
+  NAVY = '#1F1D3D';
+  SBP = 'linear-gradient(118deg,#5A1E9B 0%,#8E2A8C 46%,#E5097F 100%)';
+
+  ANIMALS = {
+    fox: `<div style="width:68%;height:68%;display:flex"><svg viewBox="0 0 48 48" width="100%" height="100%"><polygon points="8,7 22,17 11,25" fill="#E8743B"/><polygon points="40,7 26,17 37,25" fill="#E8743B"/><circle cx="24" cy="27" r="15" fill="#EE8B4E"/><path d="M24 42 C16 42 11 35 11 29 C16 31 20 32 24 32 C28 32 32 31 37 29 C37 35 32 42 24 42 Z" fill="#FFF4EC"/><circle cx="18.5" cy="26" r="2.2" fill="#2B2B33"/><circle cx="29.5" cy="26" r="2.2" fill="#2B2B33"/><path d="M24 32 l-2.4 -2.6 h4.8 Z" fill="#2B2B33"/></svg></div>`,
+    bear: `<div style="width:68%;height:68%;display:flex"><svg viewBox="0 0 48 48" width="100%" height="100%"><circle cx="13" cy="13" r="7" fill="#A9763F"/><circle cx="35" cy="13" r="7" fill="#A9763F"/><circle cx="13" cy="13" r="3.4" fill="#C9A06A"/><circle cx="35" cy="13" r="3.4" fill="#C9A06A"/><circle cx="24" cy="26" r="16" fill="#B5824A"/><ellipse cx="24" cy="30" rx="9" ry="7.5" fill="#EBD8B8"/><circle cx="18.5" cy="24" r="2.2" fill="#2B2B33"/><circle cx="29.5" cy="24" r="2.2" fill="#2B2B33"/><ellipse cx="24" cy="28" rx="2.4" ry="1.8" fill="#2B2B33"/></svg></div>`,
+    panda: `<div style="width:68%;height:68%;display:flex"><svg viewBox="0 0 48 48" width="100%" height="100%"><circle cx="13" cy="12" r="6.5" fill="#2B2B33"/><circle cx="35" cy="12" r="6.5" fill="#2B2B33"/><circle cx="24" cy="26" r="16" fill="#fff" stroke="#E6E6EA" stroke-width="1"/><ellipse cx="17" cy="25" rx="4.2" ry="5.4" fill="#2B2B33" transform="rotate(-18 17 25)"/><ellipse cx="31" cy="25" rx="4.2" ry="5.4" fill="#2B2B33" transform="rotate(18 31 25)"/><circle cx="17.5" cy="25" r="1.7" fill="#fff"/><circle cx="30.5" cy="25" r="1.7" fill="#fff"/><ellipse cx="24" cy="31" rx="2.3" ry="1.7" fill="#2B2B33"/></svg></div>`,
+    raccoon: `<div style="width:68%;height:68%;display:flex"><svg viewBox="0 0 48 48" width="100%" height="100%"><polygon points="9,10 18,18 12,22" fill="#8A8F98"/><polygon points="39,10 30,18 36,22" fill="#8A8F98"/><circle cx="24" cy="26" r="16" fill="#A7ADB6"/><path d="M9 24 C14 20 20 20 24 24 C28 20 34 20 39 24 C36 32 30 34 24 30 C18 34 12 32 9 24 Z" fill="#3A3E46"/><ellipse cx="24" cy="32" rx="8" ry="6" fill="#EDEEF1"/><circle cx="18.5" cy="25" r="2" fill="#fff"/><circle cx="29.5" cy="25" r="2" fill="#fff"/><ellipse cx="24" cy="31" rx="2.2" ry="1.6" fill="#2B2B33"/></svg></div>`,
+    owl: `<div style="width:68%;height:68%;display:flex"><svg viewBox="0 0 48 48" width="100%" height="100%"><polygon points="11,9 18,16 11,18" fill="#7C5CCB"/><polygon points="37,9 30,16 37,18" fill="#7C5CCB"/><circle cx="24" cy="26" r="16" fill="#8E70D6"/><circle cx="18" cy="24" r="6" fill="#fff"/><circle cx="30" cy="24" r="6" fill="#fff"/><circle cx="18" cy="24" r="2.6" fill="#2B2B33"/><circle cx="30" cy="24" r="2.6" fill="#2B2B33"/><polygon points="24,28 21,31 27,31" fill="#F4B400"/></svg></div>`,
+    cat: `<div style="width:68%;height:68%;display:flex"><svg viewBox="0 0 48 48" width="100%" height="100%"><polygon points="10,8 19,18 11,22" fill="#6B7280"/><polygon points="38,8 29,18 37,22" fill="#6B7280"/><circle cx="24" cy="26" r="15" fill="#7C8694"/><circle cx="18.5" cy="25" r="2.2" fill="#2B2B33"/><circle cx="29.5" cy="25" r="2.2" fill="#2B2B33"/><path d="M24 29 l-2 2 h4 Z" fill="#F2A0A8"/><path d="M13 27 h6 M13 30 h6 M29 27 h6 M29 30 h6" stroke="#5A6573" stroke-width="1"/></svg></div>`,
+  };
+  TINTS = { fox: '#FCEAE4', bear: '#E7EFFD', panda: '#E3F3EB', raccoon: '#EEF0F2', owl: '#EFEAFB', cat: '#EEF0F2' };
+
+  avatarEl(animal) {
+    const tint = this.TINTS[animal] || '#F2F2F4';
+    return React.createElement('div', { style: { width: '100%', height: '100%', borderRadius: '50%', background: tint, display: 'flex', alignItems: 'center', justifyContent: 'center' }, dangerouslySetInnerHTML: { __html: this.ANIMALS[animal] } });
+  }
+
+  fmt(n) {
+    const neg = n < 0; n = Math.abs(n);
+    const r = Math.round(n * 100) / 100;
+    const isInt = Math.abs(r - Math.round(r)) < 0.005;
+    let out;
+    if (isInt) out = Math.round(r).toLocaleString('ru-RU');
+    else { const f = r.toFixed(2); const p = f.split('.'); out = Number(p[0]).toLocaleString('ru-RU') + ',' + p[1]; }
+    return (neg ? '−' : '') + out + '\u00A0₽';
+  }
+
+  PERSONAS = [
+    { id: 'anna', name: 'Аня', animal: 'fox', accent: '#EC6B4E', dish: 'Том ям', sum: 690 },
+    { id: 'dima', name: 'Дима', animal: 'bear', accent: '#5B8DEF', dish: 'Пад тай', sum: 600 },
+    { id: 'lena', name: 'Лена', animal: 'panda', accent: '#45A877', dish: 'Стейк рибай', sum: 1290 },
+  ];
+
+  MENU = {
+    'Супы': [{ id: 'tomyam', name: 'Том ям', desc: 'Острый суп с креветками и кокосовым молоком', price: 690 }],
+    'Основное': [
+      { id: 'padthai', name: 'Пад тай', desc: 'Рисовая лапша с курицей, тамариндом и арахисом', price: 600 },
+      { id: 'steak', name: 'Стейк рибай', desc: 'Мраморная говядина, прожарка на выбор', price: 1290 },
+      { id: 'springrolls', name: 'Спринг-роллы', desc: 'Хрустящие роллы с овощами, 6 шт', price: 450 },
+      { id: 'duck', name: 'Утка по-пекински', desc: 'С блинчиками и соусом хойсин', price: 1490, stop: true },
+    ],
+    'Пицца': [{ id: 'margarita', name: 'Пицца «Маргарита»', desc: 'Томаты, моцарелла, свежий базилик', price: 890 }],
+    'Напитки': [{ id: 'lemonade', name: 'Домашний лимонад', desc: 'Мята и лайм, 0,4 л', price: 220 }],
+    'Десерты': [],
+  };
+
+  go(patch) { this.setState(Object.assign({ sheet: 'none', dish: null }, patch)); }
+  showToast(msg) { this.setState({ toast: msg }); clearTimeout(this._tt); this._tt = setTimeout(() => this.setState({ toast: null }), 2200); }
+  sharedIcon() { return React.createElement('div', { style: { width: '100%', height: '100%', borderRadius: '50%', background: '#F4F1FE', color: '#7C5CFC', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 15 } }, '\u25cd'); }
+  processPay() { this.setState({ payStage: 'processing' }); setTimeout(() => this.setState({ screen: 'tips', payStage: 'form' }), 1700); }
+
+  renderVals() {
+    const s = this.state;
+    const fmt = (n) => this.fmt(n);
+    const NAVY = this.NAVY, SBP = this.SBP;
+    const P = this.PERSONAS;
+    const guest = P[0];
+    const showNav = this.props.showNav ?? true;
+    const showStatusBar = this.props.showStatusBar ?? true;
+
+    const mobileOrder = ['welcome', 'menu', 'cart', 'status', 'payment', 'tips', 'done'];
+    const isMobile = mobileOrder.includes(s.screen);
+
+    // ---- nav rail ----
+    const idleRow = { display: 'flex', alignItems: 'center', gap: 11, width: '100%', padding: '9px 11px', border: 'none', background: 'transparent', borderRadius: 11, cursor: 'pointer', textAlign: 'left' };
+    const activeRow = Object.assign({}, idleRow, { background: '#fff', boxShadow: '0 1px 4px rgba(20,18,45,.10)' });
+    const mkRow = (active) => ({
+      rowStyle: active ? activeRow : idleRow,
+      numStyle: { fontFamily: 'var(--font-mono)', fontSize: 11, width: 20, flexShrink: 0, color: active ? NAVY : '#A6A6AE', letterSpacing: '0.5px' },
+      labelStyle: { fontFamily: 'var(--font-sans)', fontSize: 13.5, fontWeight: active ? 560 : 430, color: active ? NAVY : '#5C5C66', letterSpacing: '-0.1px' },
+    });
+    const navDef = [
+      ['01', 'Вход по QR', { screen: 'welcome' }, s.screen === 'welcome'],
+      ['02', 'Меню', { screen: 'menu' }, s.screen === 'menu' && s.sheet === 'none'],
+      ['03', 'Имя + аватар', { screen: 'menu', sheet: 'name' }, s.screen === 'menu' && s.sheet === 'name'],
+      ['04', 'Заказ · корзина', { screen: 'cart' }, s.screen === 'cart' && s.sheet === 'none'],
+      ['05', 'Отправка на кухню', { screen: 'cart', sheet: 'send' }, s.screen === 'cart' && s.sheet === 'send'],
+      ['06', 'Статус заказа', { screen: 'status' }, s.screen === 'status'],
+      ['07', 'Оплата', { screen: 'payment', payStage: 'form' }, s.screen === 'payment'],
+      ['08', 'Чаевые', { screen: 'tips' }, s.screen === 'tips'],
+      ['09', 'Подтверждение', { screen: 'done' }, s.screen === 'done'],
+    ];
+    const navMobile = navDef.map(([num, label, patch, active]) => Object.assign({ num, label, onClick: () => this.go(Object.assign({ named: true }, patch)) }, mkRow(active)));
+    const navTablet = [['A', 'Стол и персоны', 'tabplan'], ['B', 'Оплата на планшете', 'tabpay']].map(([num, label, sc]) => Object.assign({ num, label, onClick: () => this.go({ screen: sc }) }, mkRow(s.screen === sc)));
+
+    // ---- avatars ----
+    const guestAvatar = this.avatarEl('fox');
+    const dimaMini = this.avatarEl('bear');
+    const lenaMini = this.avatarEl('panda');
+
+    // ---- menu ----
+    const catChip = (active) => ({ fontFamily: 'var(--font-sans)', fontSize: 14, fontWeight: active ? 560 : 440, padding: '8px 15px', borderRadius: 50, cursor: 'pointer', whiteSpace: 'nowrap', border: 'none', background: active ? NAVY : '#F2F2F4', color: active ? '#fff' : '#5C5C66' });
+    const cats = ['Супы', 'Основное', 'Пицца', 'Напитки', 'Десерты'].map(c => ({ name: c, onClick: () => this.setState({ menuCat: c }), chipStyle: catChip(c === s.menuCat) }));
+    const items = (this.MENU[s.menuCat] || []).map(it => ({
+      id: it.id, name: it.name, desc: it.desc, priceStr: fmt(it.price), slotId: 'dish-' + it.id, stop: !!it.stop,
+      onClick: it.stop ? (() => {}) : (() => this.setState({ dish: it, sheet: 'dish' })),
+      rowStyle: { display: 'flex', gap: 13, padding: '12px', borderRadius: 18, background: '#fff', border: '1px solid #ECECEF', opacity: it.stop ? 0.55 : 1 },
+      addStyle: { width: 34, height: 34, borderRadius: '50%', border: 'none', flexShrink: 0, alignSelf: 'flex-end', cursor: it.stop ? 'not-allowed' : 'pointer', background: it.stop ? '#EDEDEF' : NAVY, color: it.stop ? '#B6B6BE' : '#fff', fontSize: 20, fontWeight: 400, display: 'flex', alignItems: 'center', justifyContent: 'center', lineHeight: 1 },
+    }));
+    const menuEmpty = items.length === 0;
+
+    // ---- dish sheet ----
+    const dish = s.dish ? { name: s.dish.name, desc: s.dish.desc, slotId: 'dish-' + s.dish.id, ctaStr: 'Добавить · ' + fmt(s.dish.price) } : { name: '', desc: '', slotId: 'dish-x', ctaStr: '' };
+    const addDish = () => { if (!s.named) this.setState({ sheet: 'name' }); else { const dn = s.dish ? s.dish.name : 'Блюдо'; this.setState({ sheet: 'none', dish: null }); this.showToast(dn + ' — добавлено за Аню'); } };
+
+    // ---- name sheet ----
+    const pickerAnimals = ['fox', 'bear', 'panda', 'raccoon', 'owl', 'cat'].map(a => ({
+      avatar: this.avatarEl(a), onClick: () => this.setState({ pickAnimal: a }),
+      wrapStyle: { width: 60, height: 60, flexShrink: 0, borderRadius: '50%', cursor: 'pointer', boxShadow: a === s.pickAnimal ? '0 0 0 2px #fff, 0 0 0 4px #1F1D3D' : 'none', transition: 'box-shadow 120ms' },
+    }));
+    const confirmName = () => { const dn = s.dish ? s.dish.name : null; this.setState({ named: true, sheet: 'none', dish: null }); if (dn) this.showToast(dn + ' — добавлено за Аню'); };
+
+    // ---- cart ----
+    const tableGuests = [P[1], P[2]].map(p => ({ name: p.name, dish: p.dish, sumStr: fmt(p.sum), avatar: this.avatarEl(p.animal) }));
+    const sharedItems = [{ n: 'Спринг-роллы', p: 450 }, { n: 'Лимонад ×3', p: 660 }, { n: 'Пицца «Маргарита»', p: 890 }].map(x => ({ name: x.n, priceStr: fmt(x.p) }));
+    const splitOpts = ['Поровну', 'По долям', 'Назначить'].map(o => ({ name: o, onClick: () => this.setState({ split: o }), style: { flex: 1, textAlign: 'center', fontFamily: 'var(--font-sans)', fontSize: 13, fontWeight: o === s.split ? 560 : 440, padding: '8px 6px', borderRadius: 50, cursor: 'pointer', background: o === s.split ? NAVY : 'transparent', color: o === s.split ? '#fff' : '#5C5C66' } }));
+
+    // ---- send modal ----
+    const sendScopes = [
+      { id: 'mine', label: 'Отправить мой заказ', sub: 'Аня · 1 позиция · 690 ₽' },
+      { id: 'all', label: 'Отправить за весь стол', sub: '3 позиции + общие · 4 580 ₽' },
+    ].map(o => ({ id: o.id, label: o.label, sub: o.sub, onClick: () => this.setState({ sendScope: o.id }),
+      rowStyle: { display: 'flex', alignItems: 'center', gap: 12, padding: '13px 14px', borderRadius: 16, cursor: 'pointer', background: '#fff', border: o.id === s.sendScope ? ('2px solid ' + NAVY) : '1px solid #ECECEF' },
+      dotStyle: { width: 20, height: 20, borderRadius: '50%', flexShrink: 0, border: o.id === s.sendScope ? ('6px solid ' + NAVY) : '2px solid #CFCFD6', background: '#fff', boxSizing: 'border-box' } }));
+    const sendCheckStyle = { width: 22, height: 22, borderRadius: 7, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 700, background: s.sendChecked ? NAVY : '#fff', color: '#fff', border: s.sendChecked ? 'none' : '2px solid #CFCFD6' };
+    const sendOrder = () => { if (s.sendScope === 'all' && !s.sendChecked) { this.showToast('Отметьте «Я всё выбрал(а)», чтобы отправить за весь стол'); return; } this.setState({ sheet: 'sending' }); setTimeout(() => this.setState({ screen: 'status', sheet: 'none' }), 1500); };
+
+    // ---- status ----
+    const steps = [
+      { label: 'Принят', st: 'done', glyph: '✓' },
+      { label: 'Готовится', st: 'active', glyph: '' },
+      { label: 'Подано', st: 'todo', glyph: '' },
+    ].map((x, i) => {
+      const done = x.st === 'done', active = x.st === 'active';
+      return { label: x.label, glyph: x.glyph, hasLine: i > 0,
+        lineStyle: { position: 'absolute', top: 17, right: '50%', width: '100%', height: 3, background: (done || active) ? '#1F9D55' : '#E4E4E8', zIndex: 0 },
+        dotStyle: { position: 'relative', zIndex: 1, width: 34, height: 34, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 15, fontWeight: 700, marginBottom: 8, background: done ? '#1F9D55' : active ? NAVY : '#fff', color: done || active ? '#fff' : '#9A9AA4', border: x.st === 'todo' ? '2px solid #E4E4E8' : 'none', animation: active ? 'ep-pulse 1.6s ease infinite' : 'none' },
+        labelStyle: { fontFamily: 'var(--font-sans)', fontSize: 12.5, fontWeight: active ? 600 : 480, color: x.st === 'todo' ? '#9A9AA4' : NAVY } };
+    });
+    const statusItems = [
+      { item: 'Том ям', who: 'Аня · своё', avatar: this.avatarEl('fox'), status: 'Подано', warm: false, done: true },
+      { item: 'Общие блюда', who: 'Спринг-роллы, лимонад, пицца', avatar: this.sharedIcon(), status: 'Принято', warm: false },
+    ].map(r => ({ item: r.item, who: r.who, avatar: r.avatar, status: r.status,
+      badgeStyle: { fontFamily: 'var(--font-mono)', fontSize: 9.5, letterSpacing: '0.3px', textTransform: 'uppercase', padding: '4px 9px', borderRadius: 50, flexShrink: 0, background: r.done ? '#E4F6EA' : r.warm ? '#FFF2DA' : '#F2F2F4', color: r.done ? '#1F9D55' : r.warm ? '#B07A12' : '#8A8A92' } }));
+
+    // ---- payment ----
+    const scopeData = [
+      { id: 'own', label: 'Оплатить своё', amt: 1357, sub: '690 ₽ ваше + 666,67 ₽ доля общего' },
+      { id: 'equal', label: 'Разделить поровну', amt: 1526.6667, sub: '4 580 ₽ на троих гостей' },
+      { id: 'full', label: 'Оплатить весь стол', amt: 4580, sub: 'за всю компанию' },
+    ];
+    const scopes = scopeData.map(o => ({ id: o.id, label: o.label, sub: o.sub, amtStr: fmt(o.amt), onClick: () => this.setState({ payScope: o.id }),
+      rowStyle: { display: 'flex', alignItems: 'center', gap: 12, padding: '13px 14px', borderRadius: 16, cursor: 'pointer', background: '#fff', border: o.id === s.payScope ? ('2px solid ' + NAVY) : '1px solid #ECECEF' },
+      dotStyle: { width: 20, height: 20, borderRadius: '50%', flexShrink: 0, border: o.id === s.payScope ? ('6px solid ' + NAVY) : '2px solid #CFCFD6', background: '#fff', boxSizing: 'border-box' },
+      pillStyle: { flex: 1, textAlign: 'center', padding: '11px 8px', borderRadius: 14, cursor: 'pointer', background: o.id === s.payScope ? NAVY : '#F2F2F4', color: o.id === s.payScope ? '#fff' : '#5C5C66', border: 'none', fontSize: 13.5, fontWeight: 520 } }));
+    const payAmt = s.payScope === 'own' ? 1357 : s.payScope === 'equal' ? 1526.6667 : 4580;
+    const payAmtStr = fmt(payAmt);
+    const sbpSelected = s.payMethod === 'sbp';
+    const otherMethods = [{ id: 'card', label: 'Банковская карта', glyph: '▭' }, { id: 'tpay', label: 'T-Pay', glyph: 'T' }, { id: 'sber', label: 'SberPay', glyph: 'S' }, { id: 'mir', label: 'Mir Pay', glyph: 'M' }].map(m => ({
+      id: m.id, label: m.label, glyph: m.glyph, onClick: () => this.setState({ payMethod: m.id }),
+      dotStyle: { width: 18, height: 18, borderRadius: '50%', flexShrink: 0, border: s.payMethod === m.id ? ('5px solid ' + NAVY) : '2px solid #CFCFD6', background: '#fff', boxSizing: 'border-box' } }));
+    const sbpRowStyle = { display: 'flex', alignItems: 'center', gap: 12, padding: '14px', borderRadius: 18, cursor: 'pointer', background: sbpSelected ? 'linear-gradient(118deg,#FBF0F8,#F4ECFB)' : '#fff', border: sbpSelected ? '2px solid #B5249C' : '1px solid #ECECEF' };
+    const payBtnStyle = { width: '100%', minHeight: 56, border: 'none', borderRadius: 50, color: '#fff', fontFamily: 'var(--font-sans)', fontWeight: 560, fontSize: 17, cursor: 'pointer', background: sbpSelected ? SBP : NAVY };
+    const payBtnLabel = (sbpSelected ? 'Оплатить по СБП · ' : 'Оплатить ') + payAmtStr;
+
+    // ---- tips ----
+    const tipPresets = [['5', '5%', false], ['10', '10%', true], ['15', '15%', false], ['custom', 'Своя', false]].map(([v, l, pop]) => ({ v, label: l, popular: pop, onClick: () => this.setState({ tip: v }),
+      style: { position: 'relative', flex: 1, textAlign: 'center', padding: '15px 6px', borderRadius: 16, cursor: 'pointer', fontFamily: 'var(--font-sans)', fontWeight: s.tip === v ? 600 : 480, fontSize: 16, background: s.tip === v ? NAVY : '#F2F2F4', color: s.tip === v ? '#fff' : '#3A3A42', border: 'none' } }));
+    const tipAmt = s.tip === '5' ? 67 : s.tip === '10' ? 135 : s.tip === '15' ? 203 : 0;
+    const tipStr = fmt(tipAmt);
+
+    // ---- done ----
+    const stars = [1, 2, 3, 4, 5].map(n => ({ onClick: () => this.setState({ rating: n }), color: n <= s.rating ? '#F4B400' : '#DADADE' }));
+
+    // ---- tablet ----
+    const tabPersonas = P.map(p => { const paid = p.id === 'anna'; const orderLbl = p.id === 'lena' ? 'Подан' : 'Готовится'; return {
+      name: p.name, sumStr: fmt(p.sum), avatar: this.avatarEl(p.animal),
+      orderLabel: orderLbl, payLabel: paid ? 'Оплачено' : 'Ожидает',
+      orderStyle: { fontFamily: 'var(--font-mono)', fontSize: 9.5, padding: '3px 8px', borderRadius: 50, background: '#EFEFF2', color: '#7A7A84' },
+      payStyle: { fontFamily: 'var(--font-mono)', fontSize: 9.5, padding: '3px 8px', borderRadius: 50, background: paid ? '#E4F6EA' : '#FFF2DA', color: paid ? '#1F9D55' : '#B07A12' },
+      cardStyle: { display: 'flex', alignItems: 'center', gap: 13, padding: '13px 15px', borderRadius: 18, background: '#fff', cursor: 'pointer', border: p.id === 'anna' ? ('2px solid ' + p.accent) : '1px solid #ECECEF' } }; });
+
+    return {
+      showNav, showStatusBar, isMobile, isTablet: !isMobile,
+      isWelcome: s.screen === 'welcome', isMenu: s.screen === 'menu', isCart: s.screen === 'cart',
+      isStatus: s.screen === 'status', isPayment: s.screen === 'payment', isTips: s.screen === 'tips', isDone: s.screen === 'done',
+      isTabPlan: s.screen === 'tabplan', isTabPay: s.screen === 'tabpay',
+      restaurant: 'Времена года',
+      navMobile, navTablet,
+      payVariant: s.payVariant, payVarOptions: [{ label: 'A · радио', value: 'A' }, { label: 'B · карты', value: 'B' }], setPayVariant: (v) => this.setState({ payVariant: v }),
+      isPayA: s.payVariant === 'A', isPayB: s.payVariant === 'B',
+      partial: s.partial, partialOptions: [{ label: 'Полная', value: 'off' }, { label: 'Частичная', value: 'on' }], partialValue: s.partial ? 'on' : 'off', setPartial: (v) => this.setState({ partial: v === 'on' }),
+      // avatars
+      guestAvatar, dimaMini, lenaMini, guestName: 'Аня',
+      named: s.named, notNamed: !s.named,
+      toastShow: !!s.toast, toastMsg: s.toast || '',
+      // sheets
+      sheetDish: s.sheet === 'dish', sheetName: s.sheet === 'name', sheetSend: s.sheet === 'send', sheetSending: s.sheet === 'sending',
+      closeSheet: () => this.setState({ sheet: 'none', dish: null }),
+      // flow handlers
+      goWelcome: () => this.go({ screen: 'welcome', named: false }), goMenu: () => this.go({ screen: 'menu' }), goCart: () => this.go({ screen: 'cart' }),
+      goPayment: () => this.go({ screen: 'payment', payStage: 'form' }), goDone: () => this.go({ screen: 'done' }), skipTips: () => this.go({ screen: 'done' }),
+      goTabPay: () => this.go({ screen: 'tabpay' }),
+      openSend: () => this.setState({ sheet: 'send' }),
+      // menu
+      cats, items, menuEmpty, cartBadgeStr: fmt(690),
+      dish, addDish,
+      // name
+      pickerAnimals, confirmName,
+      // cart
+      tableOpen: s.tableOpen, toggleTable: () => this.setState({ tableOpen: !s.tableOpen }), caretRotate: s.tableOpen ? 'rotate(180deg)' : 'rotate(0deg)',
+      tableGuests, sharedItems, splitOpts, sharedTotalStr: fmt(2000), sharedPerStr: fmt(666.6667),
+      // send
+      sendScopes, sendAll: s.sendScope === 'all', sendCheckStyle, toggleSendCheck: () => this.setState({ sendChecked: !s.sendChecked }), sendOrder,
+      // status
+      steps, statusItems,
+      // payment
+      scopes, payAmtStr, sbpSelected, selectSbp: () => this.setState({ payMethod: 'sbp' }), sbpRowStyle, otherMethods,
+      payBtn: () => { if (sbpSelected) this.setState({ payStage: 'qr' }); else this.processPay(); }, payBtnStyle, payBtnLabel, partialRemainStr: fmt(4580 - 1266.67),
+      payForm: s.payStage === 'form', payQr: s.payStage === 'qr', payProcessing: s.payStage === 'processing',
+      bankApp: () => this.processPay(), backToForm: () => this.setState({ payStage: 'form' }),
+      // tips
+      tipPresets, tipStr, tipAmt, tipCustom: s.tip === 'custom', tipCtaStr: tipAmt > 0 ? ('Оставить ' + tipStr) : 'Оставить чаевые',
+      // done
+      doneAmtStr: payAmtStr, tipLine: tipAmt > 0, tipStrDone: tipStr, doneRemainStr: fmt(4580 - payAmt), stars, reviewChips: ['Вкусно', 'Быстро', 'Уютно'],
+      // tablet
+      tabPersonas, tabProgress: Math.round(1357 / 4580 * 100) + '%', paidTabStr: fmt(1357), totalTabStr: fmt(4580),
+      SBP,
+    };
+  }
+}
+</script>
+</body>
+</html>

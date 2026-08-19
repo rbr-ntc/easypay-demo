@@ -1,0 +1,13 @@
+{
+  "name": "@easypay/config",
+  "version": "0.2.0",
+  "private": true,
+  "description": "Данные заведения: меню, план зала, персонал. Временный источник — файлы; на этапе БД заменяется репозиториями",
+  "type": "module",
+  "exports": {
+    ".": "./index.js",
+    "./menu.json": "./menu.json",
+    "./hall.json": "./hall.json",
+    "./staff.json": "./staff.json"
+  }
+}

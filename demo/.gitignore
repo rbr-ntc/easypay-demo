@@ -2,6 +2,4 @@ node_modules
 dist
 *.local
 .DS_Store
-*.tsbuildinfo
-.env
-.env.*
+tsconfig.tsbuildinfo

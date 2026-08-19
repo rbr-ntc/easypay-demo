@@ -1,26 +1,22 @@
 {
-  "name": "easypay-demo",
+  "name": "easypay",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.2.0",
+  "description": "EasyPay — заказ и оплата в ресторане по QR с привязкой блюд к персоне в момент заказа",
   "type": "module",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
   "scripts": {
-    "dev": "vite",
-    "build": "tsc -b && vite build",
-    "preview": "vite preview",
-    "serve": "npm run build && node server/index.mjs",
-    "start": "node server/index.mjs",
-    "test": "node --test tests/*.test.js"
+    "dev": "npm run dev --workspace @easypay/web",
+    "dev:api": "npm run dev --workspace @easypay/api",
+    "build": "npm run build --workspace @easypay/web",
+    "serve": "npm run build && npm start --workspace @easypay/api",
+    "start": "npm start --workspace @easypay/api",
+    "test": "npm test --workspaces --if-present"
   },
-  "dependencies": {
-    "react": "^18.3.1",
-    "react-dom": "^18.3.1",
-    "react-qr-code": "^2.0.15"
-  },
-  "devDependencies": {
-    "@types/react": "^18.3.12",
-    "@types/react-dom": "^18.3.1",
-    "@vitejs/plugin-react": "^4.3.4",
-    "typescript": "^5.6.3",
-    "vite": "^6.0.3"
+  "engines": {
+    "node": ">=20"
   }
 }

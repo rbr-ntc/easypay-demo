@@ -1,0 +1,35 @@
+{
+  "name": "@easypay/domain",
+  "version": "0.2.0",
+  "private": true,
+  "description": "Правила предметной области без ввода-вывода: деньги, зал, кухня, роли, аллергены",
+  "type": "module",
+  "exports": {
+    "./money": {
+      "types": "./money.d.ts",
+      "default": "./money.js"
+    },
+    "./hall": {
+      "types": "./hall.d.ts",
+      "default": "./hall.js"
+    },
+    "./kitchen": {
+      "types": "./kitchen.d.ts",
+      "default": "./kitchen.js"
+    },
+    "./roles": {
+      "types": "./roles.d.ts",
+      "default": "./roles.js"
+    },
+    "./allergens": {
+      "types": "./allergens.d.ts",
+      "default": "./allergens.js"
+    }
+  },
+  "scripts": {
+    "test": "node --test tests/*.test.js"
+  },
+  "devDependencies": {
+    "@easypay/config": "*"
+  }
+}
