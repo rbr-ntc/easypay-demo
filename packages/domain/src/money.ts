@@ -124,11 +124,38 @@ export function computeTotals(state: MoneyState | null | undefined, priceOf: Pri
   const rawRemainingOf = (pid: string | null) => round2(Math.max(0, totalOf(pid) - paidOf(pid)))
 
   /**
-   * С гостя не могут взять больше, чем должен стол: сосед мог заплатить за всех.
-   * Число, которое здесь получается, и списывается при оплате — гость видит
-   * ровно ту сумму, которая уйдёт с карты.
+   * Личный остаток после того, как сосед заплатил за стол.
+   *
+   * Здесь два требования, и оба обязательны. Показанное число должно точно
+   * совпадать со списываемым — иначе гость видит 415,89 и получает списание 379.
+   * И сумма личных остатков должна равняться остатку стола — иначе двум гостям
+   * одновременно показывают долги, вдвое превышающие долг стола, один платит,
+   * и долг второго исчезает у него на глазах.
+   *
+   * Пропорциональное распределение даёт второе и ломает первое: после каждой
+   * оплаты пропорция пересчитывается, и людей догоняют платежи на 60 копеек.
+   * Поэтому переплата гасит долги ЦЕЛИКОМ и по порядку посадки: каждая сумма
+   * остаётся точной, а их сложение сходится с остатком стола.
    */
-  const remainingOf = (pid: string | null) => round2(Math.min(rawRemainingOf(pid), remaining))
+  const creditOrder = personaIds
+  const remainingOf = (pid: string | null) => {
+    if (!pid) return 0
+    const raw = rawRemainingOf(pid)
+    if (raw === 0) return 0
+
+    const owed = round2(creditOrder.reduce((sum, id) => sum + rawRemainingOf(id), 0))
+    let credit = round2(Math.max(0, owed - remaining))
+    if (credit === 0) return raw
+
+    for (const id of creditOrder) {
+      const debt = rawRemainingOf(id)
+      const covered = Math.min(credit, debt)
+      if (id === pid) return round2(debt - covered)
+      credit = round2(credit - covered)
+      if (credit <= 0) break
+    }
+    return raw
+  }
 
   const draftTotal = sumOf(drafts)
   const draftOf = (pid: string | null) => (pid ? sumOf(drafts.filter(l => l.personaId === pid)) : 0)

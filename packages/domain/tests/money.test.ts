@@ -174,3 +174,51 @@ test('за кого заплатил сосед — тот больше ниче
   assert.equal(money.remainingOf('b'), 0, 'но лично он уже ничего не должен')
   assert.equal(amountFor(money, 'b', 'own'), 0)
 })
+
+test('переплата соседа гасит долги целиком, а не размазывается по всем', () => {
+  // Два требования сразу: показанное совпадает со списываемым, и сумма личных
+  // остатков равна остатку стола. Пропорция давала второе и ломала первое —
+  // гостей догоняли платежи на 60 копеек. Кламп давал первое и ломал второе:
+  // двум гостям показывали долги, вдвое превышающие долг стола.
+  const t = {
+    personas: [{ id: 'a' }, { id: 'b' }, { id: 'c' }],
+    lines: [
+      { uid: 1, dishId: 'steak', qty: 1, price: 1290, personaId: 'a', sent: true },
+      { uid: 2, dishId: 'tomyam', qty: 1, price: 690, personaId: 'b', sent: true },
+      { uid: 3, dishId: 'padthai', qty: 1, price: 600, personaId: 'c', sent: true }
+    ],
+    // Первый гость заплатил за стол больше своего счёта
+    payments: [{ personaId: 'a', amount: 1980, scope: 'full' }],
+    tips: []
+  }
+  const money = computeTotals(t, () => 0)
+
+  const left = ['a', 'b', 'c'].map(id => money.remainingOf(id))
+  assert.equal(round2(left.reduce((s, x) => s + x, 0)), round2(money.remaining), 'сумма личных = остаток стола')
+  assert.equal(left[0], 0, 'заплативший больше не должен')
+
+  // Каждому показывают ровно то, что с него спишут
+  for (const id of ['b', 'c']) {
+    assert.equal(amountFor(money, id, 'own'), money.remainingOf(id))
+  }
+
+  // Первый должник гасится целиком, а не наполовину: хвостов не остаётся
+  assert.equal(left[1], 0, 'долг того, кто сел раньше, покрыт полностью')
+  assert.equal(left[2], 600)
+})
+
+test('без переплаты личные остатки не трогаются', () => {
+  const t = {
+    personas: [{ id: 'a' }, { id: 'b' }],
+    lines: [
+      { uid: 1, dishId: 'steak', qty: 1, price: 1290, personaId: 'a', sent: true },
+      { uid: 2, dishId: 'tomyam', qty: 1, price: 690, personaId: 'b', sent: true }
+    ],
+    payments: [],
+    tips: []
+  }
+  const money = computeTotals(t, () => 0)
+  assert.equal(money.remainingOf('a'), 1290)
+  assert.equal(money.remainingOf('b'), 690)
+  assert.equal(money.remainingOf('a') + money.remainingOf('b'), money.remaining)
+})

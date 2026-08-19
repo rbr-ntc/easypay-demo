@@ -245,7 +245,6 @@ function snapshot(t: TableSession, id: string) {
         // равно его счёту, а остаток — счёту минус оплаченное. Раньше доли и
         // итоги округлялись независимо: гость видел долю 163,34 при остатке 163,33.
         const shares = splitRounded(ids.map(id => money.shareOf(id)), round2(money.sharedTotal))
-        const tableLeft = round2(money.remaining)
         return t.personas.map((p, i) => {
           const own = round2(money.ownOf(p.id))
           const total = round2(own + shares[i])
@@ -256,8 +255,10 @@ function snapshot(t: TableSession, id: string) {
             share: shares[i],
             total,
             paid,
-            // С гостя не возьмут больше, чем должен стол
-            remaining: round2(Math.min(Math.max(0, round2(total - paid)), tableLeft)),
+            // Остаток берём из денежной модели, а не считаем здесь заново:
+            // именно это число списывается при оплате, и оно уже учитывает
+            // переплату соседа за стол
+            remaining: round2(money.remainingOf(p.id)),
             draft: round2(money.draftOf(p.id))
           }
         })

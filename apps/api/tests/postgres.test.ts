@@ -531,6 +531,39 @@ const snapshot = (table: string) =>
     assert.equal(check.debt, 220, 'долг не занижен отменой, сделанной гостем')
   })
 
+  test('после переплаты соседа долги гостей складываются в долг стола', async () => {
+    // Регресс, найденный агентом: двум гостям одновременно показывали долги,
+    // вдвое превышающие долг стола. Один платил — долг второго исчезал у него
+    // на глазах, без оплаты.
+    const table = '4'
+    await freeTable(table)
+    const a = await joinGuest(table, 'Первый')
+    const b = await joinGuest(table, 'Второй')
+    const c = await joinGuest(table, 'Третий')
+
+    await post(table, 'lines', { dishId: 'steak' }, { guest: a }) // 1290
+    await post(table, 'lines', { dishId: 'greek' }, { guest: b }) // 590
+    await post(table, 'send', { scope: 'all' }, { guest: a })
+    // Первый платит за стол целиком
+    await post(table, 'pay', { scope: 'full', idemKey: `ov-${Date.now()}` }, { guest: a })
+
+    // И только теперь третий заказывает своё
+    await post(table, 'lines', { dishId: 'espresso' }, { guest: c }) // 180
+    await post(table, 'send', { scope: 'mine' }, { guest: c })
+
+    const snap = await snapshot(table)
+    const sum = snap.totals.byPersona.reduce((s: number, p: any) => s + p.remaining, 0)
+    assert.equal(Math.round(sum * 100) / 100, snap.totals.remaining, 'сумма личных = остаток стола')
+
+    // Показанное совпадает со списываемым: платим за того, у кого есть остаток
+    const debtor = snap.totals.byPersona.find((p: any) => p.remaining > 0)
+    const token = { a, b, c }[
+      ['a', 'b', 'c'][snap.totals.byPersona.findIndex((p: any) => p.personaId === debtor.personaId)] as 'a' | 'b' | 'c'
+    ]
+    const paid = await (await post(table, 'pay', { scope: 'own', idemKey: `pay-${Date.now()}` }, { guest: token })).json()
+    assert.equal(paid.amount, debtor.remaining, 'списали ровно то, что показали')
+  })
+
   test('журнал пишет, кто именно взял в работу и подал', async () => {
     const table = '22'
     await freeTable(table)
