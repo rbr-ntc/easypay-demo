@@ -47,8 +47,15 @@ export function ShiftChecks() {
 
           {!busy && control && (
             <div className={control.matches ? 'ep-h-control ep-h-control--ok' : 'ep-h-control ep-h-control--bad'}>
+              {/* «Касса сходится» при 4 510 ₽ неполученных обнадёживает сильнее,
+                  чем стоит: сверка честна по своей формуле (платежи против чеков),
+                  но управляющая читает заголовок, а не формулу. */}
               <div className="ep-h-control-head">
-                {control.matches ? 'Касса сходится' : 'Касса не сходится — разберитесь до закрытия смены'}
+                {!control.matches
+                  ? 'Касса не сходится — разберитесь до закрытия смены'
+                  : shift && shift.debt > 0
+                    ? `Касса сходится, но ${fmt(shift.debt)} не получено`
+                    : 'Касса сходится'}
               </div>
               <div className="ep-h-control-row">
                 <span>Сумма чеков</span>
@@ -62,6 +69,18 @@ export function ShiftChecks() {
                 <div className="ep-h-control-row">
                   <span>Оплачено на открытых столах</span>
                   <b>{fmt(control.openPaid)}</b>
+                </div>
+              )}
+              {shift && shift.debt > 0 && (
+                <div className="ep-h-control-row">
+                  <span>Ушли не заплатив</span>
+                  <b>{fmt(shift.debt)}</b>
+                </div>
+              )}
+              {shift && (shift.writtenOff ?? 0) > 0 && (
+                <div className="ep-h-control-row">
+                  <span>Снято с кухни — еду не отдали</span>
+                  <b>{fmt(shift.writtenOff ?? 0)}</b>
                 </div>
               )}
               {shift && shift.overpaid > 0 && (
