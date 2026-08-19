@@ -73,7 +73,10 @@ export function hallPayload(tables: Map<string, TableSession>, shift: any) {
     tables: cards,
     shift: {
       tables: shift.tables,
+      // Все деньги смены: закрытые столы плюс уже оплаченное на открытых
       revenue: round2(shift.revenue),
+      // Только закрытые столы — именно с этим числом сходится реестр чеков
+      closedRevenue: round2(shift.closedRevenue),
       guests: shift.guestsSeen,
       debt: round2(shift.debt),
       overpaid: round2(shift.overpaid),
@@ -83,11 +86,11 @@ export function hallPayload(tables: Map<string, TableSession>, shift: any) {
     summary: {
       ...summary,
       // Одна выручка смены: закрытые столы + уже оплаченное на открытых
-      closedRevenue: round2(shift.revenue),
+      closedRevenue: round2(shift.closedRevenue),
       debt: round2(shift.debt),
       overpaid: round2(shift.overpaid),
       // Средний чек считаем только по столам, где реально были деньги
-      avgCheck: shift.tablesWithRevenue > 0 ? round2(shift.revenue / shift.tablesWithRevenue) : null,
+      avgCheck: shift.tablesWithRevenue > 0 ? round2(shift.closedRevenue / shift.tablesWithRevenue) : null,
       shiftGuests: shift.guestsSeen
     },
     now

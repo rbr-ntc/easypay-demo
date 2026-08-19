@@ -18,23 +18,17 @@ export function hashToken(token) {
 
 export async function seed(sql, { orgName = 'EasyPay', venueName = hall.restaurant } = {}) {
   return sql.begin(async tx => {
-    const [org] = await tx`
+    const [organization] = await tx`
       insert into organizations (name) values (${orgName})
-      on conflict do nothing
+      on conflict (name) do update set name = excluded.name
       returning *
     `
-    const organization = org ?? (await tx`select * from organizations where name = ${orgName} limit 1`)[0]
 
-    const [existingVenue] = await tx`
-      select * from venues where org_id = ${organization.id} and name = ${venueName} limit 1
+    const [venue] = await tx`
+      insert into venues (org_id, name) values (${organization.id}, ${venueName})
+      on conflict (org_id, name) do update set name = excluded.name
+      returning *
     `
-    const venue =
-      existingVenue ??
-      (
-        await tx`
-          insert into venues (org_id, name) values (${organization.id}, ${venueName}) returning *
-        `
-      )[0]
 
     // Зоны и столы из плана зала
     let tables = 0
@@ -69,21 +63,19 @@ export async function seed(sql, { orgName = 'EasyPay', venueName = hall.restaura
     let staffCount = 0
     for (const person of staffConfig.staff) {
       const [existing] = await tx`
-        select * from staff where org_id = ${organization.id} and name = ${person.name} limit 1
+        select * from staff where org_id = ${organization.id} and (ext_id = ${person.id} or name = ${person.name}) limit 1
       `
       const row =
         existing ??
         (
           await tx`
-            insert into staff (org_id, venue_id, name, role, pin_hash)
-            values (${organization.id}, ${venue.id}, ${person.name}, ${person.role}, ${hashPin(person.pin)})
+            insert into staff (org_id, venue_id, name, role, pin_hash, ext_id)
+            values (${organization.id}, ${venue.id}, ${person.name}, ${person.role}, ${hashPin(person.pin)}, ${person.id})
             returning *
           `
         )[0]
 
-      if (!existing) {
-        await tx`update staff set pin_hash = ${hashPin(person.pin)} where id = ${row.id}`
-      }
+      await tx`update staff set pin_hash = ${hashPin(person.pin)}, ext_id = ${person.id} where id = ${row.id}`
 
       await tx`delete from staff_tables where staff_id = ${row.id}`
       for (const number of person.tables ?? []) {

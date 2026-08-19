@@ -37,12 +37,23 @@ export function waiterOfTable(tableId: string) {
 // --- Сессии ---
 const SESSION_TTL = 12 * 60 * 60 * 1000 // смена
 /** @type {Map<string, {staff: object, expiresAt: number}>} */
-const sessions = new Map<string, { staff: any; expiresAt: number }>()
+const sessions = new Map<string, { id: string; staffId: string; staff: any; device: string | null; expiresAt: number }>()
 
-export function createSession(staff: any) {
+export function createSession(staff: any, device: string | null = null) {
+  // Новый вход гасит прежние сессии этого сотрудника: две смены под одним PIN
+  // означали, что журнал не отличает людей, а действия наступают друг на друга.
+  for (const [token, s] of sessions) if (s.staffId === staff.id) sessions.delete(token)
+
   const token = crypto.randomBytes(18).toString('base64url')
-  sessions.set(token, { staff: publicStaff(staff), expiresAt: Date.now() + SESSION_TTL })
-  return token
+  const id = crypto.randomUUID()
+  sessions.set(token, {
+    id,
+    staffId: staff.id,
+    staff: publicStaff(staff),
+    device,
+    expiresAt: Date.now() + SESSION_TTL
+  })
+  return { token, sessionId: id }
 }
 
 export function sessionStaff(token: unknown) {
@@ -52,7 +63,16 @@ export function sessionStaff(token: unknown) {
     sessions.delete(String(token))
     return null
   }
-  return found.staff
+  // Действие в журнале должно отвечать не только «под каким аккаунтом», но и «с какого устройства»
+  return { ...found.staff, sessionId: found.id, device: found.device }
+}
+
+/** Активные сессии сотрудника — менеджеру видно, кто сейчас в смене и с чего. */
+export function activeSessions() {
+  const now = Date.now()
+  return [...sessions.values()]
+    .filter(s => s.expiresAt > now)
+    .map(s => ({ id: s.id, staffId: s.staffId, name: s.staff.name, role: s.staff.role, device: s.device }))
 }
 
 export function dropSession(token: unknown) {
@@ -93,7 +113,7 @@ function pinMatches(given: unknown, want: unknown) {
   return a.length === b.length && crypto.timingSafeEqual(a, b)
 }
 
-export function loginByPin(pin: unknown, ip: string) {
+export function loginByPin(pin: unknown, ip: string, device: unknown = null) {
   const clean = String(pin ?? '').trim()
   if (!/^\d{4,8}$/.test(clean)) {
     noteFailure(ip)
@@ -105,5 +125,7 @@ export function loginByPin(pin: unknown, ip: string) {
     return null
   }
   attempts.delete(ip)
-  return { staff: publicStaff(found), token: createSession(found) }
+  const label = typeof device === 'string' && device.length <= 40 ? device : null
+  const session = createSession(found, label)
+  return { staff: publicStaff(found), token: session.token, sessionId: session.sessionId, device: label }
 }

@@ -288,7 +288,7 @@ test('закрытие с отменой неподанного показыва
   const log = await (await fetch(`${base}/api/log`, { headers: { 'x-staff-token': TOKEN } })).json()
   const overpaid = log.entries.find(e => e.action === 'переплата к возврату' && e.tableId === table)
   assert.equal(!!overpaid, true, 'деньги за отменённое нельзя молча оставить себе')
-  assert.equal(overpaid.detail.startsWith('180'), true)
+  assert.equal(overpaid.amount, 180, 'сумма переплаты записана отдельным полем')
 
   const hall = await (await fetch(`${base}/api/hall`, { headers: { 'x-staff-token': TOKEN } })).json()
   assert.equal(hall.summary.overpaid >= 180, true, 'переплата видна в итогах смены')

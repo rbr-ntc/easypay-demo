@@ -201,15 +201,23 @@ test('чаевые адресуются официанту стола и коп�
   assert.equal(maxMe.shiftTips, 0, 'чужие чаевые не засчитываются')
 })
 
-test('смена считает выручку, долги и гостей одинаково в обоих полях', async () => {
+test('две выручки смены подписаны по-разному и не спорят друг с другом', async () => {
   const manager = await login('9999')
   const hall = await (await get('/api/hall', manager.token)).json()
-  assert.equal(hall.summary.closedRevenue, hall.shift.revenue, 'одна выручка смены, а не две разные')
+
+  // «Закрытые столы» — то, с чем сверяется реестр чеков
+  assert.equal(hall.summary.closedRevenue, hall.shift.closedRevenue)
+  // «За смену» включает ещё и оплаченное на открытых столах, поэтому не меньше
+  assert.equal(hall.shift.revenue >= hall.shift.closedRevenue, true)
   assert.equal(hall.summary.shiftGuests, hall.shift.guests)
   assert.equal(hall.summary.shiftGuests >= 1, true)
-  // средний чек считается только по столам, где были деньги
+
+  // Средний чек считается только по столам, где были деньги
   if (hall.shift.tablesWithRevenue > 0) {
-    assert.equal(hall.summary.avgCheck, Math.round((hall.shift.revenue / hall.shift.tablesWithRevenue) * 100) / 100)
+    assert.equal(
+      hall.summary.avgCheck,
+      Math.round((hall.shift.closedRevenue / hall.shift.tablesWithRevenue) * 100) / 100
+    )
   } else {
     assert.equal(hall.summary.avgCheck, null)
   }

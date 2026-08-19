@@ -7,8 +7,8 @@ export interface Persona {
   name: string
   animal: string
   joinedAt: number
-  /** Личный секрет гостя: наружу не отдаётся, по нему проверяются действия. */
-  secret: string
+  /** Хеш личного токена гостя: сам токен отдаётся один раз при join. */
+  secretHash: string
 }
 
 export interface Line {
@@ -28,9 +28,14 @@ export interface Line {
   servedAt: number | null
   cancelledAt?: number | null
   cancelReason?: string | null
+  /** Кто взял в работу, подал и отменил — журнал обязан отвечать на «кто». */
+  startedBy?: string | null
+  servedBy?: string | null
+  cancelledBy?: string | null
 }
 
 export interface Payment {
+  id: string
   personaId: string
   amount: number
   scope: string
@@ -38,6 +43,7 @@ export interface Payment {
 }
 
 export interface Tip {
+  id: string
   personaId: string
   amount: number
   at: number
@@ -62,8 +68,14 @@ export interface TableSession {
   tips: Tip[]
   calls: Call[]
   seq: number
+  /** Долг, с которым стол закрыли — измеряется до отмены неподанного. */
+  closedWithDebt?: number
   /** Переплата, зафиксированная при закрытии стола. */
   overpaid?: number
+  /** Сброс стола: хранилище освободит стол после того, как зафиксирует чек. */
+  resetRequested?: boolean
+  /** Привязка к строкам БД. В памяти не используется. */
+  db?: { tableUuid: string; sessionUuid: string | null }
 }
 
 /** Кто действует: сотрудник со своей сессией или мастер-токен менеджера. */
@@ -72,6 +84,9 @@ export interface Actor {
   name: string
   role: RoleName
   tables?: string[]
+  /** Идентификатор сессии сотрудника — попадает в журнал вместе с действием. */
+  sessionId?: string | null
+  device?: string | null
 }
 
 export interface AuditEntry {
@@ -82,6 +97,10 @@ export interface AuditEntry {
   action: string
   tableId: string | null
   detail: string | null
+  /** Сумма, если действие про деньги: списание, долг, переплата. */
+  amount?: number | null
+  /** Сессия сотрудника: журнал должен различать двух людей под одним PIN. */
+  sessionId?: string | null
 }
 
 /** Результат мутации: статус и тело ответа. */
@@ -92,6 +111,8 @@ export interface MutationResult {
 
 export interface Shift {
   tables: number
+  /** Выручка закрытых столов — с ней сверяется реестр чеков. */
+  closedRevenue: number
   tablesWithRevenue: number
   revenue: number
   debt: number
