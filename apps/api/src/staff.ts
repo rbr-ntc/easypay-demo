@@ -29,6 +29,12 @@ export function staffRoster() {
   return STAFF.map(publicStaff)
 }
 
+/** Имя сотрудника по его id: чек и журнал должны называть человека, а не код. */
+export function staffName(id: string | null | undefined) {
+  if (!id) return null
+  return STAFF.find(s => s.id === id)?.name ?? null
+}
+
 export function waiterOfTable(tableId: string) {
   const found = STAFF.find(s => s.role === 'waiter' && s.tables.includes(String(tableId)))
   return found ? { id: found.id, name: found.name } : null

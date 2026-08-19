@@ -129,7 +129,8 @@ export async function createPostgresStore(url?: string): Promise<Store> {
         amount: Number(p.amount),
         scope: p.scope,
         method: p.method ?? 'sbp',
-        takenBy: p.taken_by ?? null,
+        // В базе сотрудник — uuid, в ролях и журнале — строковый id
+        takenBy: staffExt(p.taken_by),
         // Номер и состав чека: единственный документ, который гость может предъявить
         receiptNo: p.receipt_no ?? undefined,
         lines: p.receipt_lines ?? [],

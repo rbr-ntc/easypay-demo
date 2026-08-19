@@ -272,12 +272,28 @@ const snapshot = (table: string) =>
     assert.equal(snap.cashIntent.amount, 590, 'официант видит просьбу')
     assert.equal(snap.totals.paidTotal, 0, 'намерение — ещё не деньги')
 
-    // Официант физически взял деньги
-    await post(table, 'cash', { personaId: snap.personas[0].id, scope: 'own', sessionId: snap.sessionId }, { staff: TOKEN })
+    // Деньги принимает конкретный человек: мастер-токен для этого не годится,
+    // за ним нет сотрудника, с которого вечером спросят кассу
+    const roma = await (
+      await fetch(`${base}/api/staff/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-device-id': 'pg-test-phone' },
+        body: JSON.stringify({ pin: '3333' })
+      })
+    ).json()
+    await post(
+      table,
+      'cash',
+      { personaId: snap.personas[0].id, scope: 'own', sessionId: snap.sessionId },
+      { staff: roma.token }
+    )
 
     const after = await snapshot(table)
     assert.equal(after.totals.remaining, 0)
     assert.equal(after.payments[0].method, 'cash')
+    // Вечером по этому имени сверяют кассовый ящик: без него официант сдаёт
+    // деньги, за которые формально никто не отвечает
+    assert.equal(after.payments[0].takenByName, 'Рома', 'видно, кто именно взял деньги')
     assert.equal(after.cashIntent, null, 'просьба снята')
   })
 

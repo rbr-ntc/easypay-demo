@@ -25,6 +25,7 @@ import {
   lockoutSeconds,
   loginByPin,
   sessionStaff,
+  staffName,
   staffRoster,
   sweepSessions,
   waiterOfTable
@@ -207,7 +208,8 @@ function snapshot(t: TableSession, id: string) {
       scope: p.scope,
       at: p.at,
       method: p.method ?? 'sbp',
-      takenByName: p.takenByName ?? null,
+      // Кто физически взял наличные — вечером по этому имени сверяют кассу
+      takenByName: p.takenByName ?? staffName(p.takenBy),
       receiptNo: p.receiptNo ?? null,
       lines: p.lines ?? []
     })),
