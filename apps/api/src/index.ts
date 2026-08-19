@@ -229,19 +229,27 @@ function snapshot(t: TableSession, id: string) {
         // Округляем не по отдельности, а так, чтобы суммы сходились со столом:
         // иначе гость видит доли, которые в сумме не равны счёту
         const ids = t.personas.map(p => p.id)
-        const totals = splitRounded(ids.map(id => money.totalOf(id)), round2(money.tableTotal))
+        // Хвост округления раскладываем ОДИН раз — на долях общих блюд. Всё
+        // остальное выводится из них, поэтому «своё + доля» у гостя всегда
+        // равно его счёту, а остаток — счёту минус оплаченное. Раньше доли и
+        // итоги округлялись независимо: гость видел долю 163,34 при остатке 163,33.
         const shares = splitRounded(ids.map(id => money.shareOf(id)), round2(money.sharedTotal))
-        // Остатки не выравниваем: каждый показывает ровно то, что с него спишут
-        const lefts = ids.map(id => round2(money.remainingOf(id)))
-        return t.personas.map((p, i) => ({
-          personaId: p.id,
-          own: round2(money.ownOf(p.id)),
-          share: shares[i],
-          total: totals[i],
-          paid: round2(money.paidOf(p.id)),
-          remaining: lefts[i],
-          draft: round2(money.draftOf(p.id))
-        }))
+        const tableLeft = round2(money.remaining)
+        return t.personas.map((p, i) => {
+          const own = round2(money.ownOf(p.id))
+          const total = round2(own + shares[i])
+          const paid = round2(money.paidOf(p.id))
+          return {
+            personaId: p.id,
+            own,
+            share: shares[i],
+            total,
+            paid,
+            // С гостя не возьмут больше, чем должен стол
+            remaining: round2(Math.min(Math.max(0, round2(total - paid)), tableLeft)),
+            draft: round2(money.draftOf(p.id))
+          }
+        })
       })()
     }
   }

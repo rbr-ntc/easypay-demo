@@ -361,6 +361,46 @@ const snapshot = (table: string) =>
     assert.equal(snap.payments[0].method, 'card', 'карта не превращается в СБП при сохранении')
   })
 
+  test('у гостя доля и остаток не спорят между собой, а чек сходится со списанием', async () => {
+    // Гость видел «доля 163,34» и «остаток 163,33» у самого себя, а в чеке
+    // позиции на 383,33 при списании 680. Числа обязаны сходиться на всех трёх
+    // экранах: у гостя, в чеке и на столе.
+    const table = '14'
+    await freeTable(table)
+    const a = await joinGuest(table, 'Аня')
+    const b = await joinGuest(table, 'Боря')
+    const c = await joinGuest(table, 'Вера')
+
+    await post(table, 'lines', { dishId: 'greek', shared: true }, { guest: a }) // 590 на троих
+    await post(table, 'lines', { dishId: 'espresso' }, { guest: c }) // 180 личное
+    await post(table, 'send', { scope: 'all' }, { guest: a })
+
+    const snap = await snapshot(table)
+    for (const p of snap.totals.byPersona) {
+      assert.equal(
+        p.total,
+        Math.round((p.own + p.share) * 100) / 100,
+        'доля и своё складываются в личный счёт без хвостов'
+      )
+      assert.equal(p.remaining, Math.round(Math.max(0, p.total - p.paid) * 100) / 100)
+    }
+
+    // Чек за своё перечисляет ровно то, за что списали
+    const vera = snap.personas.find((p: any) => p.name === 'Вера')
+    void vera
+    const paid = await (await post(table, 'pay', { scope: 'own', idemKey: `rc-${Date.now()}` }, { guest: c })).json()
+    const inReceipt = paid.receipt.lines.reduce(
+      (sum: number, l: any) => sum + (l.shared && l.share !== null ? l.share : l.price * l.qty),
+      0
+    )
+    assert.equal(Math.abs(inReceipt - paid.amount) < 0.02, true, `чек ${inReceipt} против списания ${paid.amount}`)
+
+    // Все рассчитались — на столе ровно ноль, без зависшей копейки
+    await post(table, 'pay', { scope: 'own', idemKey: `rc2-${Date.now()}` }, { guest: a })
+    await post(table, 'pay', { scope: 'full', idemKey: `rc3-${Date.now()}` }, { guest: b })
+    assert.equal((await snapshot(table)).totals.remaining, 0)
+  })
+
   test('журнал пишет, кто именно взял в работу и подал', async () => {
     const table = '22'
     await freeTable(table)
