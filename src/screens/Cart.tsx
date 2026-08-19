@@ -42,7 +42,7 @@ export function Cart() {
               <div style={{ fontWeight: 620, fontSize: 16 }}>{me.name}</div>
               <div style={{ fontSize: 12, color: 'var(--ep-muted)' }}>мой заказ</div>
             </div>
-            <span style={{ marginLeft: 'auto', fontWeight: 700, fontSize: 18 }}>{fmt(totals.myOwn)}</span>
+            <span style={{ marginLeft: 'auto', fontWeight: 700, fontSize: 18 }}>{fmt(totals.myOwn + totals.myDraft)}</span>
           </div>
           {myLines.length === 0 && (
             <div style={{ fontSize: 13.5, color: 'var(--ep-muted)', padding: '4px 0 2px' }}>Пока пусто — добавьте блюда из меню</div>
@@ -161,9 +161,15 @@ export function Cart() {
       <StickyFooter>
         <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', padding: '0 4px' }}>
           <div style={{ fontSize: 13, color: 'var(--ep-muted)' }}>
-            Мой итог: {fmt(totals.myOwn)} своё{totals.sharedTotal > 0 ? ` + ${fmt(totals.myShare)} доля общего` : ''}
+            {totals.myDraft > 0 ? (
+              <>Ещё не отправлено: {fmt(totals.myDraft)}</>
+            ) : (
+              <>В счёте: {fmt(totals.myOwn)} своё{totals.sharedTotal > 0 ? ` + ${fmt(totals.myShare)} доля общего` : ''}</>
+            )}
           </div>
-          <div style={{ fontWeight: 700, fontSize: 20, letterSpacing: '-0.5px' }}>{fmt(totals.myTotal)}</div>
+          <div style={{ fontWeight: 700, fontSize: 20, letterSpacing: '-0.5px' }}>
+            {fmt(totals.myTotal + totals.myDraft)}
+          </div>
         </div>
         <div style={{ display: 'flex', gap: 10 }}>
           <GhostButton style={{ flex: 1 }} onClick={() => patch({ screen: 'menu' })}>

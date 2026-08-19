@@ -3,9 +3,14 @@ export type TicketUrgency = 'ok' | 'warn' | 'danger'
 
 export interface KitchenTicket {
   tableId: string
+  sessionId: string
   zoneName: string
+  waiterName: string | null
   uid: number
   dishId: string
+  name: string
+  station: 'kitchen' | 'bar'
+  allergens: string[]
   qty: number
   options: Record<string, string>
   shared: boolean
@@ -13,6 +18,9 @@ export interface KitchenTicket {
   animal: string
   sentAt: number | null
   startedAt: number | null
+  waveAt?: number | null
+  cancelledAt?: number
+  reason?: string
 }
 
 export interface KitchenSummary {

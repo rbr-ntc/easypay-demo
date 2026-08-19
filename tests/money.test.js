@@ -1,22 +1,32 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { amountFor, computeTotals, round2 } from '../shared/money.js'
+import { amountFor, computeTotals, isBillLine, round2 } from '../shared/money.js'
 
 const PRICES = { tomyam: 690, padthai: 600, steak: 1290, lemonade: 220 }
 const priceOf = id => PRICES[id] ?? 0
 
 const persona = id => ({ id })
-const line = (personaId, dishId, opts = {}) => ({ personaId, dishId, qty: opts.qty ?? 1, shared: !!opts.shared })
+/** По умолчанию позиция уже отправлена на кухню — то есть в счёте. */
+const line = (personaId, dishId, opts = {}) => ({
+  personaId,
+  dishId,
+  qty: opts.qty ?? 1,
+  shared: !!opts.shared,
+  sharedWith: opts.sharedWith ?? [],
+  sent: opts.sent !== false,
+  cancelled: !!opts.cancelled,
+  price: opts.price
+})
 
-// Стол из разбора прототипа: у каждого своё + общие делятся на троих
-function threeGuests() {
+// Стол: у каждого своё, общий лимонад заказан, когда за столом были Аня и Дима
+function table() {
   return {
     personas: [persona('anya'), persona('dima'), persona('lena')],
     lines: [
       line('anya', 'tomyam'), // 690
       line('dima', 'padthai'), // 600
       line('lena', 'steak'), // 1290
-      line('anya', 'lemonade', { qty: 2, shared: true }) // 440 общие
+      line('anya', 'lemonade', { qty: 2, shared: true, sharedWith: ['anya', 'dima'] }) // 440 на двоих
     ],
     payments: []
   }
@@ -30,70 +40,86 @@ test('пустой стол считается без деления на нол
   assert.equal(t.ownOf(null), 0)
 })
 
-test('своё, доля общего и итог стола', () => {
-  const t = computeTotals(threeGuests(), priceOf)
+test('в счёт входит только отправленное на кухню', () => {
+  const state = {
+    personas: [persona('a')],
+    lines: [line('a', 'tomyam'), line('a', 'steak', { sent: false })],
+    payments: []
+  }
+  const t = computeTotals(state, priceOf)
+  assert.equal(t.tableTotal, 690, 'черновик не долг стола')
+  assert.equal(t.draftTotal, 1290)
+  assert.equal(t.draftOf('a'), 1290)
+  assert.equal(isBillLine(state.lines[0]), true)
+  assert.equal(isBillLine(state.lines[1]), false)
+})
+
+test('отменённая позиция выпадает из счёта', () => {
+  const t = computeTotals(
+    { personas: [persona('a')], lines: [line('a', 'tomyam'), line('a', 'steak', { cancelled: true })], payments: [] },
+    priceOf
+  )
+  assert.equal(t.tableTotal, 690)
+})
+
+test('цена берётся с позиции, если она зафиксирована при заказе', () => {
+  const t = computeTotals({ personas: [persona('a')], lines: [line('a', 'tomyam', { price: 500 })], payments: [] }, priceOf)
+  assert.equal(t.tableTotal, 500, 'правка меню задним числом не меняет открытый счёт')
+})
+
+test('общее блюдо делят только те, кто был за столом в момент заказа', () => {
+  const t = computeTotals(table(), priceOf)
   assert.equal(t.tableTotal, 690 + 600 + 1290 + 440)
   assert.equal(t.sharedTotal, 440)
-  assert.equal(round2(t.share), round2(440 / 3))
-  assert.equal(t.ownOf('anya'), 690)
-  assert.equal(round2(t.totalOf('anya')), round2(690 + 440 / 3))
+  assert.equal(t.shareOf('anya'), 220)
+  assert.equal(t.shareOf('dima'), 220)
+  assert.equal(t.shareOf('lena'), 0, 'Лена подсела позже — за чужой лимонад не платит')
+  assert.equal(t.totalOf('anya'), 910)
+  assert.equal(t.totalOf('lena'), 1290)
 })
 
-test('количество умножается на цену', () => {
-  const t = computeTotals({ personas: [persona('a')], lines: [line('a', 'padthai', { qty: 3 })] }, priceOf)
-  assert.equal(t.tableTotal, 1800)
+test('доля не меняется задним числом при подсадке гостя', () => {
+  const state = table()
+  const before = amountFor(computeTotals(state, priceOf), 'anya', 'own')
+  state.personas.push(persona('kira')) // подсел четвёртый
+  const after = amountFor(computeTotals(state, priceOf), 'anya', 'own')
+  assert.equal(before, after, 'заплативший раньше не переплачивает')
+  assert.equal(before, 910)
 })
 
-test('неизвестное блюдо не ломает счёт', () => {
-  const t = computeTotals({ personas: [persona('a')], lines: [line('a', 'ghost')] }, priceOf)
-  assert.equal(t.tableTotal, 0)
+test('сумма долей общего равна стоимости общих блюд', () => {
+  const t = computeTotals(table(), priceOf)
+  const sum = ['anya', 'dima', 'lena'].reduce((s, id) => s + t.shareOf(id), 0)
+  assert.equal(round2(sum), t.sharedTotal)
 })
 
 test('оплата уменьшает остаток стола и остаток персоны', () => {
-  const state = threeGuests()
+  const state = table()
   const own = computeTotals(state, priceOf)
-  const anyaPart = amountFor(own, 'anya', 'own')
-  state.payments.push({ personaId: 'anya', amount: anyaPart })
+  const part = amountFor(own, 'anya', 'own')
+  state.payments.push({ personaId: 'anya', amount: part })
   const after = computeTotals(state, priceOf)
-  assert.equal(after.paidTotal, anyaPart)
-  assert.equal(round2(after.remaining), round2(own.tableTotal - anyaPart))
+  assert.equal(after.paidTotal, part)
+  assert.equal(round2(after.remaining), round2(own.tableTotal - part))
   assert.equal(after.remainingOf('anya'), 0)
 })
 
-test('«своё» = своё + доля общего, повторно платить нечего', () => {
-  const state = threeGuests()
-  const first = amountFor(computeTotals(state, priceOf), 'anya', 'own')
-  assert.equal(first, round2(690 + 440 / 3))
-  state.payments.push({ personaId: 'anya', amount: first })
-  assert.equal(amountFor(computeTotals(state, priceOf), 'anya', 'own'), 0)
-})
-
 test('«поровну» не превышает неоплаченный остаток', () => {
-  const state = threeGuests()
+  const state = table()
   const t0 = computeTotals(state, priceOf)
   assert.equal(amountFor(t0, 'dima', 'equal'), round2(t0.tableTotal / 3))
-  // почти всё уже оплачено — поровну ограничивается остатком
   state.payments.push({ personaId: 'anya', amount: t0.tableTotal - 100 })
   assert.equal(amountFor(computeTotals(state, priceOf), 'dima', 'equal'), 100)
 })
 
 test('двойная оплата стола невозможна: второму остаётся ноль', () => {
-  const state = threeGuests()
+  const state = table()
   const full = amountFor(computeTotals(state, priceOf), 'anya', 'full')
   state.payments.push({ personaId: 'anya', amount: full })
   const after = computeTotals(state, priceOf)
   assert.equal(amountFor(after, 'dima', 'full'), 0)
   assert.equal(amountFor(after, 'dima', 'own'), 0)
   assert.equal(amountFor(after, 'dima', 'equal'), 0)
-})
-
-test('оплата чужой доли уменьшает мой остаток только через личные платежи', () => {
-  const state = threeGuests()
-  const t0 = computeTotals(state, priceOf)
-  state.payments.push({ personaId: 'anya', amount: amountFor(t0, 'anya', 'own') })
-  const after = computeTotals(state, priceOf)
-  assert.equal(after.paidOf('dima'), 0)
-  assert.equal(round2(after.remainingOf('dima')), round2(600 + 440 / 3))
 })
 
 test('round2 округляет до копеек и переживает мусор', () => {

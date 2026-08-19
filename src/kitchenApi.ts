@@ -3,17 +3,24 @@ import type { KitchenSummary, KitchenTicket } from '../shared/kitchen.js'
 
 export interface KitchenPayload {
   tickets: KitchenTicket[]
-  summary: KitchenSummary
+  cancelled: KitchenTicket[]
+  summary: KitchenSummary & { bar: number; kitchen: number; cancelled: number }
   now: number
 }
 
 /** Кухня действует по любому столу, поэтому шлём запрос напрямую в нужный. */
-async function tableAction(tableId: string, action: 'start' | 'serve', uid: number): Promise<boolean> {
+async function tableAction(
+  tableId: string,
+  action: 'start' | 'serve',
+  uid: number,
+  sessionId: string
+): Promise<boolean> {
   try {
     const res = await fetch(`/api/t/${encodeURIComponent(tableId)}/${action}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-staff-token': getStaffToken() },
-      body: JSON.stringify({ uid })
+      // sessionId защищает от попадания в чужой заказ: uid переиспользуются после закрытия
+      body: JSON.stringify({ uid, sessionId })
     })
     return res.ok
   } catch (err) {
@@ -22,8 +29,10 @@ async function tableAction(tableId: string, action: 'start' | 'serve', uid: numb
   }
 }
 
-export const takeToWork = (tableId: string, uid: number) => tableAction(tableId, 'start', uid)
-export const markReady = (tableId: string, uid: number) => tableAction(tableId, 'serve', uid)
+export const takeToWork = (tableId: string, uid: number, sessionId: string) =>
+  tableAction(tableId, 'start', uid, sessionId)
+export const markReady = (tableId: string, uid: number, sessionId: string) =>
+  tableAction(tableId, 'serve', uid, sessionId)
 
 export function subscribeKitchen(
   onData: (p: KitchenPayload) => void,

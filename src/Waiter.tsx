@@ -21,6 +21,7 @@ export function Waiter() {
     connected,
     totals,
     closeTable,
+    startLine,
     serveLine,
     ackCall,
     resetDemo,
@@ -46,8 +47,12 @@ export function Waiter() {
   const tipsTotal = (snap?.tips ?? []).reduce((s, t) => s + t.amount, 0)
 
   const confirmClose = () => {
-    const question = fullyPaid ? 'Закрыть стол?' : `По столу осталось ${fmt(totals.remaining)}. Всё равно закрыть?`
-    if (window.confirm(question)) void closeTable()
+    // Стол с долгом закрывается только осознанно — сервер иначе откажет
+    const debt = totals.remaining > 0.01
+    const question = debt
+      ? `По столу не оплачено ${fmt(totals.remaining)}. Закрыть с долгом? Это попадёт в журнал смены.`
+      : 'Закрыть стол?'
+    if (window.confirm(question)) void closeTable(debt)
   }
 
   const confirmReset = () => {
@@ -120,12 +125,12 @@ export function Waiter() {
         <div className="ep-w-call">
           <span className="ep-w-call-dot ep-pulse" />
           <span className="ep-w-call-text">
-            <b>{personas.find(p => p.id === snap.call?.personaId)?.name ?? 'Гость'}</b>{' '}
+            <b>{snap.call.name ?? personas.find(p => p.id === snap.call?.personaId)?.name ?? 'Гость'}</b>{' '}
             {CALL_LABEL[snap.call.reason] ?? CALL_LABEL.help} · {fmtDur(now - snap.call.at)}
           </span>
           {may('ack') && (
-            <button className="ep-w-btn ep-w-btn--ok" onClick={() => void ackCall()}>
-              Принял
+            <button className="ep-w-btn ep-w-btn--ok" onClick={() => void ackCall(snap.call?.id)}>
+              Принял{(snap.calls?.length ?? 0) > 1 ? ` (ещё ${snap.calls.length - 1})` : ''}
             </button>
           )}
         </div>
@@ -140,7 +145,14 @@ export function Waiter() {
           <GuestList personas={personas} lines={lines} totals={totals} tableOpen={isOpen} />
         </div>
         <div className="ep-w-main">
-          <OrderFeed lines={lines} personas={personas} now={now} canServe={may('serve')} onServe={uid => void serveLine(uid)} />
+          <OrderFeed
+            lines={lines}
+            personas={personas}
+            now={now}
+            canServe={may('serve')}
+            onStart={uid => void startLine(uid)}
+            onServe={uid => void serveLine(uid)}
+          />
           <PaymentsList payments={payments} personas={personas} />
         </div>
       </div>

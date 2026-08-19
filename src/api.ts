@@ -32,9 +32,14 @@ export interface ServerPersona {
 export interface ServerLine {
   uid: number
   dishId: string
+  name?: string
   qty: number
+  price?: number
   options?: Record<string, string>
   shared: boolean
+  sharedWith?: string[]
+  cancelled?: boolean
+  cancelReason?: string | null
   personaId: string
   sent: boolean
   served: boolean
@@ -57,9 +62,31 @@ export interface ServerTip {
 }
 
 export interface ServerCall {
+  id?: string
   at: number
   personaId: string
   reason: string
+  name?: string
+}
+
+/** Итоги считает сервер — гость видит ровно то, что спишется. */
+export interface PersonaTotals {
+  personaId: string
+  own: number
+  share: number
+  total: number
+  paid: number
+  remaining: number
+  draft: number
+}
+
+export interface ServerTotals {
+  tableTotal: number
+  paidTotal: number
+  remaining: number
+  sharedTotal: number
+  draftTotal: number
+  byPersona: PersonaTotals[]
 }
 
 export interface Snapshot {
@@ -73,13 +100,17 @@ export interface Snapshot {
   payments: ServerPayment[]
   tips: ServerTip[]
   call: ServerCall | null
+  calls: ServerCall[]
   waiter: { id: string; name: string } | null
+  seats: number
+  totals: ServerTotals
 }
 
-async function post<T>(action: string, body: object, opts: { staff?: boolean } = {}): Promise<T> {
+async function post<T>(action: string, body: object, opts: { staff?: boolean; guest?: string } = {}): Promise<T> {
   if (!API) throw new ApiError('стол не выбран', 400)
   const headers: Record<string, string> = { 'Content-Type': 'application/json' }
   if (opts.staff) headers['x-staff-token'] = getStaffToken()
+  if (opts.guest) headers['x-guest-token'] = opts.guest
   const res = await fetch(`${API}/${action}`, {
     method: 'POST',
     headers,
@@ -94,36 +125,40 @@ async function post<T>(action: string, body: object, opts: { staff?: boolean } =
 
 // idemKey: повтор с тем же ключом не создаёт вторую персону / второй платёж
 export const apiJoin = (name: string, animal: Animal, idemKey: string) =>
-  post<{ personaId: string; snapshot: Snapshot }>('join', { name, animal, idemKey })
+  post<{ personaId: string; guestToken: string; snapshot: Snapshot }>('join', { name, animal, idemKey })
 
 export const apiAddLine = (
-  personaId: string,
+  guest: string,
   dishId: string,
   qty: number,
   shared: boolean,
   options: Record<string, string>,
   idemKey: string
-) => post<{ ok: true }>('lines', { personaId, dishId, qty, shared, options, idemKey })
+) => post<{ ok: true; uid: number }>('lines', { dishId, qty, shared, options, idemKey }, { guest })
 
-export const apiRemoveLine = (personaId: string, uid: number) => post<{ ok: true }>('remove', { personaId, uid })
+export const apiRemoveLine = (guest: string, uid: number) => post<{ ok: true }>('remove', { uid }, { guest })
 
-export const apiSend = (personaId: string, scope: 'mine' | 'all') => post<{ ok: true }>('send', { personaId, scope })
+export const apiSend = (guest: string, scope: 'mine' | 'all') => post<{ ok: true; sent: number }>('send', { scope }, { guest })
 
-export const apiPay = (personaId: string, scope: 'own' | 'equal' | 'full', idemKey: string) =>
-  post<{ ok: true; amount: number }>('pay', { personaId, scope, idemKey })
+export const apiPay = (guest: string, scope: 'own' | 'equal' | 'full', idemKey: string) =>
+  post<{ ok: true; amount: number; remaining: number }>('pay', { scope, idemKey }, { guest })
 
-export const apiTip = (personaId: string, amount: number, idemKey: string) =>
-  post<{ ok: true; amount: number }>('tip', { personaId, amount, idemKey })
+export const apiTip = (guest: string, amount: number, idemKey: string) =>
+  post<{ ok: true; amount: number }>('tip', { amount, idemKey }, { guest })
 
-export const apiCall = (personaId: string, reason: 'help' | 'bill' | 'water') =>
-  post<{ ok: true }>('call', { personaId, reason })
+export const apiCall = (guest: string, reason: 'help' | 'bill' | 'water') =>
+  post<{ ok: true }>('call', { reason }, { guest })
 
-// Действия персонала — только с сессией сотрудника
-export const apiServe = (uid: number) => post<{ ok: true }>('serve', { uid }, { staff: true })
+// Действия персонала — с сессией сотрудника и привязкой к сессии стола
+export const apiStart = (uid: number, sessionId: string) =>
+  post<{ ok: true; startedAt: number }>('start', { uid, sessionId }, { staff: true })
 
-export const apiAck = () => post<{ ok: true }>('ack', {}, { staff: true })
+export const apiServe = (uid: number, sessionId: string) => post<{ ok: true }>('serve', { uid, sessionId }, { staff: true })
 
-export const apiClose = () => post<{ ok: true }>('close', {}, { staff: true })
+export const apiAck = (callId?: string) => post<{ ok: true; left: number }>('ack', { callId }, { staff: true })
+
+/** force — осознанное закрытие стола с долгом. */
+export const apiClose = (force = false) => post<{ ok: true }>('close', { force }, { staff: true })
 
 export const apiReset = () => post<{ ok: true }>('reset', {}, { staff: true })
 

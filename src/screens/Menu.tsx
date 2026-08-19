@@ -209,7 +209,7 @@ export function Menu() {
             <span style={{ background: 'rgba(255,255,255,.2)', padding: '3px 10px', borderRadius: 'var(--ep-r-pill)', fontSize: 14, marginRight: 10 }}>
               Корзина
             </span>
-            {fmt(totals.myTotal)} →
+            {fmt(totals.myTotal + totals.myDraft)} →
           </PrimaryButton>
         </div>
       )}

@@ -7,6 +7,7 @@ import {
   apiCall,
   apiClose,
   apiServe,
+  apiStart,
   apiStaffLogin,
   apiStaffLogout,
   apiWhoami,
@@ -82,6 +83,7 @@ const ID_KEY = `easypay-identity-${tableId}`
 interface Identity {
   sessionId: string
   personaId: string
+  guestToken: string
 }
 
 function loadIdentity(): Identity | null {
@@ -89,7 +91,8 @@ function loadIdentity(): Identity | null {
     const raw = localStorage.getItem(ID_KEY)
     if (!raw) return null
     const parsed = JSON.parse(raw) as Identity
-    return parsed.sessionId && parsed.personaId ? parsed : null
+    // без личного токена личность недействительна: сервер такие действия отклонит
+    return parsed.sessionId && parsed.personaId && parsed.guestToken ? parsed : null
   } catch {
     return null
   }
@@ -101,6 +104,9 @@ export interface Totals {
   myOwn: number
   myShare: number
   myTotal: number
+  /** Черновик корзины — вне счёта стола. */
+  myDraft: number
+  draftTotal: number
   tableTotal: number
   paidTotal: number
   remaining: number
@@ -108,6 +114,7 @@ export interface Totals {
   myRemaining: number
   scopeAmount: (scope: PayScope) => number
   personaOwn: (pid: string) => number
+  personaTotal: (pid: string) => number
   personaPaid: (pid: string) => number
 }
 
@@ -115,20 +122,40 @@ export interface Totals {
 // Клиентские суммы — только для отображения, списывает всегда сервер.
 export function computeTotals(snap: Snapshot | null, myId: string | null): Totals {
   const core = computeMoney(snap ?? {}, id => findDish(id)?.price ?? 0)
+  const server = snap?.totals
+  const mine = myId ? server?.byPersona.find(p => p.personaId === myId) : undefined
+  const participants = core.participants
+
+  const tableTotal = server?.tableTotal ?? core.tableTotal
+  const paidTotal = server?.paidTotal ?? core.paidTotal
+  const remaining = server?.remaining ?? core.remaining
+  const myTotal = mine?.total ?? core.totalOf(myId)
+  const myPaid = mine?.paid ?? core.paidOf(myId)
+  const myRemaining = mine?.remaining ?? core.remainingOf(myId)
+
+  const scopeAmount = (scope: PayScope) => {
+    if (scope === 'full') return remaining
+    if (scope === 'equal') return Math.min(remaining, tableTotal / participants)
+    return Math.min(myRemaining, remaining)
+  }
+
   return {
-    participants: core.participants,
-    sharedTotal: core.sharedTotal,
-    myOwn: core.ownOf(myId),
-    myShare: core.share,
-    myTotal: core.totalOf(myId),
-    tableTotal: core.tableTotal,
-    paidTotal: core.paidTotal,
-    remaining: core.remaining,
-    myPaid: core.paidOf(myId),
-    myRemaining: core.remainingOf(myId),
-    scopeAmount: scope => amountFor(core, myId, scope),
-    personaOwn: pid => core.ownOf(pid),
-    personaPaid: pid => core.paidOf(pid)
+    participants,
+    sharedTotal: server?.sharedTotal ?? core.sharedTotal,
+    myOwn: mine?.own ?? core.ownOf(myId),
+    myShare: mine?.share ?? core.shareOf(myId),
+    myTotal,
+    myDraft: mine?.draft ?? core.draftOf(myId),
+    draftTotal: server?.draftTotal ?? core.draftTotal,
+    tableTotal,
+    paidTotal,
+    remaining,
+    myPaid,
+    myRemaining,
+    scopeAmount,
+    personaOwn: pid => server?.byPersona.find(p => p.personaId === pid)?.own ?? core.ownOf(pid),
+    personaTotal: pid => server?.byPersona.find(p => p.personaId === pid)?.total ?? core.totalOf(pid),
+    personaPaid: pid => server?.byPersona.find(p => p.personaId === pid)?.paid ?? core.paidOf(pid)
   }
 }
 
@@ -148,7 +175,7 @@ interface Ctx {
   toast: (msg: string) => void
   // server actions
   join: (name: string, animal: Animal, idemKey: string) => Promise<ServerPersona | null>
-  addLine: (dishId: string, qty: number, shared: boolean, options: LineOptions, asPersonaId?: string) => Promise<void>
+  addLine: (dishId: string, qty: number, shared: boolean, options: LineOptions, asGuestToken?: string) => Promise<void>
   removeLine: (uid: number) => Promise<void>
   sendWave: (scope: 'mine' | 'all') => Promise<void>
   pay: (scope: PayScope, idemKey: string) => Promise<number>
@@ -164,9 +191,10 @@ interface Ctx {
   /** Возвращает HTTP-статус попытки: 200 — вошли, 401 — не тот PIN, 429 — перебор попыток. */
   signInStaff: (pin: string) => Promise<number>
   signOutStaff: () => Promise<void>
+  startLine: (uid: number) => Promise<boolean>
   serveLine: (uid: number) => Promise<boolean>
-  ackCall: () => Promise<boolean>
-  closeTable: () => Promise<boolean>
+  ackCall: (callId?: string) => Promise<boolean>
+  closeTable: (force?: boolean) => Promise<boolean>
   resetDemo: () => Promise<boolean>
 }
 
@@ -181,6 +209,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [staffChecked, setStaffChecked] = useState(false)
   const [shiftTips, setShiftTips] = useState(0)
   const personaId = identity?.personaId ?? null
+  // Токен читаем через ref: действие сразу после join не должно видеть старое замыкание
+  const identityRef = useRef<Identity | null>(identity)
+  identityRef.current = identity
+  const guestToken = () => identityRef.current?.guestToken ?? null
   const toastTimer = useRef<ReturnType<typeof setTimeout>>()
 
   useEffect(() => subscribe(setSnap, setConnected), [])
@@ -263,45 +295,46 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     join: (name, animal, idemKey) =>
       guard(async () => {
         const r = await apiJoin(name, animal, idemKey)
-        const id: Identity = { sessionId: r.snapshot.sessionId ?? '', personaId: r.personaId }
+        const id: Identity = { sessionId: r.snapshot.sessionId ?? '', personaId: r.personaId, guestToken: r.guestToken }
         localStorage.setItem(ID_KEY, JSON.stringify(id))
+        identityRef.current = id
         setIdentity(id)
         setSnap(r.snapshot)
         return r.snapshot.personas.find(p => p.id === r.personaId) ?? null
       }, null),
-    addLine: (dishId, qty, shared, options, asPersonaId) =>
+    addLine: (dishId, qty, shared, options, asGuestToken) =>
       guard(async () => {
-        const pid = asPersonaId ?? personaId
-        if (!pid) return
-        await apiAddLine(pid, dishId, qty, shared, options, newIdemKey())
+        const token = asGuestToken ?? guestToken()
+        if (!token) return
+        await apiAddLine(token, dishId, qty, shared, options, newIdemKey())
       }, undefined),
     removeLine: uid =>
       guard(async () => {
-        if (!personaId) return
-        await apiRemoveLine(personaId, uid)
+        if (!guestToken()) return
+        await apiRemoveLine(guestToken()!, uid)
       }, undefined),
     sendWave: scope =>
       guard(async () => {
-        if (!personaId) return
-        await apiSend(personaId, scope)
+        if (!guestToken()) return
+        await apiSend(guestToken()!, scope)
       }, undefined),
     pay: (scope, idemKey) =>
       guard(async () => {
-        if (!personaId) return 0
-        const r = await apiPay(personaId, scope, idemKey)
+        if (!guestToken()) return 0
+        const r = await apiPay(guestToken()!, scope, idemKey)
         patch({ lastPaid: r.amount })
         return r.amount
       }, 0),
     leaveTip: (amount, idemKey) =>
       guard(async () => {
-        if (!personaId || amount <= 0) return 0
-        const r = await apiTip(personaId, amount, idemKey)
+        if (!guestToken() || amount <= 0) return 0
+        const r = await apiTip(guestToken()!, amount, idemKey)
         return r.amount
       }, 0),
     callWaiter: reason =>
       guard(async () => {
-        if (!personaId) return
-        await apiCall(personaId, reason)
+        if (!guestToken()) return
+        await apiCall(guestToken()!, reason)
         toast('Официант уже идёт 👋')
       }, undefined),
     forgetMe: () => {
@@ -338,9 +371,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       setShiftTips(0)
       setStaffChecked(true)
     },
-    serveLine: uid => staffGuard(() => apiServe(uid)),
-    ackCall: () => staffGuard(() => apiAck()),
-    closeTable: () => staffGuard(() => apiClose()),
+    startLine: uid => staffGuard(() => apiStart(uid, snap?.sessionId ?? '')),
+    serveLine: uid => staffGuard(() => apiServe(uid, snap?.sessionId ?? '')),
+    ackCall: callId => staffGuard(() => apiAck(callId)),
+    closeTable: (force = false) => staffGuard(() => apiClose(force)),
     resetDemo: () =>
       staffGuard(async () => {
         await apiReset()

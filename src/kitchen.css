@@ -227,3 +227,42 @@
   color: var(--ep-muted);
   text-align: center;
 }
+
+.ep-k-station {
+  margin-top: 6px;
+  font-family: ui-monospace, SFMono-Regular, monospace;
+  font-size: 9px;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  color: var(--ep-muted);
+}
+
+.ep-k-station--bar {
+  color: var(--ep-accent);
+}
+
+.ep-k-allergens {
+  margin-top: 5px;
+  font-size: 12px;
+  color: var(--ep-warn);
+}
+
+.ep-k-cancelled {
+  padding: 18px 24px 0;
+}
+
+.ep-k-ticket--cancelled {
+  opacity: 0.75;
+  border-style: dashed;
+}
+
+.ep-k-cancel {
+  font-family: ui-monospace, SFMono-Regular, monospace;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 8px 12px;
+  border-radius: var(--ep-r-pill);
+  background: var(--ep-danger-bg);
+  color: var(--ep-danger);
+  white-space: nowrap;
+}

@@ -35,7 +35,7 @@ export function NameSheet() {
     patch({ sheet: null, currentDishId: null, pendingAdd: null })
     if (pending) {
       const dish = findDish(pending.dishId)
-      await addLine(pending.dishId, pending.qty, pending.shared, pending.options, persona.id)
+      await addLine(pending.dishId, pending.qty, pending.shared, pending.options)
       if (dish) toast(pending.shared ? `${dish.name} → общее на стол` : `${dish.name} → ${persona.name}`)
     }
   }

@@ -9,12 +9,14 @@ export function OrderFeed({
   personas,
   now,
   canServe = true,
+  onStart,
   onServe
 }: {
   lines: ServerLine[]
   personas: ServerPersona[]
   now: number
   canServe?: boolean
+  onStart: (uid: number) => void
   onServe: (uid: number) => void
 }) {
   const nameOf = (pid: string) => personas.find(p => p.id === pid)?.name ?? '?'
@@ -41,13 +43,20 @@ export function OrderFeed({
                   {optionsLabel(l.options) ? ` · ${optionsLabel(l.options)}` : ''}
                 </div>
               </div>
-              {l.served ? (
+              {l.cancelled ? (
+                <span className="ep-w-state">ОТМЕНЕНО{l.cancelReason ? ` · ${l.cancelReason}` : ''}</span>
+              ) : l.served ? (
                 <span className="ep-w-state ep-w-state--served">
                   ПОДАНО{l.sentAt && l.servedAt ? ` · ${fmtDur(l.servedAt - l.sentAt)}` : ''}
                 </span>
               ) : l.sent && canServe ? (
-                <button className="ep-w-state ep-w-state--cooking" title="Отметить поданным" onClick={() => onServe(l.uid)}>
-                  {l.startedAt ? 'ГОТОВИТСЯ' : 'В ОЧЕРЕДИ'} {l.sentAt ? fmtDur(now - l.sentAt) : ''} → ПОДАТЬ ✓
+                <button
+                  className="ep-w-state ep-w-state--cooking"
+                  title={l.startedAt ? 'Отметить поданным' : 'Взять в работу'}
+                  onClick={() => (l.startedAt ? onServe(l.uid) : onStart(l.uid))}
+                >
+                  {l.startedAt ? 'ГОТОВИТСЯ' : 'В ОЧЕРЕДИ'} {l.sentAt ? fmtDur(now - l.sentAt) : ''}
+                  {l.startedAt ? ' → ПОДАТЬ ✓' : ' → В РАБОТУ'}
                 </button>
               ) : l.sent ? (
                 <span className="ep-w-state ep-w-state--cooking">

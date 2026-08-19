@@ -33,6 +33,7 @@ export function Kitchen() {
   useEffect(() => subscribeKitchen(setData, setConnected), [])
 
   const tickets = data?.tickets ?? []
+  const cancelled = data?.cancelled ?? []
   const summary = summarizeKitchen(tickets, now)
   const queued = tickets.filter(t => ticketState(t) === 'queued')
   const cooking = tickets.filter(t => ticketState(t) === 'cooking')
@@ -40,8 +41,8 @@ export function Kitchen() {
   const act = async (ticket: (typeof tickets)[number]) => {
     setBusy(ticket.uid)
     const done = ticket.startedAt
-      ? await markReady(ticket.tableId, ticket.uid)
-      : await takeToWork(ticket.tableId, ticket.uid)
+      ? await markReady(ticket.tableId, ticket.uid, ticket.sessionId)
+      : await takeToWork(ticket.tableId, ticket.uid, ticket.sessionId)
     if (!done) console.error('действие кухни не прошло')
     setBusy(null)
   }
@@ -61,6 +62,7 @@ export function Kitchen() {
           <Counter label="В очереди" value={String(summary.queued)} />
           <Counter label="В работе" value={String(summary.cooking)} />
           <Counter label="Столов" value={String(summary.tables)} />
+          <Counter label="Бар" value={String(tickets.filter(t => t.station === 'bar').length)} />
           <Counter
             label="Самое долгое"
             value={summary.oldestWaitMs === null ? '—' : fmtDur(summary.oldestWaitMs)}
@@ -80,6 +82,17 @@ export function Kitchen() {
           Выйти
         </button>
       </div>
+
+      {cancelled.length > 0 && (
+        <div className="ep-k-cancelled">
+          <div className="ep-k-lane-title">Отменено · снять с плиты</div>
+          <div className="ep-k-list">
+            {cancelled.map(t => (
+              <Ticket key={`c-${t.tableId}-${t.uid}`} ticket={t} now={now} busy={false} onAction={() => {}} />
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="ep-k-lanes">
         <div>
