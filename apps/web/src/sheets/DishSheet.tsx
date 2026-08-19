@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { allergenTags, defaultOptions, dietTags, dishEmoji, findDish, NAVY } from '../data'
+import { allergenTags, defaultOptions, dietTags, dishEmoji, findDish, NAVY, priceWithOptions } from '../data'
 import type { LineOptions } from '../data'
 import { BottomSheet, PrimaryButton, WarnBanner } from '../ui'
 import { useStore } from '../store'
@@ -235,7 +235,7 @@ export function DishSheet() {
           </span>
         </div>
         <PrimaryButton onClick={() => void add()} style={{ flex: 1, minHeight: 52, fontSize: 14.5 }}>
-          Добавить · {fmt(dish.price * qty)}
+          Добавить · {fmt(priceWithOptions(dish, opts) * qty)}
         </PrimaryButton>
       </div>
     </BottomSheet>

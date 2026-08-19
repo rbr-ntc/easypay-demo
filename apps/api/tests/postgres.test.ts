@@ -417,6 +417,25 @@ const snapshot = (table: string) =>
     assert.equal((await snapshot(table)).totals.remaining, 0)
   })
 
+  test('убранное из корзины блюдо не возвращается', async () => {
+    // Сервер отвечал «ок», позиция исчезала из памяти и оставалась в базе:
+    // гость жал крестик и не видел никакой реакции.
+    const table = '5'
+    await freeTable(table)
+    const guest = await joinGuest(table, 'Гость')
+    const added = await (await post(table, 'lines', { dishId: 'fries' }, { guest })).json()
+    await post(table, 'lines', { dishId: 'espresso' }, { guest })
+
+    assert.equal((await snapshot(table)).lines.length, 2)
+    const removed = await post(table, 'remove', { uid: added.uid }, { guest })
+    assert.equal(removed.status, 200)
+
+    const after = await snapshot(table)
+    assert.equal(after.lines.length, 1, 'позиция ушла и не вернулась при чтении')
+    assert.equal(after.lines[0].dishId, 'espresso')
+    assert.equal(after.totals.draftTotal, 180)
+  })
+
   test('журнал пишет, кто именно взял в работу и подал', async () => {
     const table = '22'
     await freeTable(table)

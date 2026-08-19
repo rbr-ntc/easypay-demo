@@ -86,12 +86,22 @@ export function Waiter() {
   const tipsTotal = (snap?.tips ?? []).reduce((s, t) => s + t.amount, 0)
 
   const confirmClose = () => {
-    // Стол с долгом закрывается только осознанно — сервер иначе откажет
+    // Осознанного подтверждения требуют две разные вещи: неоплаченный остаток
+    // и еда, которая ещё готовится. Вторую клиент раньше не умел подтверждать
+    // вовсе — зал советовал «Оплачен, закрыть», а закрыть было нечем.
     const debt = totals.remaining > 0.01
-    const question = debt
-      ? `По столу не оплачено ${fmt(totals.remaining)}. Закрыть с долгом? Это попадёт в журнал смены.`
+    const cooking = (snap?.lines ?? []).filter(l => l.sent && !l.served && !l.cancelled)
+
+    const reasons: string[] = []
+    if (debt) reasons.push(`не оплачено ${fmt(totals.remaining)}`)
+    if (cooking.length > 0) {
+      reasons.push(`на кухне ещё готовится: ${cooking.map(l => l.name ?? l.dishId).join(', ')}`)
+    }
+
+    const question = reasons.length
+      ? `${reasons.join('; ')}. Всё равно закрыть? Это попадёт в журнал смены.`
       : 'Закрыть стол?'
-    if (window.confirm(question)) void closeTable(debt)
+    if (window.confirm(question)) void closeTable(reasons.length > 0)
   }
 
   const confirmReset = () => {

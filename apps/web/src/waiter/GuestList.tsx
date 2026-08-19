@@ -15,10 +15,15 @@ function payLabelOf(paid: number, total: number, remaining: number): PayLabel {
 }
 
 function orderLabelOf(lines: ServerLine[], personaId: string): string {
-  if (lines.some(l => !l.sent && l.personaId === personaId)) return 'Выбирает'
-  const sent = lines.filter(l => l.sent && l.personaId === personaId)
+  const mine = lines.filter(l => l.personaId === personaId && !l.cancelled)
+  if (mine.some(l => !l.sent)) return 'Выбирает'
+
+  const sent = mine.filter(l => l.sent)
   if (!sent.length) return 'Смотрит меню'
-  return sent.every(l => l.served) ? 'Подано' : 'Готовится'
+  // Отменённые не ждут подачи — раньше из-за них гость с полностью съеденным
+  // заказом навсегда оставался «Готовится»
+  if (sent.every(l => l.served)) return 'Подано'
+  return sent.some(l => (l as any).readyAt && !l.served) ? 'Несут' : 'Готовится'
 }
 
 const PAY_CHIP: Record<PayLabel, string> = {

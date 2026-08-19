@@ -88,7 +88,11 @@ export function Payment() {
           sub: `${fmt(totals.myOwn)} ваше + ${fmt(totals.myShare)} доля общего`,
           disabled: totals.scopeAmount('own') <= 0
         },
-        { id: 'equal', label: 'Разделить поровну', sub: `${fmt(totals.tableTotal)} на ${totals.participants} гостей` },
+        {
+          id: 'equal',
+          label: 'Разделить поровну',
+          sub: `${fmt(totals.remaining)} на ${totals.participants} гостей`
+        },
         { id: 'full', label: 'Оплатить весь стол', sub: 'весь неоплаченный остаток' }
       ]
 

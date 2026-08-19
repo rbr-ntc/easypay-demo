@@ -193,6 +193,16 @@ export async function createPostgresStore(url?: string): Promise<Store> {
       `
     }
 
+    // Удалённые из корзины позиции надо именно удалить: раньше persist только
+    // вставлял и обновлял, поэтому убранное блюдо возвращалось при следующем
+    // чтении, а сервер честно отвечал «ок» — гость видел ноль реакции.
+    const keep = session.lines.map(l => l.uid)
+    await tx`
+      delete from order_lines
+      where table_session_id = ${sid}
+        ${keep.length ? tx`and seq <> all(${keep}::int[])` : tx``}
+    `
+
     for (const l of session.lines) {
       await tx`
         insert into order_lines (

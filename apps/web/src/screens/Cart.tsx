@@ -61,13 +61,27 @@ export function Cart() {
                     <div style={{ fontSize: 12, color: 'var(--ep-muted)', marginTop: 2 }}>{optionsLabel(l.options)}</div>
                   )}
                 </div>
-                <span style={{ fontSize: 14.5, color: 'var(--ep-text-2)' }}>{fmt(d.price * l.qty)}</span>
+                <span style={{ fontSize: 14.5, color: 'var(--ep-text-2)' }}>{fmt((l.price ?? d.price) * l.qty)}</span>
                 {l.sent ? (
                   <SentBadge />
                 ) : (
-                  <span style={{ cursor: 'pointer', fontSize: 13, color: 'var(--ep-muted)' }} onClick={() => void removeLine(l.uid)}>
+                  <button
+                    aria-label={`Убрать ${d.name}`}
+                    onClick={() => void removeLine(l.uid)}
+                    style={{
+                      // Раньше это был span 10×15 px — пальцем на телефоне не попасть
+                      width: 44,
+                      height: 44,
+                      flexShrink: 0,
+                      border: 'none',
+                      background: 'transparent',
+                      cursor: 'pointer',
+                      fontSize: 15,
+                      color: 'var(--ep-muted)'
+                    }}
+                  >
                     ✕
-                  </span>
+                  </button>
                 )}
               </div>
             )
@@ -138,7 +152,7 @@ export function Cart() {
                       {l.qty > 1 ? ` ×${l.qty}` : ''}
                       <span style={{ color: 'var(--ep-accent)', fontSize: 12 }}> · добавил(а) {nameOf(l.personaId)}</span>
                     </span>
-                    <span style={{ fontSize: 14, color: 'var(--ep-text-2)' }}>{fmt(d.price * l.qty)}</span>
+                    <span style={{ fontSize: 14, color: 'var(--ep-text-2)' }}>{fmt((l.price ?? d.price) * l.qty)}</span>
                     {l.sent ? (
                       <SentBadge />
                     ) : mineAdded ? (

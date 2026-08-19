@@ -2,6 +2,7 @@ import { useRef, useState } from 'react'
 import { newIdemKey } from '../keys'
 import { NAVY, WAITER_NAME } from '../data'
 import { PrimaryButton, StickyFooter } from '../ui'
+import { Avatar } from '../avatars'
 import { useStore, tipAmount } from '../store'
 import { fmt } from '../format'
 
@@ -47,7 +48,9 @@ export function Tips() {
               fontSize: 38
             }}
           >
-            👨‍🍳
+            {/* Продуктовый инвариант: аватары иллюстрированные, не эмодзи.
+                Здесь вдобавок стоял повар на экране благодарности официанту. */}
+            <Avatar animal="fox" size={64} label={snap?.waiter?.name ?? WAITER_NAME} />
           </div>
           <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: 'var(--ep-surface)', border: '1px solid var(--ep-border)', borderRadius: 'var(--ep-r-pill)', padding: '5px 12px', marginBottom: 16 }}>
             <span style={{ color: '#F4B400', fontSize: 13 }}>★</span>

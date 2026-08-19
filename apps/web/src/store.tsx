@@ -127,6 +127,8 @@ export interface Totals {
 // Считает ровно то же, что сервер: модель живёт в shared/money.js в одном экземпляре.
 // Клиентские суммы — только для отображения, списывает всегда сервер.
 export function computeTotals(snap: Snapshot | null, myId: string | null): Totals {
+  // Цена зафиксирована в позиции сервером и уже включает надбавку за модификатор.
+  // Меню тут только запасной вариант для позиций без цены.
   const core = computeMoney(snap ?? {}, id => findDish(id)?.price ?? 0)
   const server = snap?.totals
   const mine = myId ? server?.byPersona.find(p => p.personaId === myId) : undefined
@@ -141,7 +143,8 @@ export function computeTotals(snap: Snapshot | null, myId: string | null): Total
 
   const scopeAmount = (scope: PayScope) => {
     if (scope === 'full') return remaining
-    if (scope === 'equal') return Math.min(remaining, tableTotal / participants)
+    // Делим то, что ещё не оплачено: сосед мог заплатить свою часть раньше
+    if (scope === 'equal') return Math.min(remaining, remaining / participants || 0)
     return Math.min(myRemaining, remaining)
   }
 

@@ -21,7 +21,7 @@ function useNow(stepMs = 1000) {
   return now
 }
 
-function AttentionBar({ cards, now }: { cards: HallCard[]; now: number }) {
+function AttentionBar({ cards, now, onAck }: { cards: HallCard[]; now: number; onAck: (id: string, callId?: string) => void }) {
   const hot = cards
     .map(card => ({ card, ...describeTable(card, now) }))
     .filter(d => d.alerts.some(a => a.severity === 'warn' || a.severity === 'danger'))
@@ -37,12 +37,22 @@ function AttentionBar({ cards, now }: { cards: HallCard[]; now: number }) {
     <div className="ep-h-attention">
       <span className="ep-h-attention-title">Требуют внимания</span>
       {hot.map(({ card, alerts }) => (
-        <a
-          key={card.id}
-          className="ep-h-attention-chip"
-          href={`${window.location.pathname}?t=${encodeURIComponent(card.id)}#/waiter`}
-        >
+        <span key={card.id} className="ep-h-attention-item">
+          {card.call && (
+            <button
+              className="ep-h-ack"
+              title="Сказать гостю «иду»"
+              onClick={() => void onAck(card.id, card.call?.id)}
+            >
+              Иду
+            </button>
+          )}
+          <a
+            className="ep-h-attention-chip"
+            href={`${window.location.pathname}?t=${encodeURIComponent(card.id)}#/waiter`}
+          >
           <b>№{card.id}</b> {alerts.map(a => a.label).join(' · ')}
+          {(card.calls ?? 0) > 1 && <span className="ep-h-attention-more">+{(card.calls ?? 1) - 1}</span>}
           {(() => {
             // Возраст ожидания прямо на чипе: без него все вызовы одинаковые
             const since = Math.min(...alerts.map(a => a.since ?? now))
@@ -50,7 +60,8 @@ function AttentionBar({ cards, now }: { cards: HallCard[]; now: number }) {
               <span className="ep-h-attention-age">{fmtDur(now - since)}</span>
             ) : null
           })()}
-        </a>
+          </a>
+        </span>
       ))}
     </div>
   )
@@ -71,6 +82,19 @@ export function Hall() {
   const cards = onlyMine && hasOwnTables ? allCards.filter(c => ownsTable(staff, c.id)) : allCards
   // Считаем сводку локально: таймеры и «внимание» так обновляются каждую секунду
   const summary = summarizeHall(cards, hall?.shift ?? null, now)
+
+  /** «Иду» можно сказать прямо из зала: раньше за этим шли на экран стола. */
+  const ack = async (id: string, callId?: string) => {
+    try {
+      await fetch(`/api/t/${encodeURIComponent(id)}/ack`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-staff-token': getStaffToken() },
+        body: JSON.stringify({ callId })
+      })
+    } catch (err) {
+      console.error('не удалось снять вызов:', err)
+    }
+  }
 
   /** Стол убран — это факт от человека, а не истёкшие пять минут. */
   const clean = async (id: string) => {
@@ -124,7 +148,7 @@ export function Hall() {
       </div>
 
       <HallSummary summary={summary} />
-      <AttentionBar cards={cards} now={now} />
+      <AttentionBar cards={cards} now={now} onAck={ack} />
 
       {!hall && <div className="ep-h-zone ep-h-empty">Загружаем зал…</div>}
 

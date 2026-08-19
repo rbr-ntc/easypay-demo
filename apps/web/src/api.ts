@@ -272,7 +272,9 @@ export function subscribe(
   // Состав стола и деньги видит только свой: EventSource не умеет заголовки,
   // поэтому секрет передаётся параметром — гостевой у гостя, служебный у персонала.
   // Без этого экран официанта показывал пустой стол при живых гостях в зале.
-  const staff = getStaffToken()
+  // Личный секрет гостя старше служебного: иначе на общем устройстве гость
+  // подписывался бы токеном персонала и видел состав чужого стола
+  const staff = guestToken ? null : getStaffToken()
   const params = new URLSearchParams()
   if (guestToken) params.set('g', guestToken)
   if (staff) params.set('token', staff)
