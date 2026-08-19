@@ -1047,3 +1047,37 @@ test('семь быстрых нажатий «Добавить» — одна �
   await post(table, 'lines', { dishId: 'steak', qty: 1, idemKey: 'второй-стейк' }, { guest })
   assert.equal((await snapshot(table)).lines.length, 2, 'вторую порцию заказать по-прежнему можно')
 })
+
+test('стол после закрытия снова можно убрать, и он не зовёт официанта', async () => {
+  // Метка уборки переживала сессию: стол, убранный один раз за смену, после
+  // следующего закрытия убрать было нельзя — гостей сажали за неубранный.
+  // А вызов «принесите воды» висел в зале на уже свободном столе.
+  const table = '4'
+  await post(table, 'reset', { force: true }, { staff: TOKEN })
+
+  const first = await joinGuest(table, 'Первый', 'fox')
+  await post(table, 'lines', { dishId: 'fries' }, { guest: first.guest })
+  await post(table, 'send', { scope: 'mine' }, { guest: first.guest })
+  await post(table, 'pay', { scope: 'full', idemKey: 'cl-a' }, { guest: first.guest })
+  await staffAt(table, 'close', { force: true })
+  assert.equal((await staffAt(table, 'clean', {})).status, 200)
+
+  // Вторая посадка за ту же смену
+  const second = await joinGuest(table, 'Второй', 'bear')
+  await post(table, 'call', { reason: 'water' }, { guest: second.guest })
+  await post(table, 'lines', { dishId: 'espresso' }, { guest: second.guest })
+  await post(table, 'send', { scope: 'mine' }, { guest: second.guest })
+  await post(table, 'pay', { scope: 'full', idemKey: 'cl-b' }, { guest: second.guest })
+  await staffAt(table, 'close', { force: true })
+
+  const closed = await snapshot(table)
+  assert.equal(closed.calls.length, 0, 'вызовы не переживают закрытие стола')
+
+  const again = await staffAt(table, 'clean', {})
+  assert.equal(again.status, 200)
+  assert.equal((await again.json()).alreadyClean, undefined, 'убрать можно снова')
+
+  const hall = await (await fetch(`${base}/api/hall`, { headers: { 'x-staff-token': TOKEN } })).json()
+  const card = hall.tables.find(t => t.id === table)
+  assert.equal(card.cleanedAt > closed.closedAt, true, 'метка уборки от нового цикла')
+})
