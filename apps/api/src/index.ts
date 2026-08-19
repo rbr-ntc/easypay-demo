@@ -933,7 +933,6 @@ function staffAction(t: TableSession, tableId: string, action: string, body: any
       }
 
       // Долг запоминаем до отмены: отменённые позиции выпадают из счёта
-      t.closedWithDebt = round2(money.remaining)
       const cancelled = cancelPending(t, closing ? 'стол закрыт' : 'стол сброшен', actor)
       if (cancelled.count > 0) {
         audit(
@@ -948,19 +947,29 @@ function staffAction(t: TableSession, tableId: string, action: string, body: any
       // Отмена неподанного могла уронить счёт ниже оплаченного — это переплата гостя,
       // её нельзя прятать: по 54-ФЗ нужен возврат
       const after = computeTotals(t, priceOf)
+
+      // Долг снимаем ПОСЛЕ отмены: гость должен за то, что получил, а не за то,
+      // что успело уехать на кухню. Раньше сумма бралась до отмены и включала
+      // неподанное, а витрина пыталась это компенсировать вычитанием списаний —
+      // но там суммировались и позиции, отменённые самим гостём задолго до
+      // закрытия, которые в долг не входили никогда.
+      t.closedWithDebt = round2(after.remaining)
       const overpaid = round2(Math.max(0, after.paidTotal - after.tableTotal))
       if (overpaid > 0.01) {
         t.overpaid = overpaid
         audit(actor, 'переплата к возврату', tableId, 'за отменённое', overpaid)
       }
 
-      const withDebt = money.remaining > 0.01
+      // Журнал называет тот же долг, что чек и итоги смены: раньше сюда шли
+      // до-отменочные числа, и одна и та же сумма расходилась на четырёх экранах
+      const debt = round2(after.remaining)
+      const withDebt = debt > 0.01
       audit(
         actor,
         withDebt ? `${closing ? 'закрыл' : 'сбросил'} стол с долгом` : `${closing ? 'закрыл' : 'сбросил'} стол`,
         tableId,
-        `оплачено ${round2(money.paidTotal)} ₽${withDebt ? `, долг ${round2(money.remaining)} ₽` : ''}`,
-        withDebt ? round2(money.remaining) : round2(money.paidTotal)
+        `оплачено ${round2(after.paidTotal)} ₽${withDebt ? `, долг ${debt} ₽` : ''}`,
+        withDebt ? debt : round2(after.paidTotal)
       )
     }
 

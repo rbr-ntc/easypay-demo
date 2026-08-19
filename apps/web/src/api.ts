@@ -249,6 +249,49 @@ export async function apiStaffLogout(token: string = getStaffToken()): Promise<v
   }
 }
 
+export interface ShiftCheckLine {
+  name: string
+  qty: number
+  price: number
+  amount: number
+  guest: string | null
+  cancelled: boolean
+  cancelReason: string | null
+}
+
+export interface ShiftCheck {
+  tableId: string
+  sessionId: string
+  openedAt: number
+  closedAt: number
+  guests: number
+  waiter: string | null
+  lines: ShiftCheckLine[]
+  total: number
+  paid: number
+  debt: number
+  overpaid: number
+  tips: number
+  cancelledTotal: number
+}
+
+export interface ShiftChecksPayload {
+  shift: { closedRevenue: number; netRevenue?: number; overpaid: number; debt: number; writtenOff?: number }
+  checks: ShiftCheck[]
+  control: { checksPaid: number; closedRevenue: number; openPaid: number; matches: boolean }
+}
+
+/** Реестр чеков смены: то, чем сводят кассу. Только менеджеру. */
+export async function apiShiftChecks(): Promise<ShiftChecksPayload | null> {
+  try {
+    const res = await fetch('/api/shift/checks', { headers: { 'x-staff-token': getStaffToken() } })
+    if (!res.ok) return null
+    return (await res.json()) as ShiftChecksPayload
+  } catch {
+    return null
+  }
+}
+
 export async function apiShiftLog(): Promise<{ entries: LogEntry[] } | null> {
   try {
     const res = await fetch('/api/log', { headers: { 'x-staff-token': getStaffToken() } })

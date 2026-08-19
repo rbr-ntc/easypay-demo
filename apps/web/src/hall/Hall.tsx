@@ -4,6 +4,7 @@ import type { HallPayload } from '../hallApi'
 import { useStore } from '../store'
 import { HallSummary } from './HallSummary'
 import { ShiftLog } from './ShiftLog'
+import { ShiftChecks } from './ShiftChecks'
 import { TableCard } from './TableCard'
 import { describeTable, summarizeHall } from '@easypay/domain/hall'
 import { fmtDur } from '../waiter/duration'
@@ -187,6 +188,7 @@ export function Hall() {
         </div>
       )}
 
+      {may('log') && <ShiftChecks />}
       {may('log') && <ShiftLog />}
     </div>
   )

@@ -431,8 +431,15 @@ test('стол с долгом не закрыть случайно — толь
   assert.equal(forced.status, 200)
   assert.equal((await snapshot(table)).status, 'closed')
 
+  // Стейк на кухню отправили, но не подали — гость его не получил, значит
+  // и не должен за него. В журнале это списание с кухни, а не долг гостя.
   const log = await (await fetch(`${base}/api/log`, { headers: { 'x-staff-token': TOKEN } })).json()
-  assert.equal(log.entries.some(e => e.action === 'закрыл стол с долгом' && e.tableId === table), true)
+  assert.equal(log.entries.some(e => e.action === 'закрыл стол' && e.tableId === table), true)
+  assert.equal(
+    log.entries.some(e => e.action === 'списание с кухни' && e.tableId === table && e.amount === 1290),
+    true,
+    'неподанное списывается отдельной строкой'
+  )
 })
 
 test('закрытый стол не принимает заказы, а новый join открывает новую сессию', async () => {

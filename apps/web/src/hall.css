@@ -461,3 +461,62 @@
   font-size: 12px;
   font-weight: 640;
 }
+
+
+/* Реестр чеков: то, чем сводят кассу */
+.ep-h-checks { display: flex; flex-direction: column; gap: 12px; }
+
+.ep-h-control {
+  border-radius: 12px;
+  padding: 12px 14px;
+  border: 2px solid var(--ep-border);
+}
+
+.ep-h-control--ok { border-color: #1f9d55; background: rgba(31, 157, 85, 0.06); }
+.ep-h-control--bad { border-color: #9b1c1c; background: #fdecec; }
+
+.ep-h-control-head { font-weight: 700; font-size: 14px; margin-bottom: 8px; }
+
+.ep-h-control-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 13.5px;
+  padding: 2px 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.ep-h-check {
+  border: 1px solid var(--ep-border);
+  border-radius: 12px;
+  padding: 10px 12px;
+  background: var(--ep-surface);
+}
+
+.ep-h-check-head { display: flex; justify-content: space-between; gap: 10px; margin-bottom: 6px; }
+.ep-h-check-time { font-size: 12.5px; color: var(--ep-muted); }
+
+.ep-h-check-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 13px;
+  padding: 2px 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.ep-h-check-row--off { color: var(--ep-muted); text-decoration: line-through; }
+
+.ep-h-check-total {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--ep-soft);
+  font-size: 13px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.ep-h-check-debt { color: #9b1c1c; }
