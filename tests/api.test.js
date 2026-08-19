@@ -228,6 +228,23 @@ test('повтор оплаты с тем же ключом не списыва�
   assert.equal((await snapshot(table)).payments.length, 1)
 })
 
+test('оплата: неизвестный scope и отсутствие ключа — отказ, а не тихое «своё»', async () => {
+  const table = freshTable()
+  const { guest } = await joinGuest(table)
+  await post(table, 'lines', { dishId: 'tomyam' }, { guest })
+  await post(table, 'send', { scope: 'mine' }, { guest })
+
+  const weird = await post(table, 'pay', { scope: 'table', idemKey: 'p-weird' }, { guest })
+  assert.equal(weird.status, 400)
+  assert.equal((await weird.json()).error, 'unknown pay scope')
+
+  const noKey = await post(table, 'pay', { scope: 'own' }, { guest })
+  assert.equal(noKey.status, 400, 'без ключа ретрай спишет дважды')
+  assert.equal((await noKey.json()).error, 'idemKey required')
+
+  assert.equal((await snapshot(table)).payments.length, 0)
+})
+
 test('чаевые ограничены счётом, а не молча обрезаются', async () => {
   const table = freshTable()
   const { guest } = await joinGuest(table)
@@ -246,6 +263,35 @@ test('чаевые ограничены счётом, а не молча обр�
   const snap = await snapshot(table)
   assert.equal(snap.tips.length, 1)
   assert.equal(snap.totals.tableTotal, 150, 'чаевые в счёт стола не входят')
+
+  // потолок общий на стол, иначе обходится циклом мелких переводов
+  const second = await post(table, 'tip', { amount: 4800, idemKey: 't4' }, { guest })
+  assert.equal(second.status, 400)
+  assert.equal((await second.json()).error, 'tip too large')
+})
+
+test('закрытие с отменой неподанного показывает переплату, а не прячет её', async () => {
+  const table = freshTable()
+  const { guest } = await joinGuest(table)
+  await post(table, 'lines', { dishId: 'tomyam' }, { guest }) // 690
+  await post(table, 'lines', { dishId: 'espresso' }, { guest }) // 180
+  await post(table, 'send', { scope: 'mine' }, { guest })
+  await post(table, 'pay', { scope: 'full', idemKey: 'over-1' }, { guest }) // 870
+
+  // подали только суп, эспрессо остаётся на баре
+  const snap = await snapshot(table)
+  const soup = snap.lines.find(l => l.dishId === 'tomyam')
+  await staffAt(table, 'start', { uid: soup.uid })
+  await staffAt(table, 'serve', { uid: soup.uid })
+  await staffAt(table, 'close', {})
+
+  const log = await (await fetch(`${base}/api/log`, { headers: { 'x-staff-token': TOKEN } })).json()
+  const overpaid = log.entries.find(e => e.action === 'переплата к возврату' && e.tableId === table)
+  assert.equal(!!overpaid, true, 'деньги за отменённое нельзя молча оставить себе')
+  assert.equal(overpaid.detail.startsWith('180'), true)
+
+  const hall = await (await fetch(`${base}/api/hall`, { headers: { 'x-staff-token': TOKEN } })).json()
+  assert.equal(hall.summary.overpaid >= 180, true, 'переплата видна в итогах смены')
 })
 
 // --- Кухня ---

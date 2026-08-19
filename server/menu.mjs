@@ -2,6 +2,7 @@
 import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { allergensFor } from '../shared/allergens.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const MENU = JSON.parse(readFileSync(path.join(__dirname, '..', 'src', 'menu.json'), 'utf8'))
@@ -32,9 +33,10 @@ export function stationOf(id) {
   return DISHES.get(id)?.station ?? 'kitchen'
 }
 
-export function allergensOf(id) {
-  const ALLERGENS = new Set(['глютен', 'лактоза', 'орехи', 'арахис', 'рыба', 'морепродукты', 'яйцо', 'кунжут'])
-  return (DISHES.get(id)?.tags ?? []).filter(t => ALLERGENS.has(t))
+/** Аллергены позиции считаем с учётом выбранных модификаторов: овсяное молоко снимает
+ *  лактозу, миндальное добавляет орехи. Без опций получится ложь в обе стороны. */
+export function allergensOf(id, options = {}) {
+  return allergensFor(DISHES.get(id), options)
 }
 
 /**

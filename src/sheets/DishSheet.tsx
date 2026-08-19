@@ -95,10 +95,13 @@ export function DishSheet() {
           ))}
         </div>
 
-        {allergenTags(dish).length > 0 && (
-          <div style={{ fontSize: 12.5, color: 'var(--ep-muted)', marginBottom: 16 }}>
-            Аллергены: {allergenTags(dish).join(' · ')}
+        {allergenTags(dish, opts).length > 0 ? (
+          <div style={{ fontSize: 12.5, color: 'var(--ep-warn)', marginBottom: 16 }}>
+            Аллергены: {allergenTags(dish, opts).join(' · ')}
+            {(dish.options ?? []).some(o => o.effects) ? ' · зависит от выбора ниже' : ''}
           </div>
+        ) : (
+          <div style={{ fontSize: 12.5, color: 'var(--ep-ok)', marginBottom: 16 }}>Аллергенов из списка нет</div>
         )}
 
         {/* Кому блюдо — витрина УТП: привязка к персоне в момент заказа */}

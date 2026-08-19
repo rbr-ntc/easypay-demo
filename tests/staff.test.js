@@ -161,13 +161,21 @@ test('официант принимает вызов и закрывает св�
   assert.equal((await post(`/api/t/${table}/close`, { force: true }, { staff: max.token })).status, 200)
 })
 
-test('менеджеру можно всё, включая сброс, а мастер-токен работает как менеджер', async () => {
+test('сброс стола с долгом — тоже осознанное действие, а не чёрный ход', async () => {
   const { table } = await tableWithOrder()
   const manager = await login('9999')
-  assert.equal((await post(`/api/t/${table}/reset`, {}, { staff: manager.token })).status, 200)
+
+  const refused = await post(`/api/t/${table}/reset`, {}, { staff: manager.token })
+  assert.equal(refused.status, 409, 'иначе reset обходит защиту close от потери выручки')
+  assert.equal((await refused.json()).error, 'unpaid')
+
+  assert.equal((await post(`/api/t/${table}/reset`, { force: true }, { staff: manager.token })).status, 200)
 
   const other = await tableWithOrder()
-  assert.equal((await post(`/api/t/${other.table}/reset`, {}, { staff: MASTER })).status, 200)
+  assert.equal((await post(`/api/t/${other.table}/reset`, { force: true }, { staff: MASTER })).status, 200)
+
+  const hall = await (await get('/api/hall', manager.token)).json()
+  assert.equal(hall.shift.debt > 0, true, 'долг сброшенного стола виден в смене')
 })
 
 test('чаевые адресуются официанту стола и копятся за смену', async () => {

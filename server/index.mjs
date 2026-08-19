@@ -32,6 +32,7 @@ const shift = {
   tablesWithRevenue: 0,
   revenue: 0,
   debt: 0,
+  overpaid: 0,
   guests: 0,
   guestsSeen: 0,
   startedAt: Date.now(),
@@ -446,7 +447,10 @@ function guestAction(t, tableId, action, body, persona) {
   }
 
   if (action === 'pay') {
-    const scope = PAY_SCOPES.includes(body.scope) ? body.scope : 'own'
+    if (body.scope !== undefined && !PAY_SCOPES.includes(body.scope)) {
+      return fail(400, 'unknown pay scope', { allowed: PAY_SCOPES })
+    }
+    const scope = body.scope ?? 'own'
     const money = computeTotals(t, priceOf)
     const amount = round2(amountFor(money, persona.id, scope))
     if (amount <= 0) return fail(400, 'nothing to pay')
@@ -460,9 +464,10 @@ function guestAction(t, tableId, action, body, persona) {
     const raw = Number(body.amount)
     if (!Number.isFinite(raw) || raw <= 0) return fail(400, 'bad amount')
     const money = computeTotals(t, priceOf)
-    // Потолок привязан к счёту: чаевые 100 000 ₽ при счёте 150 ₽ — это ошибка ввода
+    // Потолок привязан к счёту и считается по СУММЕ чаевых стола: иначе обходится циклом
     const cap = Math.max(5000, round2(money.tableTotal))
-    if (raw > cap) return fail(400, 'tip too large', { cap })
+    const already = t.tips.reduce((sum, x) => sum + x.amount, 0)
+    if (round2(already + raw) > cap) return fail(400, 'tip too large', { cap, already: round2(already) })
     const amount = round2(raw)
     const waiter = waiterOfTable(tableId)
     t.tips.push({ personaId: persona.id, amount, at: Date.now(), waiterId: waiter?.id ?? null })
@@ -539,6 +544,15 @@ function staffAction(t, tableId, action, body, actor) {
       if (money.paidTotal > 0) shift.tablesWithRevenue += 1
       shift.debt += money.remaining
       const cancelled = cancelPending(t, 'стол закрыт')
+      // Отмена неподанного могла уронить счёт ниже оплаченного — это переплата гостя,
+      // её нельзя прятать: по 54-ФЗ нужен возврат
+      const after = computeTotals(t, priceOf)
+      const overpaid = round2(Math.max(0, after.paidTotal - after.tableTotal))
+      if (overpaid > 0.01) {
+        shift.overpaid += overpaid
+        t.overpaid = overpaid
+        audit(actor, 'переплата к возврату', tableId, `${overpaid} ₽ за отменённое`)
+      }
       const withDebt = money.remaining > 0.01
       audit(
         actor,
@@ -555,7 +569,17 @@ function staffAction(t, tableId, action, body, actor) {
     return ok()
   }
 
-  // reset: отменённые позиции оставляем, чтобы кухня увидела отмену
+  // reset: тот же порядок, что и close — иначе это чёрный ход мимо защиты от долга
+  if (t.status === 'open') {
+    const money = computeTotals(t, priceOf)
+    if (money.remaining > 0.01 && body.force !== true) {
+      return fail(409, 'unpaid', { remaining: round2(money.remaining) })
+    }
+    shift.debt += money.remaining
+    shift.revenue += money.paidTotal
+    if (money.paidTotal > 0) shift.tablesWithRevenue += 1
+    if (money.remaining > 0.01) audit(actor, 'сбросил стол с долгом', tableId, `долг ${round2(money.remaining)} ₽`)
+  }
   const cancelled = cancelPending(t, 'стол сброшен')
   const dead = { ...emptySession(), lines: t.lines.filter(l => l.cancelled) }
   tables.set(tableId, dead)
@@ -682,6 +706,10 @@ async function handleApi(req, res, url) {
   const body = await readBody(req).catch(() => null)
   if (body === null) return json(res, 400, { error: 'bad json' })
 
+  // Для денег ключ идемпотентности обязателен: без него ретрай спишет дважды
+  if ((action === 'pay' || action === 'tip') && !asId(body.idemKey)) {
+    return json(res, 400, { error: 'idemKey required' })
+  }
   const idemKey = IDEMPOTENT_ACTIONS.has(action) ? asId(body.idemKey) : null
   const cacheKey = idemKey && `${tableId}:${action}:${idemKey}`
   if (cacheKey) {

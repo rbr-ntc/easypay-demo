@@ -159,6 +159,34 @@ export function computeTotals(snap: Snapshot | null, myId: string | null): Total
   }
 }
 
+/** Человеческий текст вместо кода ошибки: гость должен понять, что делать дальше. */
+export function humanError(err: ApiError): string {
+  const map: Record<string, string> = {
+    'guest token required': 'Похоже, вы вышли из заказа. Откройте меню заново со своего QR',
+    'unknown guest': 'Этот заказ принадлежит другому гостю',
+    'not your persona': 'Заказывать можно только за себя',
+    'table closed': 'Стол уже закрыли. Отсканируйте QR, чтобы начать заново',
+    'unknown table': 'Такого стола нет в зале — проверьте QR на столе',
+    'table full': 'За столом уже максимум гостей',
+    'nothing to pay': 'Оплачивать пока нечего',
+    'nothing to send': 'Нечего отправлять на кухню',
+    'dish in stop list': 'Это блюдо сегодня закончилось',
+    'unknown dish': 'Такого блюда больше нет в меню',
+    'bad qty': 'Можно заказать от 1 до 9 порций',
+    'tip too large': 'Слишком большие чаевые для этого счёта',
+    'bad amount': 'Сумма чаевых указана неверно',
+    'locked or missing': 'Позиция уже уехала на кухню — её не убрать',
+    'not yours': 'Это позиция другого гостя',
+    'stale session': 'Стол успели закрыть — обновите страницу',
+    'idemKey required': 'Не получилось подтвердить платёж, попробуйте ещё раз'
+  }
+  if (map[err.message]) return map[err.message]
+  if (err.message.startsWith('bad value for')) return 'Такого варианта у блюда нет — выберите из списка'
+  if (err.message.startsWith('unknown option')) return 'Этот модификатор недоступен для блюда'
+  if (err.status >= 500) return 'Сервер не отвечает — попробуйте ещё раз'
+  return 'Не получилось — проверьте связь и попробуйте ещё раз'
+}
+
 export function tipAmount(ui: UiState): number {
   if (ui.tip === 'custom') return ui.tipCustom
   if (ui.tip === '0') return 0
@@ -254,12 +282,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const totals = useMemo(() => computeTotals(snap, personaId), [snap, personaId])
 
+  // Причину отказа объясняет сервер — гостю нужно показать её, а не «проверьте связь»
   const guard = async <T,>(fn: () => Promise<T>, fallback: T): Promise<T> => {
     try {
       return await fn()
     } catch (err) {
       console.error('api error:', err)
-      toast('Не получилось — проверьте связь и попробуйте ещё раз')
+      toast(err instanceof ApiError ? humanError(err) : 'Не получилось — проверьте связь и попробуйте ещё раз')
       return fallback
     }
   }

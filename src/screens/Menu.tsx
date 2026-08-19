@@ -1,4 +1,4 @@
-import { CATEGORIES, MENU, NAVY, HALL_LABEL, dishEmoji, dishMark } from '../data'
+import { CATEGORIES, MENU, NAVY, HALL_LABEL, dishEmoji, dishMark, possibleAllergens } from '../data'
 import { tableId } from '../api'
 import { Avatar } from '../avatars'
 import { PrimaryButton } from '../ui'
@@ -171,8 +171,13 @@ export function Menu() {
               </div>
               <div style={{ fontSize: 12.5, color: 'var(--ep-muted)', lineHeight: 1.4, margin: '3px 0 4px' }}>{it.desc}</div>
               {(it.serving || it.kcal) && (
-                <div style={{ fontSize: 11.5, color: 'var(--ep-muted)', marginBottom: 8 }}>
+                <div style={{ fontSize: 11.5, color: 'var(--ep-muted)', marginBottom: 4 }}>
                   {[it.serving, it.kcal ? `${it.kcal} ккал` : null].filter(Boolean).join(' · ')}
+                </div>
+              )}
+              {possibleAllergens(it).length > 0 && (
+                <div style={{ fontSize: 11.5, color: 'var(--ep-warn)', marginBottom: 8 }}>
+                  аллергены: {possibleAllergens(it).join(' · ')}
                 </div>
               )}
               <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', marginTop: 'auto' }}>

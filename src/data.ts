@@ -1,4 +1,5 @@
 import menuJson from './menu.json'
+import { allergensFor, dietTagsOf, possibleAllergensFor } from '../shared/allergens.js'
 import { tableId } from './api'
 import { HALL as HALL_CONFIG, seatsOfTable, zoneOfTable } from './hallConfig'
 
@@ -13,9 +14,12 @@ export interface DishOption {
   name: string
   choices: string[]
   default?: string
+  /** Что вариант добавляет или снимает по аллергенам. */
+  effects?: Record<string, { adds?: string[]; removes?: string[] }>
 }
 
 export interface Dish {
+  allergens?: string[]
   id: string
   name: string
   desc: string
@@ -30,15 +34,17 @@ export interface Dish {
 
 export type LineOptions = Record<string, string>
 
-/** Теги-аллергены отделяем от «диетических»: гостю это разные вопросы. */
-const ALLERGENS = new Set(['глютен', 'лактоза', 'орехи', 'арахис', 'рыба', 'морепродукты', 'яйцо', 'кунжут'])
+/** Аллергены и диета — разные вопросы гостя; список общий с сервером. */
+export function allergenTags(dish: Dish, options: LineOptions = {}): string[] {
+  return allergensFor(dish, options)
+}
 
-export function allergenTags(dish: Dish): string[] {
-  return (dish.tags ?? []).filter(t => ALLERGENS.has(t))
+export function possibleAllergens(dish: Dish): string[] {
+  return possibleAllergensFor(dish)
 }
 
 export function dietTags(dish: Dish): string[] {
-  return (dish.tags ?? []).filter(t => !ALLERGENS.has(t))
+  return dietTagsOf(dish)
 }
 
 const CATEGORY_EMOJI: Record<string, string> = {

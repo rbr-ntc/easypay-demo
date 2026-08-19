@@ -75,6 +75,7 @@ export function hallPayload(tables, shift) {
       revenue: round2(shift.revenue),
       guests: shift.guestsSeen,
       debt: round2(shift.debt),
+      overpaid: round2(shift.overpaid),
       tablesWithRevenue: shift.tablesWithRevenue,
       startedAt: shift.startedAt
     },
@@ -83,6 +84,7 @@ export function hallPayload(tables, shift) {
       // Одна выручка смены: закрытые столы + уже оплаченное на открытых
       closedRevenue: round2(shift.revenue),
       debt: round2(shift.debt),
+      overpaid: round2(shift.overpaid),
       // Средний чек считаем только по столам, где реально были деньги
       avgCheck: shift.tablesWithRevenue > 0 ? round2(shift.revenue / shift.tablesWithRevenue) : null,
       shiftGuests: shift.guestsSeen
@@ -116,7 +118,7 @@ export function kitchenPayload(tables) {
         dishId: line.dishId,
         name: dishName(line.dishId),
         station: stationOf(line.dishId),
-        allergens: allergensOf(line.dishId),
+        allergens: allergensOf(line.dishId, line.options ?? {}),
         qty: line.qty,
         options: line.options ?? {},
         shared: !!line.shared,
