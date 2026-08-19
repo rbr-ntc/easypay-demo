@@ -35,6 +35,8 @@ export interface HallCard {
   remaining: number
   sentCount: number
   kitchenPending: number
+  /** Готово и ждёт официанта: тарелка стоит на раздаче. */
+  readyCount?: number
   oldestPendingSentAt: number | null
   lastSentAt: number | null
   lastServedAt: number | null
@@ -71,6 +73,8 @@ export interface HallSummary {
   guests: number
   openBalance: number
   kitchenPending: number
+  /** Готово и ждёт официанта: тарелка стоит на раздаче. */
+  readyCount?: number
   attention: number
   shiftRevenue: number
   closedRevenue: number

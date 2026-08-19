@@ -236,7 +236,9 @@ interface Ctx {
     shared: boolean,
     options: LineOptions,
     asGuestToken?: string,
-    confirmAllergen?: boolean
+    confirmAllergen?: boolean,
+    /** Ключ намерения: один на карточку блюда, а не на каждый тап по кнопке. */
+    idemKey?: string
   ) => Promise<string[] | null>
   removeLine: (uid: number) => Promise<void>
   /** Отменить своё блюдо, пока кухня не взяла его в работу. */
@@ -372,11 +374,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         setSnap(r.snapshot)
         return r.snapshot.personas.find(p => p.id === r.personaId) ?? null
       }, null),
-    addLine: async (dishId, qty, shared, options, asGuestToken, confirmAllergen = false) => {
+    addLine: async (dishId, qty, shared, options, asGuestToken, confirmAllergen = false, idemKey) => {
       const token = asGuestToken ?? guestToken()
       if (!token) return null
       try {
-        await apiAddLine(token, dishId, qty, shared, options, newIdemKey(), confirmAllergen)
+        // Без ключа снаружи каждый повтор был бы новым намерением — и семь
+        // быстрых нажатий превращались в семь порций
+        await apiAddLine(token, dishId, qty, shared, options, idemKey ?? newIdemKey(), confirmAllergen)
         return null
       } catch (err) {
         // Аллерген — не ошибка связи: гостю нужен осознанный выбор, а не тост

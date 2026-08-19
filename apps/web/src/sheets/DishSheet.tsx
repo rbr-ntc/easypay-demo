@@ -1,8 +1,9 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { allergenTags, defaultOptions, dietTags, dishEmoji, findDish, NAVY, priceWithOptions } from '../data'
 import type { LineOptions } from '../data'
 import { BottomSheet, PrimaryButton, WarnBanner } from '../ui'
 import { useStore } from '../store'
+import { newIdemKey } from '../keys'
 import { fmt } from '../format'
 
 const MAX_QTY = 9 // столько же принимает сервер
@@ -17,18 +18,26 @@ export function DishSheet() {
   const [opts, setOpts] = useState<LineOptions>(() => (dish ? defaultOptions(dish) : {}))
   // Сервер остановил заказ: в блюде есть то, на что гость указал аллергию
   const [blocked, setBlocked] = useState<string[] | null>(null)
+  // Одно открытие карточки — одно намерение заказать. Повторные нажатия
+  // «Добавить» приходят на сервер с тем же ключом и не создают вторую порцию:
+  // количество выбирается плюсиком, а не частотой тапов.
+  const addKey = useRef(newIdemKey())
+  const [busy, setBusy] = useState(false)
   if (!dish) return null
 
   const close = () => patch({ sheet: null, currentDishId: null, pendingAdd: null })
 
   const add = async () => {
+    if (busy) return
     const shared = companyAtTable && target === 'table'
     if (!me) {
       // Имя спрашиваем ровно в момент первой надобности; блюдо НЕ теряется
       patch({ sheet: 'name', pendingAdd: { dishId: dish.id, qty, shared, options: opts } })
       return
     }
-    const hits = await addLine(dish.id, qty, shared, opts)
+    setBusy(true)
+    const hits = await addLine(dish.id, qty, shared, opts, undefined, false, addKey.current)
+    setBusy(false)
     if (hits && hits.length > 0) {
       // Не добавляем молча и не прячем за тостом: это здоровье, а не удобство
       setBlocked(hits)
@@ -42,7 +51,7 @@ export function DishSheet() {
   const addAnyway = async () => {
     const shared = companyAtTable && target === 'table'
     setBlocked(null)
-    await addLine(dish.id, qty, shared, opts, undefined, true)
+    await addLine(dish.id, qty, shared, opts, undefined, true, addKey.current)
     patch({ sheet: null, currentDishId: null })
     toast(`${dish.name} → ${me?.name ?? 'вам'}`)
   }

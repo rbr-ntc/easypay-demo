@@ -39,6 +39,12 @@ export function TableCard({
         {STATUS_LABEL[status]}
       </span>
 
+      {/* Готово и ждёт, пока унесут: раньше это число приходило в данных
+          и не показывалось ни на одном экране */}
+      {(card.readyCount ?? 0) > 0 && (
+        <span className="ep-h-ready">на раздаче {card.readyCount}</span>
+      )}
+
       {status === 'dirty' && onClean && (
         <button
           className="ep-h-clean"

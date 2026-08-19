@@ -1016,3 +1016,27 @@ test('гостю объясняют, что стол закрыли, а не ч�
   assert.equal(stale.status, 409)
   assert.equal((await stale.json()).error, 'session ended', 'причина названа человеческим языком')
 })
+
+test('семь быстрых нажатий «Добавить» — одна порция, а не семь', async () => {
+  // Ключ идемпотентности генерировался на каждый запрос, поэтому для сервера
+  // это были семь разных намерений, и он честно выполнял все семь. Количество
+  // выбирается плюсиком, а не частотой тапов по кнопке.
+  const table = freshTable()
+  const { guest } = await joinGuest(table)
+  const key = 'один-заказ-стейка'
+
+  // Гость колотит по кнопке: часть нажатий улетает параллельно
+  const rapid = await Promise.all(
+    Array.from({ length: 7 }, () => post(table, 'lines', { dishId: 'steak', qty: 1, idemKey: key }, { guest }))
+  )
+  assert.equal(rapid.every(r => r.status === 200), true, 'каждое нажатие отвечает спокойно')
+
+  const snap = await snapshot(table)
+  assert.equal(snap.lines.length, 1, 'в корзине одна позиция')
+  assert.equal(snap.lines[0].qty, 1)
+  assert.equal(snap.totals.draftTotal, 1290, 'и один счёт, а не семь')
+
+  // Осознанный повтор — это новое намерение с новым ключом
+  await post(table, 'lines', { dishId: 'steak', qty: 1, idemKey: 'второй-стейк' }, { guest })
+  assert.equal((await snapshot(table)).lines.length, 2, 'вторую порцию заказать по-прежнему можно')
+})
