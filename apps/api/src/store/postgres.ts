@@ -277,13 +277,19 @@ export async function createPostgresStore(url?: string): Promise<Store> {
         )
         select
           (select count(*) from s where closed_at is not null)                        as tables,
-          (select coalesce(sum(closed_with_debt), 0) from s where closed_at is not null) as debt,
+          (select coalesce(sum(closed_with_debt), 0) from s where closed_at is not null) as gross_debt,
+          (select coalesce(sum(ol.price * ol.qty), 0)
+             from order_lines ol join s on s.id = ol.table_session_id
+            where s.closed_at is not null and ol.cancelled_at is not null)              as written_off,
           (select coalesce(sum(overpaid), 0) from s where closed_at is not null)      as overpaid,
           (select coalesce(sum(p.amount), 0) from payments p join s on s.id = p.table_session_id) as revenue,
           (select coalesce(sum(p.amount), 0) from payments p join s on s.id = p.table_session_id
             where s.closed_at is not null) as closed_revenue,
           (select count(*) from guests g join s on s.id = g.table_session_id)         as guests_seen,
-          (select count(distinct p.table_session_id) from payments p join s on s.id = p.table_session_id) as tables_with_revenue,
+          (select count(distinct p.table_session_id) from payments p join s on s.id = p.table_session_id
+            where s.closed_at is not null)                                              as tables_with_revenue,
+          (select count(distinct p.table_session_id) from payments p join s on s.id = p.table_session_id
+            where s.closed_at is null)                                                  as open_tables_with_revenue,
           (select coalesce(min(sh.opened_at), now()) from shifts sh where sh.venue_id = ${venueId} and sh.closed_at is null) as started_at
       `
       const tipRows = await sql`
@@ -302,7 +308,10 @@ export async function createPostgresStore(url?: string): Promise<Store> {
         closedRevenue: Number(row.closed_revenue),
         tablesWithRevenue: Number(row.tables_with_revenue),
         revenue: Number(row.revenue),
-        debt: Number(row.debt),
+        // Долг — только за то, что гость получил: снятое с кухни он не ел
+        debt: Math.max(0, round2(Number(row.gross_debt) - Number(row.written_off))),
+        writtenOff: round2(Number(row.written_off)),
+        openTablesWithRevenue: Number(row.open_tables_with_revenue),
         overpaid: Number(row.overpaid),
         guests: Number(row.guests_seen),
         guestsSeen: Number(row.guests_seen),

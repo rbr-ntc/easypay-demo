@@ -18,7 +18,9 @@ export function SendSheet() {
   // Кто ещё не отправил свои блюда (реальные гости, не боты)
   const stillChoosing = snap.personas.filter(p => p.id !== me.id && unsentOthers.some(l => l.personaId === p.id))
 
-  const alone = snap.personas.length <= 1
+  // Выбор «моё / за весь стол» имеет смысл, только когда у соседей есть что отправить:
+  // иначе оба варианта дают одну и ту же сумму и гость гадает, в чём разница
+  const alone = snap.personas.length <= 1 || unsentOthers.length === 0
   const close = () => patch({ sheet: null })
   const scope: 'mine' | 'all' = alone ? 'mine' : ui.sendScope
   const checked = ui.sendChecked
@@ -74,6 +76,11 @@ export function SendSheet() {
               <div style={{ fontSize: 12, color: 'var(--ep-muted)', marginTop: 2 }}>
                 {unsentMine.length} поз. · {fmt(unsentMine.reduce((s, l) => s + price(l), 0))}
               </div>
+              {snap.personas.length > 1 && (
+                <div style={{ fontSize: 12, color: 'var(--ep-muted)', marginTop: 4 }}>
+                  У остальных за столом сейчас нечего отправлять
+                </div>
+              )}
             </div>
           </div>
         )}

@@ -1,21 +1,23 @@
 // Витрины персонала: карточки зала и очередь кухни. Считаются из состояния столов.
 import { computeTotals, isBillLine, round2 } from '@easypay/domain/money'
 import { summarizeHall } from '@easypay/domain/hall'
-import { sortTickets, summarizeKitchen } from '@easypay/domain/kitchen'
-import { dishName, priceOf, stationOf, allergensOf } from './menu.ts'
+import { sortTickets, summarizeKitchen, ticketUrgency } from '@easypay/domain/kitchen'
+import { dishName, priceOf, stationOf, allergensOf, removedAllergensOf } from './menu.ts'
 import { HALL, metaOf, planTables } from './hallplan.ts'
 import { waiterOfTable } from './staff.ts'
 import type { Call, TableSession } from './types.ts'
 
-/** Отменённые позиции ещё пять минут висят на кухне со статусом «отмена». */
-const CANCEL_VISIBLE_MS = 5 * 60_000
 
 function firstCall(table: TableSession) {
   const call = (table.calls ?? [])[0]
   if (!call) return null
   return {
+    // id нужен, чтобы снять вызов одним запросом: раньше официант шёл за ним в стол
+    id: call.id,
     at: call.at,
     reason: call.reason,
+    // Текст гостя: «аллергия на орехи» — официант идёт подготовленным
+    note: call.note ?? null,
     name: table.personas.find(p => p.id === call.personaId)?.name ?? 'Гость'
   }
 }
@@ -40,6 +42,8 @@ export function hallCard(id: string, table: TableSession) {
     status: table.status,
     openedAt: table.openedAt,
     closedAt: table.closedAt,
+    // Стол свободен, когда его убрали, а не когда прошло пять минут
+    cleanedAt: table.cleanedAt ?? null,
     guests: table.personas.length,
     personas: table.personas.map(p => ({ name: p.name, animal: p.animal })),
     tableTotal: round2(money.tableTotal),
@@ -79,20 +83,14 @@ export function hallPayload(tables: Map<string, TableSession>, shift: any) {
       closedRevenue: round2(shift.closedRevenue),
       guests: shift.guestsSeen,
       debt: round2(shift.debt),
+      // Снятое с кухни: еду не отдали, ингредиенты потеряли — это не долг гостя
+      writtenOff: round2(shift.writtenOff ?? 0),
+      tips: round2(Object.values(shift.tipsByStaff ?? {}).reduce((s: number, x: any) => s + Number(x), 0)),
       overpaid: round2(shift.overpaid),
       tablesWithRevenue: shift.tablesWithRevenue,
       startedAt: shift.startedAt
     },
-    summary: {
-      ...summary,
-      // Одна выручка смены: закрытые столы + уже оплаченное на открытых
-      closedRevenue: round2(shift.closedRevenue),
-      debt: round2(shift.debt),
-      overpaid: round2(shift.overpaid),
-      // Средний чек считаем только по столам, где реально были деньги
-      avgCheck: shift.tablesWithRevenue > 0 ? round2(shift.closedRevenue / shift.tablesWithRevenue) : null,
-      shiftGuests: shift.guestsSeen
-    },
+    summary,
     now
   }
 }
@@ -123,6 +121,10 @@ export function kitchenPayload(tables: Map<string, TableSession>) {
         name: dishName(line.dishId),
         station: stationOf(line.dishId),
         allergens: allergensOf(line.dishId, line.options ?? {}),
+        // Аллергены, снятые модификатором: для повара это не пожелание, а запрет
+        removedAllergens: removedAllergensOf(line.dishId, line.options ?? {}),
+        // Живой текст гостя: «аллергия на орехи, критично»
+        comment: line.comment ?? null,
         qty: line.qty,
         options: line.options ?? {},
         shared: !!line.shared,
@@ -135,8 +137,16 @@ export function kitchenPayload(tables: Map<string, TableSession>) {
       }
 
       if (line.cancelled) {
-        if (line.cancelledAt && now - line.cancelledAt < CANCEL_VISIBLE_MS) {
-          cancelled.push({ ...base, cancelledAt: line.cancelledAt, reason: line.cancelReason ?? 'стол закрыт' })
+        // Отмена висит, пока повар её не подтвердит: блюдо может быть уже на плите,
+        // а таймер молча снимал запись раньше, чем повар подходил к экрану
+        if (!line.cancelAck) {
+          cancelled.push({
+            ...base,
+            cancelledAt: line.cancelledAt,
+            reason: line.cancelReason ?? 'стол закрыт',
+            // Блюдо уже было на плите — это потеря продукта, а не просто вычерк
+            wasCooking: !!line.startedAt
+          })
         }
         continue
       }
@@ -154,7 +164,8 @@ export function kitchenPayload(tables: Map<string, TableSession>) {
       ...summarizeKitchen(sorted, now),
       bar: sorted.filter(t => t.station === 'bar').length,
       kitchen: sorted.filter(t => t.station === 'kitchen').length,
-      cancelled: cancelled.length
+      cancelled: cancelled.length,
+      warn: sorted.filter(x => ticketUrgency(x as any, now) === 'warn').length
     },
     now
   }

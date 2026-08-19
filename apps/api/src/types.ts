@@ -9,6 +9,8 @@ export interface Persona {
   joinedAt: number
   /** Хеш личного токена гостя: сам токен отдаётся один раз при join. */
   secretHash: string
+  /** Заявленные аллергии гостя: система обязана предупреждать сама. */
+  allergies?: string[]
 }
 
 export interface Line {
@@ -32,9 +34,25 @@ export interface Line {
   startedBy?: string | null
   servedBy?: string | null
   cancelledBy?: string | null
+  /** Повар подтвердил, что снял блюдо с плиты. */
+  cancelAck?: boolean
+  /** Живой текст гостя к блюду: «без орехов, аллергия». Доезжает до повара. */
+  comment?: string | null
+}
+
+export interface ReceiptLine {
+  name: string
+  qty: number
+  price: number
+  shared: boolean
+  share: number | null
 }
 
 export interface Payment {
+  /** Номер чека, который гость может назвать в споре. */
+  receiptNo?: string
+  /** За что именно списаны деньги. */
+  lines?: ReceiptLine[]
   id: string
   personaId: string
   amount: number
@@ -55,9 +73,13 @@ export interface Call {
   at: number
   personaId: string
   reason: string
+  /** Текст гостя к вызову: «аллергия на орехи». */
+  note?: string | null
 }
 
 export interface TableSession {
+  /** Момент, когда стол реально убрали: свободен по факту, а не по таймеру. */
+  cleanedAt?: number | null
   sessionId: string | null
   status: 'open' | 'closed'
   openedAt: number | null
@@ -116,6 +138,10 @@ export interface Shift {
   tablesWithRevenue: number
   revenue: number
   debt: number
+  /** Стоимость снятого с кухни: еда не отдана, это не долг гостя. */
+  writtenOff?: number
+  /** Открытые столы, где уже были платежи. */
+  openTablesWithRevenue?: number
   overpaid: number
   guests: number
   guestsSeen: number

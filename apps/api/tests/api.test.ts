@@ -26,7 +26,9 @@ function post(table, action, body = {}, opts = {}) {
   return fetch(`${base}/api/t/${table}/${action}`, { method: 'POST', headers, body: JSON.stringify(body) })
 }
 
-const snapshot = table => fetch(`${base}/api/t/${table}`).then(r => r.json())
+// Снапшот отдаётся только своим: в тестах читаем персоналом
+const snapshot = table =>
+  fetch(`${base}/api/t/${table}`, { headers: { 'x-staff-token': TOKEN } }).then(r => r.json())
 
 /** Гость садится за стол и получает личный токен — им он и действует. */
 async function joinGuest(table, name = 'Аня', animal = 'fox') {
@@ -364,6 +366,39 @@ test('закрытие стола отменяет то, что висит на 
   const cancelled = kitchen.cancelled.find(t => t.tableId === table)
   assert.equal(!!cancelled, true, 'но повар видит отмену')
   assert.equal(cancelled.reason, 'стол закрыт')
+  // Денег на кухонном экране быть не должно: он висит у плиты и его видят все
+  assert.equal(cancelled.amount, undefined, 'цена не уезжает на экран кухни')
+  assert.equal(cancelled.wasCooking, false, 'блюдо не успели взять в работу')
+})
+
+test('отмена висит на кухне, пока повар не подтвердит', async () => {
+  const table = freshTable()
+  const { guest } = await joinGuest(table)
+  await post(table, 'lines', { dishId: 'risotto' }, { guest })
+  await post(table, 'send', { scope: 'mine' }, { guest })
+  const snap = await snapshot(table)
+  const uid = snap.lines[0].uid
+  await post(table, 'pay', { scope: 'full', idemKey: 'dm1' }, { guest })
+  await staffAt(table, 'close', {})
+
+  const board = () =>
+    fetch(`${base}/api/kitchen`, { headers: { 'x-staff-token': TOKEN } })
+      .then(r => r.json())
+      .then(k => k.cancelled.find(t => t.tableId === table))
+
+  assert.equal(!!(await board()), true, 'сразу после закрытия отмена на экране')
+
+  // Раньше карточка снималась таймером — блюдо могло остаться на плите
+  const dismissed = await staffAt(table, 'dismiss', { uid })
+  assert.equal(dismissed.status, 200)
+  assert.equal(await board(), undefined, 'ушла только после подтверждения повара')
+
+  const log = await (await fetch(`${base}/api/log`, { headers: { 'x-staff-token': TOKEN } })).json()
+  assert.equal(
+    log.entries.some(e => e.action === 'снял отменённое с плиты' && e.tableId === table),
+    true,
+    'подтверждение попадает в журнал'
+  )
 })
 
 // --- Закрытие и смена ---
@@ -472,9 +507,10 @@ test('кривой id стола, битый JSON и стол вне плана 
 
 test('SSE стола отдаёт снапшот сразу после подключения', async () => {
   const table = freshTable()
-  await joinGuest(table, 'Аня', 'fox')
+  const { guest } = await joinGuest(table, 'Аня', 'fox')
   const chunk = await new Promise((resolve, reject) => {
-    const req = http.get(`${base}/api/t/${table}/stream`, res => {
+    // Поток стола отдаётся только своим — секрет гостя идёт параметром
+    const req = http.get(`${base}/api/t/${table}/stream?g=${encodeURIComponent(guest)}`, res => {
       res.setEncoding('utf8')
       res.once('data', data => {
         req.destroy()
@@ -486,4 +522,190 @@ test('SSE стола отдаёт снапшот сразу после подк�
   assert.match(chunk, /^data: /)
   const snap = JSON.parse(chunk.replace(/^data: /, ''))
   assert.equal(snap.personas[0].name, 'Аня')
+})
+
+// --- Чек, аллергии, отмена гостем, уборка стола ---
+
+test('оплата отдаёт чек с номером и составом, а не голое «ок»', async () => {
+  const table = freshTable()
+  const { guest } = await joinGuest(table)
+  await post(table, 'lines', { dishId: 'steak' }, { guest })
+  await post(table, 'send', { scope: 'mine' }, { guest })
+
+  const res = await post(table, 'pay', { scope: 'own', idemKey: 'rc-1' }, { guest })
+  const body = await res.json()
+
+  assert.equal(typeof body.receipt?.no, 'string', 'номер операции есть')
+  assert.equal(body.receipt.amount, 1290)
+  assert.equal(body.receipt.table, table)
+  assert.equal(
+    body.receipt.lines.some(l => l.name === 'Стейк рибай'),
+    true,
+    'в чеке видно, за что списаны деньги'
+  )
+
+  // Чек переживает перезагрузку экрана: гость может вернуться к нему позже
+  const snap = await snapshot(table)
+  assert.equal(snap.payments[0].receiptNo, body.receipt.no)
+})
+
+test('блюдо с заявленным аллергеном не заказывается молча', async () => {
+  const table = freshTable()
+  const joined = await (
+    await post(table, 'join', { name: 'Нина', animal: 'owl', allergies: ['лактоза'], idemKey: 'alg-1' })
+  ).json()
+  const guest = joined.guestToken
+
+  const snap0 = await snapshot(table)
+  assert.deepEqual(snap0.personas[0].allergies, ['лактоза'], 'аллергия записана в профиль')
+
+  // Капучино на коровьем молоке — лактоза
+  const blocked = await post(table, 'lines', { dishId: 'cappuccino' }, { guest })
+  assert.equal(blocked.status, 409)
+  const body = await blocked.json()
+  assert.equal(body.error, 'allergen warning')
+  assert.deepEqual(body.allergens, ['лактоза'])
+  assert.equal((await snapshot(table)).lines.length, 0, 'позиция не создалась')
+
+  // Осознанное подтверждение — заказ проходит
+  const ok = await post(table, 'lines', { dishId: 'cappuccino', confirmAllergen: true }, { guest })
+  assert.equal(ok.status, 200)
+
+  // Овсяное молоко снимает лактозу — предупреждать не о чем
+  const oat = await post(table, 'lines', { dishId: 'cappuccino', options: { milk: 'Овсяное' } }, { guest })
+  assert.equal(oat.status, 200, 'модификатор снял аллерген — блокировать нечего')
+})
+
+test('гость отменяет своё, пока кухня не взялась', async () => {
+  const table = freshTable()
+  const { guest } = await joinGuest(table)
+  await post(table, 'lines', { dishId: 'espresso' }, { guest })
+  await post(table, 'send', { scope: 'mine' }, { guest })
+
+  const snap = await snapshot(table)
+  const uid = snap.lines[0].uid
+  assert.equal(snap.totals.tableTotal, 180)
+
+  const done = await post(table, 'cancelMine', { uid }, { guest })
+  assert.equal(done.status, 200)
+
+  const after = await snapshot(table)
+  assert.equal(after.lines[0].cancelled, true)
+  assert.equal(after.totals.tableTotal, 0, 'отменённое уходит из счёта')
+
+  // Второй заказ, который кухня уже взяла в работу, отменить нельзя
+  await post(table, 'lines', { dishId: 'espresso' }, { guest })
+  await post(table, 'send', { scope: 'mine' }, { guest })
+  const snap2 = await snapshot(table)
+  const uid2 = snap2.lines.find(l => !l.cancelled).uid
+  await staffAt(table, 'start', { uid: uid2 })
+
+  const late = await post(table, 'cancelMine', { uid: uid2 }, { guest })
+  assert.equal(late.status, 409)
+  assert.equal((await late.json()).error, 'already cooking')
+})
+
+test('стол свободен, когда его убрали, а не когда прошло время', async () => {
+  // Стол из плана зала: карточка должна быть видна и после закрытия
+  const table = '4'
+  await post(table, 'reset', { force: true }, { staff: TOKEN })
+  const { guest } = await joinGuest(table)
+  await post(table, 'lines', { dishId: 'fries' }, { guest })
+  await post(table, 'send', { scope: 'mine' }, { guest })
+  await post(table, 'pay', { scope: 'full', idemKey: 'cl-1' }, { guest })
+  await staffAt(table, 'close', {})
+
+  const hall = () =>
+    fetch(`${base}/api/hall`, { headers: { 'x-staff-token': TOKEN } })
+      .then(r => r.json())
+      .then(h => h.tables.find(t => t.id === table))
+
+  assert.equal((await hall()).cleanedAt, null, 'пока не убрали — грязный')
+
+  const done = await staffAt(table, 'clean', {})
+  assert.equal(done.status, 200)
+  assert.equal(typeof (await hall()).cleanedAt, 'number', 'уборка зафиксирована фактом')
+})
+
+test('комментарий к блюду доезжает до кухни, а не теряется молча', async () => {
+  const table = freshTable()
+  const { guest } = await joinGuest(table)
+  await post(table, 'lines', { dishId: 'fries', comment: 'Аллергия на орехи, критично' }, { guest })
+  await post(table, 'send', { scope: 'mine' }, { guest })
+
+  const board = await (await fetch(`${base}/api/kitchen`, { headers: { 'x-staff-token': TOKEN } })).json()
+  const ticket = board.tickets.find(t => t.tableId === table)
+  assert.equal(ticket.comment, 'Аллергия на орехи, критично')
+})
+
+test('вызов официанта отвечает id и не проглатывает чужую причину', async () => {
+  const table = freshTable()
+  const { guest } = await joinGuest(table)
+
+  const bad = await post(table, 'call', { reason: 'У меня аллергия на орехи' }, { guest })
+  assert.equal(bad.status, 400, 'неизвестная причина — честная ошибка, а не тихое «ок»')
+
+  const called = await post(table, 'call', { reason: 'help', note: 'аллергия на орехи' }, { guest })
+  const body = await called.json()
+  assert.equal(typeof body.callId, 'string', 'гость видит, что его услышали')
+
+  const again = await post(table, 'call', { reason: 'help' }, { guest })
+  assert.equal((await again.json()).repeated, true)
+
+  const snap = await snapshot(table)
+  assert.equal(snap.calls[0].note, 'аллергия на орехи', 'текст доезжает до официанта')
+})
+
+test('вызов «принесите счёт» гаснет сам после полной оплаты', async () => {
+  const table = freshTable()
+  const { guest } = await joinGuest(table)
+  await post(table, 'lines', { dishId: 'lemonade' }, { guest })
+  await post(table, 'send', { scope: 'mine' }, { guest })
+  await post(table, 'call', { reason: 'bill' }, { guest })
+
+  assert.equal((await snapshot(table)).calls.length, 1)
+  await post(table, 'pay', { scope: 'full', idemKey: 'bill-1' }, { guest })
+
+  assert.equal((await snapshot(table)).calls.length, 0, 'официант не идёт с папкой к расплатившемуся')
+})
+
+test('неудачный join не открывает стол', async () => {
+  const table = freshTable()
+  const bad = await post(table, 'join', { name: 'Кто-то', animal: 'дракон', idemKey: 'bad-join' })
+  assert.equal(bad.status, 400)
+
+  const snap = await snapshot(table)
+  assert.equal(snap.status, 'closed', 'упавшая проверка не оставляет ресторану занятый стол')
+  assert.equal(snap.openedAt, null)
+})
+
+test('состав стола не виден постороннему', async () => {
+  const table = freshTable()
+  const { guest } = await joinGuest(table, 'Нина', 'owl')
+  await post(table, 'lines', { dishId: 'steak' }, { guest })
+  await post(table, 'send', { scope: 'mine' }, { guest })
+
+  // Без токена: стол существует и занят — и всё
+  const stub = await fetch(`${base}/api/t/${table}`).then(r => r.json())
+  assert.equal(stub.limited, true)
+  assert.deepEqual(stub.personas, [])
+  assert.deepEqual(stub.lines, [])
+  assert.equal(stub.totals.tableTotal, 0)
+  assert.equal(stub.occupied, 1, 'занятость видна — она не секрет')
+
+  // Со своим секретом — полная картина
+  const mine = await fetch(`${base}/api/t/${table}`, { headers: { 'x-guest-token': guest } }).then(r => r.json())
+  assert.equal(mine.personas[0].name, 'Нина')
+  assert.equal(mine.totals.tableTotal, 1290)
+})
+
+test('pay понимает словарь send: mine и all — не ошибка', async () => {
+  const table = freshTable()
+  const { guest } = await joinGuest(table)
+  await post(table, 'lines', { dishId: 'greek' }, { guest })
+  await post(table, 'send', { scope: 'mine' }, { guest })
+
+  const paid = await post(table, 'pay', { scope: 'mine', idemKey: 'alias-1' }, { guest })
+  assert.equal(paid.status, 200, 'соседние ручки не должны требовать разных слов')
+  assert.equal((await paid.json()).amount, 590)
 })

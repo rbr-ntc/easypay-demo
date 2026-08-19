@@ -9,15 +9,18 @@ import { existsSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import crypto from 'node:crypto'
-import { amountFor, computeTotals, PAY_SCOPES, round2 } from '@easypay/domain/money'
+import { amountFor, computeTotals, isBillLine, PAY_SCOPES, round2 } from '@easypay/domain/money'
+import type { PayScope } from '@easypay/domain/money'
 import { can, ownsTable } from '@easypay/domain/roles'
 import type { Permission } from '@easypay/domain/roles'
-import { checkOptions, dishName, getDish, priceOf } from './menu.ts'
+import { allergensOf, checkOptions, dishName, getDish, menuPayload, priceOf } from './menu.ts'
+import { ALLERGENS } from '@easypay/domain/allergens'
 import { isKnownTable, seatsOf } from './hallplan.ts'
 import { hallPayload, kitchenPayload } from './feeds.ts'
 import { createStore, type Store } from './store/index.ts'
 import {
   dropSession,
+  wasRevoked,
   loginAllowed,
   loginByPin,
   sessionStaff,
@@ -145,6 +148,10 @@ function publicLine(line: any) {
     qty: line.qty,
     price: line.price,
     options: line.options ?? {},
+    // Состав с учётом модификаторов: гость должен иметь возможность перепроверить,
+    // что он съест, уже после отправки на кухню
+    allergens: allergensOf(line.dishId, line.options ?? {}),
+    comment: line.comment ?? null,
     shared: !!line.shared,
     sharedWith: line.sharedWith ?? [],
     personaId: line.personaId,
@@ -172,11 +179,31 @@ function snapshot(t: TableSession, id: string) {
     status: t.status,
     openedAt: t.openedAt,
     closedAt: t.closedAt,
-    personas: t.personas.map(p => ({ id: p.id, name: p.name, animal: p.animal, joinedAt: p.joinedAt })),
+    personas: t.personas.map(p => ({
+      id: p.id,
+      name: p.name,
+      animal: p.animal,
+      joinedAt: p.joinedAt,
+      allergies: p.allergies ?? []
+    })),
     lines: t.lines.map(publicLine),
-    payments: t.payments.map(p => ({ personaId: p.personaId, amount: p.amount, scope: p.scope, at: p.at })),
+    payments: t.payments.map(p => ({
+      personaId: p.personaId,
+      amount: p.amount,
+      scope: p.scope,
+      at: p.at,
+      receiptNo: p.receiptNo ?? null,
+      lines: p.lines ?? []
+    })),
     tips: t.tips.map(x => ({ personaId: x.personaId, amount: x.amount, at: x.at, waiterId: x.waiterId })),
-    calls: t.calls.map(c => ({ id: c.id, at: c.at, personaId: c.personaId, reason: c.reason, name: nameOf(c.personaId) })),
+    calls: t.calls.map(c => ({
+      id: c.id,
+      at: c.at,
+      personaId: c.personaId,
+      reason: c.reason,
+      note: c.note ?? null,
+      name: nameOf(c.personaId)
+    })),
     call: t.calls[0] ? { ...t.calls[0], name: nameOf(t.calls[0].personaId) } : null,
     waiter: waiterOfTable(id),
     seats: seatsOf(id),
@@ -197,6 +224,39 @@ function snapshot(t: TableSession, id: string) {
       }))
     }
   }
+}
+
+/**
+ * Что видно постороннему: стол существует, занят или свободен, сколько мест.
+ * Ни имён, ни блюд, ни денег — гость по QR должен понять, куда он сел,
+ * а не прочитать выписку по соседям.
+ */
+function publicStub(t: TableSession, id: string) {
+  return {
+    tableId: id,
+    sessionId: null,
+    status: t.status,
+    openedAt: t.openedAt,
+    closedAt: t.closedAt,
+    occupied: t.personas.length,
+    seats: seatsOf(id),
+    personas: [],
+    lines: [],
+    payments: [],
+    tips: [],
+    calls: [],
+    call: null,
+    waiter: null,
+    limited: true,
+    totals: { tableTotal: 0, paidTotal: 0, remaining: 0, sharedTotal: 0, draftTotal: 0, byPersona: [] }
+  }
+}
+
+/** Гость этого стола — тот, чей секрет совпал с одной из персон сессии. */
+function guestOf(t: TableSession, token: unknown): Persona | null {
+  if (!token) return null
+  const hash = hashToken(token)
+  return t.personas.find(p => p.secretHash === hash) ?? null
 }
 
 function pushTo(subscribers: Set<any>, payload: unknown) {
@@ -283,19 +343,36 @@ async function serveStatic(req: any, res: any, pathname: string) {
 const NAME_MAX = 30
 const ANIMALS = new Set(['fox', 'bear', 'panda', 'raccoon', 'owl', 'cat'])
 const TABLE_RE = /^[A-Za-z0-9_-]{1,24}$/
-const STAFF_ACTIONS = new Set(['serve', 'start', 'close', 'reset', 'ack'])
-const GUEST_ACTIONS = new Set(['lines', 'remove', 'send', 'pay', 'tip', 'call'])
+const STAFF_ACTIONS = new Set(['serve', 'start', 'close', 'reset', 'ack', 'dismiss', 'clean'])
+const GUEST_ACTIONS = new Set(['lines', 'remove', 'send', 'pay', 'tip', 'call', 'cancelMine'])
 const IDEMPOTENT_ACTIONS = new Set(['join', 'lines', 'pay', 'tip'])
 const CALL_REASONS = new Set(['help', 'bill', 'water'])
+// send говорит mine/all, pay — own/full. Принимаем оба словаря, чтобы разница
+// между соседними ручками не стоила гостю ошибки
+const PAY_SCOPE_ALIASES: Record<string, PayScope> = { mine: 'own', all: 'full' }
 const MAX_QTY = 9
 
 function sanitizeName(name: unknown): string {
   return String(name ?? '')
     .replace(/[<>]/g, '')
     // eslint-disable-next-line no-control-regex
-    .replace(/[ -]/g, '')
+    .replace(/[\u0000-\u001f\u007f]/g, '')
     .trim()
     .slice(0, NAME_MAX)
+}
+
+const NOTE_MAX = 200
+
+/** Заметка гостя: живой текст, но без разметки и управляющих символов. */
+function sanitizeNote(note: unknown): string | null {
+  if (note === undefined || note === null) return null
+  const clean = String(note)
+    .replace(/[<>]/g, '')
+    // eslint-disable-next-line no-control-regex
+    .replace(/[\u0000-\u001f\u007f]/g, ' ')
+    .trim()
+    .slice(0, NOTE_MAX)
+  return clean.length > 0 ? clean : null
 }
 
 const asId = (v: unknown): string | null => (typeof v === 'string' && v.length > 0 && v.length <= 64 ? v : null)
@@ -355,12 +432,24 @@ export function mutate(
 
 function joinGuest(t: TableSession, tableId: string, body: any): MutationResult {
   if (!isKnownTable(tableId)) return fail(404, 'unknown table')
-  if (t.status !== 'open') openSessionInPlace(t)
+
+  // Сначала все проверки, только потом открытие сессии: упавший join не должен
+  // оставлять ресторану «занятый» стол без единого гостя
+  if (body.animal !== undefined && !ANIMALS.has(body.animal)) {
+    return fail(400, 'unknown animal', { allowed: [...ANIMALS] })
+  }
   const seats = seatsOf(tableId)
-  if (t.personas.length >= seats) return fail(400, 'table full', { seats })
+  const seated = t.status === 'open' ? t.personas.length : 0
+  if (seated >= seats) return fail(400, 'table full', { seats })
+
+  if (t.status !== 'open') openSessionInPlace(t)
+
+  // Аллергии гостя: только значения из справочника, чужое молча не принимаем
+  const allergies: string[] = Array.isArray(body.allergies)
+    ? [...new Set((body.allergies as unknown[]).filter((a): a is string => typeof a === 'string' && ALLERGENS.includes(a)))]
+    : []
 
   const name = sanitizeName(body.name) || `Гость ${t.personas.length + 1}`
-  if (body.animal !== undefined && !ANIMALS.has(body.animal)) return fail(400, 'unknown animal')
   const animal = ANIMALS.has(body.animal) ? body.animal : 'fox'
 
   // Токен показываем один раз, в базе живёт только его хеш
@@ -370,6 +459,7 @@ function joinGuest(t: TableSession, tableId: string, body: any): MutationResult 
     name,
     animal,
     joinedAt: Date.now(),
+    allergies,
     secretHash: hashToken(guestToken)
   }
   t.personas.push(persona)
@@ -390,12 +480,24 @@ function guestAction(t: TableSession, tableId: string, action: string, body: any
     if (checked.error) return fail(400, checked.error)
     if (t.lines.length >= MAX_LINES) return fail(400, 'too many lines')
 
+    // Комментарий доезжает до повара как есть. Пустой — значит его нет.
+    const comment = sanitizeNote(body.comment ?? body.note)
+
+    // Блюдо с заявленным аллергеном не заказывается «случайно»: система знает,
+    // что человеку нельзя, и обязана остановить его, а не промолчать
+    const mine = persona.allergies ?? []
+    const hits = mine.length > 0 ? allergensOf(dish.id, checked.options ?? {}).filter(a => mine.includes(a)) : []
+    if (hits.length > 0 && body.confirmAllergen !== true) {
+      return fail(409, 'allergen warning', { allergens: hits, dish: dish.name })
+    }
+
     const line = {
       uid: t.seq++,
       dishId: dish.id,
       qty,
       price: dish.price, // цена фиксируется в момент заказа
       options: checked.options ?? {},
+      comment,
       shared: !!body.shared,
       sharedWith: [] as string[],
       personaId: persona.id,
@@ -441,22 +543,59 @@ function guestAction(t: TableSession, tableId: string, action: string, body: any
   }
 
   if (action === 'pay') {
-    if (body.scope !== undefined && !PAY_SCOPES.includes(body.scope)) {
+    const wanted = (PAY_SCOPE_ALIASES[String(body.scope)] ?? body.scope) as PayScope
+    if (body.scope !== undefined && !PAY_SCOPES.includes(wanted)) {
       return fail(400, 'unknown pay scope', { allowed: PAY_SCOPES })
     }
-    const scope = body.scope ?? 'own'
+    const scope: PayScope = PAY_SCOPE_ALIASES[String(body.scope ?? 'own')] ?? (body.scope ?? 'own')
     const money = computeTotals(t, priceOf)
     const amount = round2(amountFor(money, persona.id, scope))
     if (amount <= 0) return fail(400, 'nothing to pay')
-    t.payments.push({
+    // Состав чека фиксируем в момент оплаты: за что именно списаны деньги
+    const covered = t.lines.filter(l => {
+      if (!isBillLine(l)) return false
+      if (scope === 'own') return l.personaId === persona.id || (l.shared && (l.sharedWith ?? []).includes(persona.id))
+      return true
+    })
+    const payment = {
       id: crypto.randomUUID(),
       personaId: persona.id,
       amount,
       scope,
-      at: Date.now()
-    })
+      at: Date.now(),
+      // Номер, который гость может назвать в споре
+      receiptNo: `${tableId}-${String(t.payments.length + 1).padStart(3, '0')}-${String(Date.now()).slice(-5)}`,
+      lines: covered.map(l => ({
+        name: dishName(l.dishId),
+        qty: l.qty,
+        price: l.price,
+        shared: !!l.shared,
+        share: l.shared ? round2((l.price * l.qty) / Math.max(1, (l.sharedWith ?? []).length || t.personas.length)) : null
+      }))
+    }
+    t.payments.push(payment)
     audit(null, 'оплата', tableId, `${persona.name} · ${scope}`, amount)
-    return ok({ ok: true, amount, remaining: round2(computeTotals(t, priceOf).remaining) })
+
+    const left = round2(computeTotals(t, priceOf).remaining)
+    // Причина вызова исчезла — снимаем его сам, иначе официант идёт с папкой
+    // к гостю, который уже расплатился, а красный чип приучает игнорировать зал
+    if (left <= 0.01) t.calls = t.calls.filter(c => c.reason !== 'bill')
+
+    return ok({
+      ok: true,
+      amount,
+      remaining: left,
+      // Чек: номер, время и состав — то, что гость может сохранить или оспорить
+      receipt: {
+        no: payment.receiptNo,
+        at: payment.at,
+        amount,
+        scope,
+        guest: persona.name,
+        table: tableId,
+        lines: payment.lines
+      }
+    })
   }
 
   if (action === 'tip') {
@@ -480,21 +619,54 @@ function guestAction(t: TableSession, tableId: string, action: string, body: any
     return ok({ ok: true, amount })
   }
 
-  // call
-  const reason = CALL_REASONS.has(body.reason) ? body.reason : 'help'
-  if (t.calls.length >= MAX_CALLS) return fail(400, 'too many calls')
-  if (!t.calls.some(c => c.personaId === persona.id && c.reason === reason)) {
-    t.calls.push({ id: crypto.randomUUID(), at: Date.now(), personaId: persona.id, reason })
-    audit(null, 'позвал официанта', tableId, `${persona.name} · ${reason}`)
+  if (action === 'cancelMine') {
+    const uid = asUid(body.uid)
+    const line = uid === null ? null : t.lines.find(l => l.uid === uid)
+    if (!line) return fail(404, 'line not found')
+    if (line.personaId !== persona.id) return fail(403, 'not yours')
+    if (line.cancelled) return fail(409, 'already cancelled')
+    if (line.served) return fail(409, 'already served')
+    // Кухня уже взялась — отменять поздно, продукт в работе
+    if (line.startedAt) return fail(409, 'already cooking')
+
+    line.cancelled = true
+    line.cancelledAt = Date.now()
+    line.cancelReason = 'гость отменил'
+    audit(null, 'гость отменил блюдо', tableId, `${persona.name}: ${dishName(line.dishId)}`, round2(line.price * line.qty))
+    return ok()
   }
-  return ok()
+
+  // call
+  if (body.reason !== undefined && !CALL_REASONS.has(body.reason)) {
+    return fail(400, 'unknown call reason', { allowed: [...CALL_REASONS] })
+  }
+  const reason = body.reason ?? 'help'
+  // Текст вызова — единственный способ гостя сказать «у меня аллергия». Раньше он
+  // приходил в reason, не проходил вайтлист и исчезал с ответом ok
+  const note = sanitizeNote(body.note ?? body.message)
+  if (t.calls.length >= MAX_CALLS) return fail(400, 'too many calls')
+
+  const existing = t.calls.find(c => c.personaId === persona.id && c.reason === reason)
+  if (existing) {
+    // Повтор — не ошибка и не тишина: гость должен видеть, что его услышали
+    if (note && !existing.note) existing.note = note
+    return ok({ ok: true, callId: existing.id, at: existing.at, repeated: true })
+  }
+
+  const call = { id: crypto.randomUUID(), at: Date.now(), personaId: persona.id, reason, note }
+  t.calls.push(call)
+  audit(null, 'позвал официанта', tableId, `${persona.name} · ${reason}${note ? `: ${note}` : ''}`)
+  return ok({ ok: true, callId: call.id, at: call.at, repeated: false })
 }
 
 function staffAction(t: TableSession, tableId: string, action: string, body: any, actor: Actor | null): MutationResult {
   if (!actor) return fail(401, 'staff login required')
   if (!can(actor.role, action as Permission)) return fail(403, 'role not allowed')
   // Закреплённые столы — ответственность, а не подсветка: чужой стол трогать нельзя
-  if (!ownsTable(actor, tableId)) return fail(403, 'not your table', { waiter: waiterOfTable(tableId)?.name ?? null })
+  // ack — подойти к гостю, а не тронуть его деньги: это можно на любом столе
+  if (action !== 'ack' && !ownsTable(actor, tableId)) {
+    return fail(403, 'not your table', { waiter: waiterOfTable(tableId)?.name ?? null })
+  }
 
   if (action === 'start' || action === 'serve') {
     if (t.status !== 'open') return fail(409, 'table closed')
@@ -519,6 +691,26 @@ function staffAction(t: TableSession, tableId: string, action: string, body: any
     line.servedAt = Date.now()
     line.servedBy = actor.id
     audit(actor, 'подал', tableId, dishName(line.dishId))
+    return ok()
+  }
+
+  if (action === 'clean') {
+    // Раньше стол становился свободным просто через пять минут — зал считал его
+    // готовым, потому что прошло время, а не потому что его кто-то протёр
+    if (t.status === 'open') return fail(409, 'table is open')
+    t.cleanedAt = Date.now()
+    audit(actor, 'убрал стол', tableId)
+    return ok()
+  }
+
+  if (action === 'dismiss') {
+    // Повар подтверждает, что увидел отмену и снял блюдо с плиты
+    const uid = asUid(body.uid)
+    const line = uid === null ? null : t.lines.find(l => l.uid === uid)
+    if (!line || !line.cancelled) return fail(400, 'nothing to dismiss')
+    if (line.cancelAck) return fail(400, 'nothing to dismiss')
+    line.cancelAck = true
+    audit(actor, 'снял отменённое с плиты', tableId, dishName(line.dishId), round2(line.price * line.qty))
     return ok()
   }
 
@@ -681,6 +873,8 @@ async function handleApi(req: any, res: any, url: URL) {
         closedRevenue: round2(shift.closedRevenue),
         debt: round2(shift.debt),
         overpaid: round2(shift.overpaid),
+        // Снятое с кухни: еда не отдана, это потеря продукта, а не долг гостя
+        writtenOff: round2(shift.writtenOff ?? 0),
         tables: shift.tables,
         guests: shift.guestsSeen
       },
@@ -697,6 +891,10 @@ async function handleApi(req: any, res: any, url: URL) {
     })
   }
 
+  if (url.pathname === '/api/menu' && req.method === 'GET') {
+    return json(res, 200, menuPayload())
+  }
+
   if (url.pathname === '/api/hall' || url.pathname === '/api/hall/stream') {
     return staffFeed(req, res, url, async () => hallPayload(await store.activeSessions(), await store.shift()), hallStreams, 'hall')
   }
@@ -710,9 +908,23 @@ async function handleApi(req: any, res: any, url: URL) {
   if (parts[1] !== 't' || !TABLE_RE.test(tableId)) return json(res, 404, { error: 'not found' })
   const action = parts[3] ?? ''
 
-  if (req.method === 'GET' && action === '') return json(res, 200, snapshot(await store.read(tableId), tableId))
+  if (!isKnownTable(tableId)) return json(res, 404, { error: 'unknown table' })
+
+
+  if (req.method === 'GET' && action === '') {
+    const t = await store.read(tableId)
+    const token = req.headers['x-guest-token'] ?? url.searchParams.get('g')
+    const maySeeAll = !!guestOf(t, token) || !!actorFrom(req, url)
+    return json(res, 200, maySeeAll ? snapshot(t, tableId) : publicStub(t, tableId))
+  }
 
   if (req.method === 'GET' && action === 'stream') {
+    const t = await store.read(tableId)
+    const token = req.headers['x-guest-token'] ?? url.searchParams.get('g')
+    if (!guestOf(t, token) && !actorFrom(req, url)) {
+      // Пустой стол слушать можно: гость подписывается ещё до join
+      if (t.personas.length > 0) return json(res, 403, { error: 'not your table' })
+    }
     res.writeHead(200, {
       'Content-Type': 'text/event-stream',
       'Cache-Control': 'no-store',

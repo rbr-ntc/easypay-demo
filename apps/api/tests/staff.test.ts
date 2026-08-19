@@ -27,7 +27,8 @@ function post(path, body = {}, opts = {}) {
 }
 
 const get = (path, token) => fetch(`${base}${path}`, token ? { headers: { 'x-staff-token': token } } : undefined)
-const snapshot = table => get(`/api/t/${table}`).then(r => r.json())
+// Снапшот стола отдаётся только своим: в тестах читаем персоналом
+const snapshot = table => get(`/api/t/${table}`, MASTER).then(r => r.json())
 
 async function login(pin) {
   const res = await post('/api/staff/login', { pin })
@@ -175,7 +176,10 @@ test('сброс стола с долгом — тоже осознанное д
   assert.equal((await post(`/api/t/${other.table}/reset`, { force: true }, { staff: MASTER })).status, 200)
 
   const hall = await (await get('/api/hall', manager.token)).json()
-  assert.equal(hall.shift.debt > 0, true, 'долг сброшенного стола виден в смене')
+  // Еду не отдали — это не долг гостя, а списание с кухни: разные деньги,
+  // и в отчётности смены они больше не свалены в одну кучу
+  assert.equal(hall.shift.writtenOff > 0, true, 'снятое с кухни видно отдельной строкой')
+  assert.equal(hall.shift.debt, 0, 'за неподанное гость ничего не должен')
 })
 
 test('чаевые адресуются официанту стола и копятся за смену', async () => {

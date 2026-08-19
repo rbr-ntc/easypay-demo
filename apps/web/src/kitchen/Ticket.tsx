@@ -35,6 +35,20 @@ export function Ticket({
         {ticket.allergens?.length > 0 && (
           <div className="ep-k-allergens">аллергены: {ticket.allergens.join(' · ')}</div>
         )}
+
+        {/* Модификатор, снимающий аллерген, — не пожелание, а запрет.
+            Раньше «Без сметаны» стояло в одном ряду с «Без льда», а лактоза
+            просто исчезала из списка: чем аккуратнее гость выбрал, тем меньше
+            у повара было поводов насторожиться. */}
+        {(ticket as any).removedAllergens?.map((r: any) => (
+          <div key={r.id} className="ep-k-critical">
+            {r.choice.toUpperCase()} — снимает {r.removes.join(' · ')}
+          </div>
+        ))}
+
+        {(ticket as any).comment && (
+          <div className="ep-k-comment">✎ {(ticket as any).comment}</div>
+        )}
         {mods.length > 0 && (
           <div className="ep-k-mods">
             {mods.map(m => (
@@ -54,7 +68,14 @@ export function Ticket({
       <div className="ep-k-wait">{ticket.sentAt ? fmtDur(now - ticket.sentAt) : '—'}</div>
 
       {cancelled ? (
-        <span className="ep-k-cancel">ОТМЕНА · {ticket.reason ?? 'стол закрыт'}</span>
+        <div className="ep-k-cancel-box">
+          <span className={(ticket as any).wasCooking ? 'ep-k-cancel ep-k-cancel--hot' : 'ep-k-cancel'}>
+            {(ticket as any).wasCooking ? 'СНЯТЬ С ПЛИТЫ' : 'ОТМЕНА'} · {ticket.reason ?? 'стол закрыт'}
+          </span>
+          <button className="ep-k-btn ep-k-btn--quiet" disabled={busy} onClick={onAction}>
+            Снял с плиты
+          </button>
+        </div>
       ) : (
       <button
         className={cooking ? 'ep-k-btn ep-k-btn--ready' : 'ep-k-btn'}

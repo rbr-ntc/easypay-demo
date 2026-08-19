@@ -37,9 +37,16 @@ export interface KitchenSummary {
   overdue: number
 }
 
-export const KITCHEN_THRESHOLDS = {
-  warnMs: 10 * 60_000, // ждёт дольше — жёлтый
-  dangerMs: 20 * 60_000 // ждёт дольше — красный, тот же порог, что у алерта зала
+/** Пороги ожидания разные по цехам: капучино через 10 минут — уже провал. */
+export const STATION_THRESHOLDS: Record<string, { warnMs: number; dangerMs: number }> = {
+  kitchen: { warnMs: 10 * 60_000, dangerMs: 20 * 60_000 },
+  bar: { warnMs: 3 * 60_000, dangerMs: 6 * 60_000 }
+}
+
+export const KITCHEN_THRESHOLDS = STATION_THRESHOLDS.kitchen
+
+export function thresholdsFor(station: string | undefined) {
+  return STATION_THRESHOLDS[station ?? 'kitchen'] ?? STATION_THRESHOLDS.kitchen
 }
 
 export const TICKET_STATE: { QUEUED: "queued"; COOKING: "cooking" } = { QUEUED: 'queued', COOKING: 'cooking' }
@@ -55,8 +62,9 @@ export function ticketWait(ticket: KitchenTicket, now: number): number {
 
 export function ticketUrgency(ticket: KitchenTicket, now: number): TicketUrgency {
   const wait = ticketWait(ticket, now)
-  if (wait >= KITCHEN_THRESHOLDS.dangerMs) return 'danger'
-  if (wait >= KITCHEN_THRESHOLDS.warnMs) return 'warn'
+  const limits = thresholdsFor(ticket.station)
+  if (wait >= limits.dangerMs) return 'danger'
+  if (wait >= limits.warnMs) return 'warn'
   return 'ok'
 }
 

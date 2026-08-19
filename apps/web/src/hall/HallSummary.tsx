@@ -42,9 +42,32 @@ export function HallSummary({ summary }: { summary: Summary }) {
       <Stat
         label="Выручка смены"
         value={fmt(summary.shiftRevenue)}
-        hint={summary.avgCheck ? `средний чек ${fmt(summary.avgCheck)}` : 'средний чек — после закрытий'}
+        hint={`по всему залу · закрыто ${fmt(summary.closedRevenue)} · средний чек ${
+          summary.avgCheck ? fmt(summary.avgCheck) : '—'
+        }`}
         tone="money"
       />
+      {summary.debt > 0 && (
+        <Stat
+          label="Ушли не заплатив"
+          value={fmt(summary.debt)}
+          hint="столы закрыты с долгом"
+          tone="alert"
+        />
+      )}
+      {summary.overpaid > 0 && (
+        <Stat label="Переплата" value={fmt(summary.overpaid)} hint="вернуть гостям" tone="alert" />
+      )}
+      {summary.writtenOff > 0 && (
+        <Stat
+          label="Списано с кухни"
+          value={fmt(summary.writtenOff)}
+          hint="еду не отдали — это не долг гостя"
+        />
+      )}
+      {summary.tips > 0 && (
+        <Stat label="Чаевые" value={fmt(summary.tips)} hint="официантам, мимо счёта" tone="money" />
+      )}
       <Stat
         label="Требуют внимания"
         value={String(summary.attention)}

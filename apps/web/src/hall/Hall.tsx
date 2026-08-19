@@ -6,6 +6,8 @@ import { HallSummary } from './HallSummary'
 import { ShiftLog } from './ShiftLog'
 import { TableCard } from './TableCard'
 import { describeTable, summarizeHall } from '@easypay/domain/hall'
+import { fmtDur } from '../waiter/duration'
+import { getStaffToken } from '../staff'
 import type { HallCard } from '@easypay/domain/hall'
 import { ownsTable, ROLE_LABEL } from '@easypay/domain/roles'
 import '../hall.css'
@@ -23,6 +25,12 @@ function AttentionBar({ cards, now }: { cards: HallCard[]; now: number }) {
   const hot = cards
     .map(card => ({ card, ...describeTable(card, now) }))
     .filter(d => d.alerts.some(a => a.severity === 'warn' || a.severity === 'danger'))
+    // Кто ждёт дольше — тот первый: срочность важнее номера стола
+    .sort((a, b) => {
+      const worst = (d: typeof a) => (d.alerts.some(x => x.severity === 'danger') ? 0 : 1)
+      const oldest = (d: typeof a) => Math.min(...d.alerts.map(x => x.since ?? now))
+      return worst(a) - worst(b) || oldest(a) - oldest(b)
+    })
   if (hot.length === 0) return null
 
   return (
@@ -35,6 +43,13 @@ function AttentionBar({ cards, now }: { cards: HallCard[]; now: number }) {
           href={`${window.location.pathname}?t=${encodeURIComponent(card.id)}#/waiter`}
         >
           <b>№{card.id}</b> {alerts.map(a => a.label).join(' · ')}
+          {(() => {
+            // Возраст ожидания прямо на чипе: без него все вызовы одинаковые
+            const since = Math.min(...alerts.map(a => a.since ?? now))
+            return Number.isFinite(since) && since < now ? (
+              <span className="ep-h-attention-age">{fmtDur(now - since)}</span>
+            ) : null
+          })()}
         </a>
       ))}
     </div>
@@ -56,6 +71,19 @@ export function Hall() {
   const cards = onlyMine && hasOwnTables ? allCards.filter(c => ownsTable(staff, c.id)) : allCards
   // Считаем сводку локально: таймеры и «внимание» так обновляются каждую секунду
   const summary = summarizeHall(cards, hall?.shift ?? null, now)
+
+  /** Стол убран — это факт от человека, а не истёкшие пять минут. */
+  const clean = async (id: string) => {
+    try {
+      await fetch(`/api/t/${encodeURIComponent(id)}/clean`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-staff-token': getStaffToken() },
+        body: '{}'
+      })
+    } catch (err) {
+      console.error('не удалось отметить уборку:', err)
+    }
+  }
   const zones = hall?.zones ?? []
   const offPlan = cards.filter(c => !zones.some(z => z.id === c.zoneId))
 
@@ -114,7 +142,7 @@ export function Hall() {
             </div>
             <div className="ep-h-grid">
               {zoneCards.map(card => (
-                <TableCard key={card.id} card={card} now={now} mine={ownsTable(staff, card.id)} />
+                <TableCard key={card.id} card={card} now={now} onClean={clean} mine={ownsTable(staff, card.id)} />
               ))}
             </div>
           </div>

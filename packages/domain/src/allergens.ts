@@ -34,7 +34,9 @@ export const ALLERGENS: string[] = [
   'кунжут',
   'соя',
   'сельдерей',
-  'горчица'
+  'горчица',
+  // Появились с винной картой: по ТР ТС 022/2011 указывать обязательно
+  'сульфиты'
 ]
 
 const ALLERGEN_SET = new Set(ALLERGENS)
@@ -78,4 +80,41 @@ export function possibleAllergensFor(dish: AllergenDish | null | undefined): str
     }
   }
   return ALLERGENS.filter(tag => worst.has(tag))
+}
+
+export interface RemovedAllergen {
+  /** Идентификатор группы модификаторов, например "sourcream". */
+  id: string
+  /** Как группа называется для человека: «Сметана». */
+  name: string
+  /** Что выбрал гость: «Без сметаны». */
+  choice: string
+  /** Какие аллергены этот выбор снимает. */
+  removes: string[]
+}
+
+/**
+ * Модификаторы, которые СНИМАЮТ аллерген, — отдельно и поимённо.
+ *
+ * allergensFor честно вычёркивает лактозу из борща без сметаны, и для карточки
+ * гостя это правильно. Но на кухонном тикете «Без сметаны» оказывалось в одном
+ * ряду с «Без льда»: чем аккуратнее гость выбрал опцию, тем меньше у повара было
+ * поводов насторожиться. Повар должен видеть не только итог, но и то, чем этот
+ * итог держится.
+ */
+export function removedAllergensFor(
+  dish: AllergenDish | null | undefined,
+  options?: Record<string, string>
+): RemovedAllergen[] {
+  if (!dish) return []
+  const out: RemovedAllergen[] = []
+
+  for (const opt of dish.options ?? []) {
+    const chosen = options?.[opt.id] ?? opt.default ?? opt.choices?.[0]
+    const removes = (opt.effects?.[chosen]?.removes ?? []).filter(isAllergen)
+    if (removes.length === 0) continue
+    out.push({ id: opt.id, name: opt.name, choice: chosen, removes: ALLERGENS.filter(t => removes.includes(t)) })
+  }
+
+  return out
 }

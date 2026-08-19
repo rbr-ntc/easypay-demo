@@ -5,8 +5,12 @@ import type { Totals } from '../store'
 
 type PayLabel = 'Оплачено' | 'Частично' | 'Ожидает'
 
-function payLabelOf(paid: number, total: number): PayLabel {
-  if (total > 0 && paid >= total - 0.01) return 'Оплачено'
+/**
+ * За гостя мог заплатить сосед — тогда лично он ничего не должен, даже если
+ * сам не платил. Официант, подошедший «по экрану», иначе просит деньги дважды.
+ */
+function payLabelOf(paid: number, total: number, remaining: number): PayLabel {
+  if (total > 0 && remaining <= 0.01) return 'Оплачено'
   return paid > 0 ? 'Частично' : 'Ожидает'
 }
 
@@ -39,16 +43,20 @@ export function GuestList({
       <div className="ep-w-mono ep-w-cap">Гости стола · {personas.length}</div>
       <div className="ep-w-guests">
         {personas.map(p => {
-          const total = totals.personaOwn(p.id) + totals.sharedTotal / totals.participants
+          // Долю общего блюда считает сервер по фактическому списку участников
+          // на момент отправки. Клиент не пересчитывает деньги — он их показывает.
+          const own = totals.personaTotal(p.id)
           const paid = totals.personaPaid(p.id)
-          const payLabel = payLabelOf(paid, total)
+          const left = totals.personaRemaining(p.id)
+          const payLabel = payLabelOf(paid, own, left)
           return (
             <div key={p.id} className="ep-w-guest">
               <Avatar animal={p.animal} size={46} label={p.name} />
               <div className="ep-w-guest-body">
                 <div className="ep-w-guest-name">{p.name}</div>
                 <div className="ep-w-guest-sum">
-                  {fmt(total)} с долей общих{paid > 0 ? ` · внесено ${fmt(paid)}` : ''}
+                  {fmt(own)} с долей общих{paid > 0 ? ` · внесено ${fmt(paid)}` : ''}
+                  {left === 0 && own > 0 && paid === 0 ? ' · за него заплатили' : ''}
                 </div>
               </div>
               <div className="ep-w-tags">

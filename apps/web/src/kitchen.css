@@ -266,3 +266,66 @@
   color: var(--ep-danger);
   white-space: nowrap;
 }
+
+/* Отмена ждёт подтверждения повара, поэтому у неё своя кнопка */
+.ep-k-cancel-box {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+  min-width: 140px;
+}
+
+
+/* Аллерген, который держится только на модификаторе: повар обязан это видеть */
+.ep-k-critical {
+  margin-top: 4px;
+  padding: 3px 8px;
+  border-radius: 6px;
+  background: #fdecec;
+  color: #9b1c1c;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.2px;
+  display: inline-block;
+}
+
+/* Живой текст гостя к блюду */
+.ep-k-comment {
+  margin-top: 4px;
+  font-size: 12.5px;
+  color: #7a5a12;
+  background: #fff6e0;
+  border-radius: 6px;
+  padding: 3px 8px;
+  display: inline-block;
+}
+
+/* Блюдо было на плите — это продукт в мусор, а не вычерк строки */
+.ep-k-cancel--hot {
+  background: #9b1c1c;
+  color: #fff;
+  animation: ep-k-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes ep-k-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.72; }
+}
+
+/* Волна подачи: позиции одного стола выходят вместе */
+.ep-k-wave {
+  border: 2px dashed var(--ep-border);
+  border-radius: 12px;
+  padding: 8px;
+  margin-bottom: 10px;
+}
+
+.ep-k-wave-head {
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  color: var(--ep-muted);
+  margin: 2px 0 8px 4px;
+}

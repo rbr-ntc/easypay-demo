@@ -383,3 +383,39 @@
 .ep-h-log-what {
   color: var(--ep-text-2);
 }
+
+
+/* Возраст вызова на чипе: девять минут и девять секунд выглядели одинаково */
+.ep-h-attention-age {
+  margin-left: 6px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.28);
+  font-variant-numeric: tabular-nums;
+  font-size: 11.5px;
+  font-weight: 700;
+}
+
+/* Закрытый стол не должен читаться как рабочий: пробегая глазами, легко сбиться */
+.ep-h-card[data-status='free'],
+.ep-h-card[data-status='dirty'] {
+  opacity: 0.62;
+  filter: saturate(0.5);
+}
+
+
+/* «Убрано» на грязном столе: короткое подтверждение факта */
+.ep-h-clean {
+  margin-top: 8px;
+  padding: 6px 12px;
+  border-radius: var(--ep-r-pill);
+  border: 1px solid var(--ep-border);
+  background: var(--ep-surface);
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.ep-h-clean:hover {
+  background: var(--ep-soft);
+}

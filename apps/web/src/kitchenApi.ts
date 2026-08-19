@@ -11,7 +11,7 @@ export interface KitchenPayload {
 /** Кухня действует по любому столу, поэтому шлём запрос напрямую в нужный. */
 async function tableAction(
   tableId: string,
-  action: 'start' | 'serve',
+  action: 'start' | 'serve' | 'dismiss',
   uid: number,
   sessionId: string
 ): Promise<boolean> {
@@ -33,6 +33,9 @@ export const takeToWork = (tableId: string, uid: number, sessionId: string) =>
   tableAction(tableId, 'start', uid, sessionId)
 export const markReady = (tableId: string, uid: number, sessionId: string) =>
   tableAction(tableId, 'serve', uid, sessionId)
+/** Повар подтверждает отмену: пока не подтвердил, карточка висит на экране. */
+export const dismissCancelled = (tableId: string, uid: number, sessionId: string) =>
+  tableAction(tableId, 'dismiss', uid, sessionId)
 
 export function subscribeKitchen(
   onData: (p: KitchenPayload) => void,

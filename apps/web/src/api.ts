@@ -14,11 +14,17 @@ const API = tableId ? `/api/t/${encodeURIComponent(tableId)}` : null
 
 export class ApiError extends Error {
   readonly status: number
+  /** Сырой код ошибки сервера: по нему клиент отличает «аллерген» от «нет связи». */
+  readonly error: string
+  /** Подробности отказа: список аллергенов, остаток, потолок чаевых. */
+  readonly extra: Record<string, unknown>
 
-  constructor(message: string, status: number) {
+  constructor(message: string, status: number, extra: Record<string, unknown> = {}) {
     super(message)
     this.name = 'ApiError'
     this.status = status
+    this.error = message
+    this.extra = extra
   }
 }
 
@@ -117,15 +123,21 @@ async function post<T>(action: string, body: object, opts: { staff?: boolean; gu
     body: JSON.stringify(body)
   })
   if (!res.ok) {
-    const err = await res.json().catch(() => ({ error: res.statusText }))
-    throw new ApiError((err as { error?: string }).error || 'request failed', res.status)
+    const err = (await res.json().catch(() => ({ error: res.statusText }))) as Record<string, unknown>
+    throw new ApiError(String(err.error ?? 'request failed'), res.status, err)
   }
   return res.json() as Promise<T>
 }
 
 // idemKey: повтор с тем же ключом не создаёт вторую персону / второй платёж
-export const apiJoin = (name: string, animal: Animal, idemKey: string) =>
-  post<{ personaId: string; guestToken: string; snapshot: Snapshot }>('join', { name, animal, idemKey })
+export const apiJoin = (name: string, animal: Animal, idemKey: string, allergies: string[] = []) =>
+  post<{ personaId: string; guestToken: string; snapshot: Snapshot }>('join', {
+    name,
+    animal,
+    // Аллергии гостя: дальше система предупреждает сама, а не ждёт комментария
+    allergies,
+    idemKey
+  })
 
 export const apiAddLine = (
   guest: string,
@@ -133,15 +145,36 @@ export const apiAddLine = (
   qty: number,
   shared: boolean,
   options: Record<string, string>,
-  idemKey: string
-) => post<{ ok: true; uid: number }>('lines', { dishId, qty, shared, options, idemKey }, { guest })
+  idemKey: string,
+  // Гость увидел предупреждение об аллергене и сознательно подтвердил заказ
+  confirmAllergen = false
+) =>
+  post<{ ok: true; uid: number }>(
+    'lines',
+    { dishId, qty, shared, options, idemKey, confirmAllergen },
+    { guest }
+  )
+
+/** Отменить своё блюдо, пока кухня не взяла его в работу. */
+export const apiCancelMine = (guest: string, uid: number) =>
+  post<{ ok: true }>('cancelMine', { uid }, { guest })
 
 export const apiRemoveLine = (guest: string, uid: number) => post<{ ok: true }>('remove', { uid }, { guest })
 
 export const apiSend = (guest: string, scope: 'mine' | 'all') => post<{ ok: true; sent: number }>('send', { scope }, { guest })
 
+export interface Receipt {
+  no: string
+  at: number
+  amount: number
+  scope: string
+  guest: string
+  table: string
+  lines: { name: string; qty: number; price: number; shared: boolean; share: number | null }[]
+}
+
 export const apiPay = (guest: string, scope: 'own' | 'equal' | 'full', idemKey: string) =>
-  post<{ ok: true; amount: number; remaining: number }>('pay', { scope, idemKey }, { guest })
+  post<{ ok: true; amount: number; remaining: number ; receipt?: Receipt }>('pay', { scope, idemKey }, { guest })
 
 export const apiTip = (guest: string, amount: number, idemKey: string) =>
   post<{ ok: true; amount: number }>('tip', { amount, idemKey }, { guest })
@@ -224,9 +257,16 @@ export interface LogEntry {
   detail: string | null
 }
 
-export function subscribe(onSnapshot: (s: Snapshot) => void, onState: (ok: boolean) => void): () => void {
+export function subscribe(
+  onSnapshot: (s: Snapshot) => void,
+  onState: (ok: boolean) => void,
+  guestToken?: string | null
+): () => void {
   if (!API) return () => {} // стол не выбран — подписываться не на что
-  const es = new EventSource(`${API}/stream`)
+  // Состав стола и деньги видит только свой: EventSource не умеет заголовки,
+  // поэтому личный секрет гостя передаётся параметром
+  const url = guestToken ? `${API}/stream?g=${encodeURIComponent(guestToken)}` : `${API}/stream`
+  const es = new EventSource(url)
   es.onmessage = e => {
     try {
       onSnapshot(JSON.parse(e.data) as Snapshot)

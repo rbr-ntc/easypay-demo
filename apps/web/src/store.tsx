@@ -13,6 +13,7 @@ import {
   apiWhoami,
   apiJoin,
   apiPay,
+  apiCancelMine,
   apiRemoveLine,
   apiReset,
   apiSend,
@@ -52,6 +53,8 @@ export interface UiState {
   payMethod: PayMethod
   payStage: PayStage
   lastPaid: number
+  /** Чек последней оплаты: номер, время и состав — то, что гость может предъявить. */
+  lastReceipt: import('./api').Receipt | null
   tip: '0' | '5' | '10' | '15' | 'custom'
   tipCustom: number
   rating: number
@@ -70,6 +73,7 @@ const initialUi: UiState = {
   payMethod: 'sbp',
   payStage: 'form',
   lastPaid: 0,
+  lastReceipt: null,
   tip: '10',
   tipCustom: 0,
   rating: 0,
@@ -116,6 +120,7 @@ export interface Totals {
   personaOwn: (pid: string) => number
   personaTotal: (pid: string) => number
   personaPaid: (pid: string) => number
+  personaRemaining: (pid: string) => number
 }
 
 // Считает ровно то же, что сервер: модель живёт в shared/money.js в одном экземпляре.
@@ -155,7 +160,9 @@ export function computeTotals(snap: Snapshot | null, myId: string | null): Total
     scopeAmount,
     personaOwn: pid => server?.byPersona.find(p => p.personaId === pid)?.own ?? core.ownOf(pid),
     personaTotal: pid => server?.byPersona.find(p => p.personaId === pid)?.total ?? core.totalOf(pid),
-    personaPaid: pid => server?.byPersona.find(p => p.personaId === pid)?.paid ?? core.paidOf(pid)
+    personaPaid: pid => server?.byPersona.find(p => p.personaId === pid)?.paid ?? core.paidOf(pid),
+    // Личный остаток берём у сервера: за гостя мог заплатить сосед
+    personaRemaining: pid => server?.byPersona.find(p => p.personaId === pid)?.remaining ?? core.remainingOf(pid)
   }
 }
 
@@ -169,7 +176,13 @@ export function humanError(err: ApiError): string {
     'unknown table': 'Такого стола нет в зале — проверьте QR на столе',
     'table full': 'За столом уже максимум гостей',
     'nothing to pay': 'Оплачивать пока нечего',
-    'nothing to send': 'Нечего отправлять на кухню',
+    'nothing to send': 'Всё уже отправлено на кухню',
+    'already cooking': 'Кухня уже готовит это блюдо — отменить не получится',
+    'already cancelled': 'Это блюдо уже отменено',
+    'already served': 'Это блюдо уже подали',
+    'allergen warning': 'В этом блюде есть то, на что вы указали аллергию',
+    'signed out elsewhere': 'Вы вошли на другом устройстве — войдите заново',
+    'not your table': 'Это стол другого официанта',
     'dish in stop list': 'Это блюдо сегодня закончилось',
     'unknown dish': 'Такого блюда больше нет в меню',
     'bad qty': 'Можно заказать от 1 до 9 порций',
@@ -202,9 +215,22 @@ interface Ctx {
   totals: Totals
   toast: (msg: string) => void
   // server actions
-  join: (name: string, animal: Animal, idemKey: string) => Promise<ServerPersona | null>
-  addLine: (dishId: string, qty: number, shared: boolean, options: LineOptions, asGuestToken?: string) => Promise<void>
+  join: (name: string, animal: Animal, idemKey: string, allergies?: string[]) => Promise<ServerPersona | null>
+  /**
+   * Возвращает список аллергенов, если сервер остановил заказ, иначе null.
+   * Гость с заявленной аллергией обязан подтвердить осознанно, а не узнать за столом.
+   */
+  addLine: (
+    dishId: string,
+    qty: number,
+    shared: boolean,
+    options: LineOptions,
+    asGuestToken?: string,
+    confirmAllergen?: boolean
+  ) => Promise<string[] | null>
   removeLine: (uid: number) => Promise<void>
+  /** Отменить своё блюдо, пока кухня не взяла его в работу. */
+  cancelMine: (uid: number) => Promise<void>
   sendWave: (scope: 'mine' | 'all') => Promise<void>
   pay: (scope: PayScope, idemKey: string) => Promise<number>
   leaveTip: (amount: number, idemKey: string) => Promise<number>
@@ -243,7 +269,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const guestToken = () => identityRef.current?.guestToken ?? null
   const toastTimer = useRef<ReturnType<typeof setTimeout>>()
 
-  useEffect(() => subscribe(setSnap, setConnected), [])
+  // Переподписываемся, когда гость получил личность: до join поток анонимный
+  const [streamKey, setStreamKey] = useState(0)
+  useEffect(() => subscribe(setSnap, setConnected, identityRef.current?.guestToken ?? null), [streamKey])
 
   // На закрытом столе личность недействительна: первое действие гостя
   // должно пройти через join и открыть НОВУЮ сессию
@@ -321,26 +349,43 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     me,
     totals,
     toast,
-    join: (name, animal, idemKey) =>
+    join: (name, animal, idemKey, allergies = []) =>
       guard(async () => {
-        const r = await apiJoin(name, animal, idemKey)
+        const r = await apiJoin(name, animal, idemKey, allergies)
         const id: Identity = { sessionId: r.snapshot.sessionId ?? '', personaId: r.personaId, guestToken: r.guestToken }
+        setStreamKey(k => k + 1)
         localStorage.setItem(ID_KEY, JSON.stringify(id))
         identityRef.current = id
         setIdentity(id)
         setSnap(r.snapshot)
         return r.snapshot.personas.find(p => p.id === r.personaId) ?? null
       }, null),
-    addLine: (dishId, qty, shared, options, asGuestToken) =>
-      guard(async () => {
-        const token = asGuestToken ?? guestToken()
-        if (!token) return
-        await apiAddLine(token, dishId, qty, shared, options, newIdemKey())
-      }, undefined),
+    addLine: async (dishId, qty, shared, options, asGuestToken, confirmAllergen = false) => {
+      const token = asGuestToken ?? guestToken()
+      if (!token) return null
+      try {
+        await apiAddLine(token, dishId, qty, shared, options, newIdemKey(), confirmAllergen)
+        return null
+      } catch (err) {
+        // Аллерген — не ошибка связи: гостю нужен осознанный выбор, а не тост
+        if (err instanceof ApiError && err.error === 'allergen warning') {
+          return (err.extra?.allergens as string[]) ?? []
+        }
+        toastRef.current?.(
+          err instanceof ApiError ? humanError(err) : 'Не получилось — проверьте связь и попробуйте ещё раз'
+        )
+        return null
+      }
+    },
     removeLine: uid =>
       guard(async () => {
         if (!guestToken()) return
         await apiRemoveLine(guestToken()!, uid)
+      }, undefined),
+    cancelMine: uid =>
+      guard(async () => {
+        if (!guestToken()) return
+        await apiCancelMine(guestToken()!, uid)
       }, undefined),
     sendWave: scope =>
       guard(async () => {
@@ -351,7 +396,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       guard(async () => {
         if (!guestToken()) return 0
         const r = await apiPay(guestToken()!, scope, idemKey)
-        patch({ lastPaid: r.amount })
+        patch({ lastPaid: r.amount, lastReceipt: r.receipt ?? null })
         return r.amount
       }, 0),
     leaveTip: (amount, idemKey) =>

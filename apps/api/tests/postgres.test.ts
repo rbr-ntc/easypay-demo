@@ -46,7 +46,9 @@ if (available) {
     if (opts.guest) headers['x-guest-token'] = opts.guest
     return fetch(`${base}/api/t/${table}/${action}`, { method: 'POST', headers, body: JSON.stringify(body) })
   }
-  const snapshot = (table: string) => fetch(`${base}/api/t/${table}`).then(r => r.json())
+  // Снапшот отдаётся только своим: в тестах читаем персоналом
+const snapshot = (table: string) =>
+  fetch(`${base}/api/t/${table}`, { headers: { 'x-staff-token': TOKEN } }).then(r => r.json())
   const staffGet = (path: string) => fetch(`${base}${path}`, { headers: { 'x-staff-token': TOKEN } }).then(r => r.json())
 
   /** Освобождает стол перед сценарием: демо-данные не должны мешать. */
@@ -76,7 +78,9 @@ if (available) {
     const fresh = createServer()
     await new Promise<void>(resolve => fresh.listen(0, '127.0.0.1', () => resolve()))
     const freshBase = `http://127.0.0.1:${(fresh.address() as any).port}`
-    const after = await fetch(`${freshBase}/api/t/${table}`).then(r => r.json())
+    const after = await fetch(`${freshBase}/api/t/${table}`, {
+      headers: { 'x-staff-token': TOKEN }
+    }).then(r => r.json())
     fresh.closeAllConnections?.()
     fresh.close()
 
@@ -143,8 +147,11 @@ if (available) {
 
     const registry = await staffGet('/api/shift/checks')
     const check = registry.checks.find((c: any) => c.tableId === table)
-    assert.equal(check.debt, 1290, 'долг измерен до отмены неподанного')
-    assert.equal(registry.shift.debt >= 1290, true, 'долг виден в итогах смены')
+    assert.equal(check.debt, 1290, 'в чеке видна вся непокрытая сумма стола')
+    // Стейк на кухню отправили, но не подали — гость его не получил.
+    // В итогах смены это списание с кухни, а не долг гостя: разные деньги.
+    assert.equal(registry.shift.writtenOff >= 1290, true, 'снятое с кухни считается отдельно')
+    assert.equal(registry.shift.debt, 0, 'за неподанное гость ничего не должен')
 
     const log = await staffGet('/api/log')
     assert.equal(

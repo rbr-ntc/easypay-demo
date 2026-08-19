@@ -5,11 +5,15 @@ import type { Animal } from '../data'
 import { ANIMAL_LIST, Avatar } from '../avatars'
 import { BottomSheet, PrimaryButton } from '../ui'
 import { useStore } from '../store'
+import { ALLERGENS } from '@easypay/domain/allergens'
 
 export function NameSheet() {
   const { ui, patch, snap, join, addLine, toast } = useStore()
   const [name, setName] = useState('')
   const [animal, setAnimal] = useState<Animal>('fox')
+  // Аллергии спрашиваем один раз при посадке: дальше система предупреждает сама
+  const [allergies, setAllergies] = useState<string[]>([])
+  const [showAllergies, setShowAllergies] = useState(false)
   const [busy, setBusy] = useState(false)
   // Повторное «Готово» после обрыва связи не создаёт вторую персону
   const joinKey = useRef(newIdemKey())
@@ -25,7 +29,12 @@ export function NameSheet() {
   const confirm = async () => {
     if (busy) return
     setBusy(true)
-    const persona = await join(name.trim() || `Гость ${others.length + 1}`, effectiveAnimal, joinKey.current)
+    const persona = await join(
+      name.trim() || `Гость ${others.length + 1}`,
+      effectiveAnimal,
+      joinKey.current,
+      allergies
+    )
     if (!persona) {
       setBusy(false)
       return
@@ -77,6 +86,52 @@ export function NameSheet() {
             style={{ width: '100%', border: 'none', outline: 'none', background: 'transparent', fontSize: 17, fontWeight: 540, color: 'var(--ep-ink)' }}
           />
         </div>
+
+        {/* Аллергии: система уже умеет считать их по модификаторам, но не знала,
+            что человеку нельзя. Спрашиваем один раз — дальше предупреждаем сами. */}
+        <button
+          type="button"
+          onClick={() => setShowAllergies(v => !v)}
+          style={{
+            width: '100%',
+            textAlign: 'left',
+            border: 'none',
+            background: 'transparent',
+            padding: '10px 0',
+            fontSize: 14,
+            color: allergies.length > 0 ? 'var(--ep-danger, #9B1C1C)' : 'var(--ep-muted)',
+            cursor: 'pointer'
+          }}
+        >
+          {allergies.length > 0 ? `Аллергии: ${allergies.join(', ')}` : 'У меня аллергия…'}
+        </button>
+
+        {showAllergies && (
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7, marginBottom: 14 }}>
+            {ALLERGENS.map(a => {
+              const on = allergies.includes(a)
+              return (
+                <button
+                  key={a}
+                  type="button"
+                  onClick={() => setAllergies(list => (on ? list.filter(x => x !== a) : [...list, a]))}
+                  style={{
+                    padding: '7px 12px',
+                    borderRadius: 'var(--ep-r-pill)',
+                    border: on ? '2px solid #9B1C1C' : '1px solid var(--ep-border)',
+                    background: on ? '#FDECEC' : 'var(--ep-surface)',
+                    color: on ? '#9B1C1C' : 'inherit',
+                    fontSize: 13.5,
+                    fontWeight: on ? 640 : 480,
+                    cursor: 'pointer'
+                  }}
+                >
+                  {a}
+                </button>
+              )
+            })}
+          </div>
+        )}
 
         {others.length > 0 && (
           <div style={{ fontSize: 12.5, color: 'var(--ep-muted)', marginBottom: 18 }}>

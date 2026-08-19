@@ -1,6 +1,6 @@
 // Меню как данные сервера: цены, названия, цех и проверка модификаторов.
 import { menu } from '@easypay/config'
-import { allergensFor } from '@easypay/domain/allergens'
+import { ALLERGENS, allergensFor, possibleAllergensFor, removedAllergensFor } from '@easypay/domain/allergens'
 
 const MENU = menu
 
@@ -36,6 +36,11 @@ export function allergensOf(id: string, options: Record<string, string> = {}) {
   return allergensFor(DISHES.get(id), options)
 }
 
+/** Что аллергенного убрал выбранный модификатор — кухня обязана видеть это отдельно. */
+export function removedAllergensOf(id: string, options: Record<string, string> = {}) {
+  return removedAllergensFor(DISHES.get(id), options)
+}
+
 /**
  * Модификаторы блюда. Незнакомую группу или значение НЕ подменяем молча:
  * «верблюжье молоко вместо овсяного» — это чужой заказ и риск аллергии.
@@ -63,4 +68,24 @@ export function checkOptions(dish: any, raw: unknown): { options?: Record<string
     options[opt.id] = value
   }
   return { options }
+}
+
+/**
+ * Меню для клиента и интеграторов: с ценами, модификаторами и аллергенами —
+ * как заявленными у блюда, так и худшим случаем по всем вариантам опций.
+ */
+export function menuPayload() {
+  const dishes = [...DISHES.values()].map(dish => ({
+    id: dish.id,
+    name: dish.name,
+    desc: dish.desc ?? null,
+    price: dish.price,
+    category: dish.category ?? null,
+    station: dish.station ?? 'kitchen',
+    stop: !!dish.stop,
+    options: dish.options ?? [],
+    allergens: allergensFor(dish, {}),
+    possibleAllergens: possibleAllergensFor(dish)
+  }))
+  return { dishes, allergens: ALLERGENS }
 }

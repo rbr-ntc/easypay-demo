@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { markReady, subscribeKitchen, takeToWork } from '../kitchenApi'
+import { dismissCancelled, markReady, subscribeKitchen, takeToWork } from '../kitchenApi'
 import type { KitchenPayload } from '../kitchenApi'
 import { useStore } from '../store'
 import { fmtDur } from '../waiter/duration'
@@ -35,8 +35,24 @@ export function Kitchen() {
   const tickets = data?.tickets ?? []
   const cancelled = data?.cancelled ?? []
   const summary = summarizeKitchen(tickets, now)
+  const warn = (data?.summary as any)?.warn ?? 0
   const queued = tickets.filter(t => ticketState(t) === 'queued')
   const cooking = tickets.filter(t => ticketState(t) === 'cooking')
+
+  /**
+   * Волна = один стол, одна отправка. Такие позиции обязаны выйти вместе:
+   * подать тар-тар, пока лазанья ещё двадцать минут в печи, — испортить стол.
+   */
+  const byWave = (list: typeof tickets) => {
+    const waves = new Map<string, typeof tickets>()
+    for (const ticket of list) {
+      const key = `${ticket.tableId}:${(ticket as any).waveAt ?? ticket.sentAt}`
+      const bucket = waves.get(key)
+      if (bucket) bucket.push(ticket)
+      else waves.set(key, [ticket])
+    }
+    return [...waves.entries()].map(([key, items]) => ({ key, items }))
+  }
 
   const act = async (ticket: (typeof tickets)[number]) => {
     setBusy(ticket.uid)
@@ -44,6 +60,14 @@ export function Kitchen() {
       ? await markReady(ticket.tableId, ticket.uid, ticket.sessionId)
       : await takeToWork(ticket.tableId, ticket.uid, ticket.sessionId)
     if (!done) console.error('действие кухни не прошло')
+    setBusy(null)
+  }
+
+  // Отмена уходит с экрана только когда повар подтвердил, что снял блюдо с плиты
+  const dismiss = async (ticket: (typeof cancelled)[number]) => {
+    setBusy(ticket.uid)
+    const done = await dismissCancelled(ticket.tableId, ticket.uid, ticket.sessionId)
+    if (!done) console.error('подтверждение отмены не прошло')
     setBusy(null)
   }
 
@@ -63,6 +87,8 @@ export function Kitchen() {
           <Counter label="В работе" value={String(summary.cooking)} />
           <Counter label="Столов" value={String(summary.tables)} />
           <Counter label="Бар" value={String(tickets.filter(t => t.station === 'bar').length)} />
+          {/* Жёлтые считались только красными: к моменту сигнала кофе уже нельзя пить */}
+          <Counter label="Подгорает" value={String(warn)} alert={warn > 0} />
           <Counter
             label="Самое долгое"
             value={summary.oldestWaitMs === null ? '—' : fmtDur(summary.oldestWaitMs)}
@@ -85,10 +111,10 @@ export function Kitchen() {
 
       {cancelled.length > 0 && (
         <div className="ep-k-cancelled">
-          <div className="ep-k-lane-title">Отменено · снять с плиты</div>
+          <div className="ep-k-lane-title">Отменено · снять с плиты и подтвердить</div>
           <div className="ep-k-list">
             {cancelled.map(t => (
-              <Ticket key={`c-${t.tableId}-${t.uid}`} ticket={t} now={now} busy={false} onAction={() => {}} />
+              <Ticket key={`c-${t.tableId}-${t.uid}`} ticket={t} now={now} busy={busy === t.uid} onAction={() => void dismiss(t)} />
             ))}
           </div>
         </div>
@@ -100,8 +126,17 @@ export function Kitchen() {
             Очередь <span>{queued.length}</span>
           </div>
           <div className="ep-k-list">
-            {queued.map(t => (
-              <Ticket key={`${t.tableId}-${t.uid}`} ticket={t} now={now} busy={busy === t.uid} onAction={() => void act(t)} />
+            {byWave(queued).map(wave => (
+              <div key={wave.key} className={wave.items.length > 1 ? 'ep-k-wave' : undefined}>
+                {wave.items.length > 1 && (
+                  <div className="ep-k-wave-head">
+                    Стол №{wave.items[0].tableId} · {wave.items.length} поз. · отдавать вместе
+                  </div>
+                )}
+                {wave.items.map(t => (
+                  <Ticket key={`${t.tableId}-${t.uid}`} ticket={t} now={now} busy={busy === t.uid} onAction={() => void act(t)} />
+                ))}
+              </div>
             ))}
             {queued.length === 0 && <div className="ep-k-empty">Новых позиций нет</div>}
           </div>
