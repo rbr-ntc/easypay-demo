@@ -2,6 +2,16 @@ import { Avatar } from '../avatars'
 import { fmt } from '../format'
 import type { ServerPayment, ServerPersona } from '../api'
 
+/** Наличные, карта и СБП — разные деньги, вечером они сверяются по-разному. */
+const METHOD_LABEL: Record<string, string> = {
+  sbp: 'СБП',
+  card: 'карта',
+  cash: 'наличные',
+  tpay: 'T-Pay',
+  sber: 'SberPay',
+  mir: 'Mir Pay'
+}
+
 const SCOPE_LABEL: Record<string, string> = {
   own: 'своя часть',
   equal: 'поровну',
@@ -22,7 +32,10 @@ export function PaymentsList({ payments, personas }: { payments: ServerPayment[]
             <Avatar animal={animalOf(p.personaId)} size={34} />
             <div className="ep-w-row-body">
               <div className="ep-w-row-title">{nameOf(p.personaId)}</div>
-              <div className="ep-w-row-sub">{SCOPE_LABEL[p.scope] ?? p.scope} · СБП</div>
+              <div className="ep-w-row-sub">
+                {SCOPE_LABEL[p.scope] ?? p.scope} · {METHOD_LABEL[p.method ?? 'sbp'] ?? 'СБП'}
+                {p.takenByName ? ` · принял ${p.takenByName}` : ''}
+              </div>
             </div>
             <span className="ep-w-row-sum ep-w-row-sum--ok">{fmt(p.amount)}</span>
           </div>

@@ -42,7 +42,11 @@ function freshShift(): Shift {
 
 export function createMemoryStore(): Store {
   const tables = new Map<string, TableSession>()
+  /** Сколько чеков держим целиком: их состав нужен только для показа. */
+  const CHECKS_KEPT = 200
   const closedChecks: ShiftCheck[] = []
+  /** Свод по ВСЕМ чекам смены — живёт отдельно от обрезанного списка. */
+  const checkTotals = { count: 0, paid: 0, debt: 0, overpaid: 0, cancelledTotal: 0 }
   const auditLog: AuditEntry[] = []
   const shift = freshShift()
   let guestsSeen = 0
@@ -70,7 +74,7 @@ export function createMemoryStore(): Store {
   function rememberCheck(tableId: string, session: TableSession) {
     const money = computeTotals(session, priceOf)
     const nameOf = (pid: string) => session.personas.find(p => p.id === pid)?.name ?? null
-    closedChecks.unshift({
+    const check: ShiftCheck = {
       tableId,
       sessionId: session.sessionId ?? '',
       openedAt: session.openedAt ?? 0,
@@ -98,8 +102,18 @@ export function createMemoryStore(): Store {
       cancelledTotal: round2(
         session.lines.filter(l => l.cancelled).reduce((s, l) => s + l.price * l.qty, 0)
       )
-    })
-    if (closedChecks.length > 200) closedChecks.pop()
+    }
+    closedChecks.unshift(check)
+
+    // Итоги копим счётчиком, а не пересчитываем по массиву: массив обрезан
+    // двумя сотнями последних чеков, и свод по нему занижал смену молча
+    checkTotals.count += 1
+    checkTotals.paid = round2(checkTotals.paid + check.paid)
+    checkTotals.debt = round2(checkTotals.debt + Math.max(0, round2(check.total - check.paid)))
+    checkTotals.overpaid = round2(checkTotals.overpaid + check.overpaid)
+    checkTotals.cancelledTotal = round2(checkTotals.cancelledTotal + check.cancelledTotal)
+
+    if (closedChecks.length > CHECKS_KEPT) closedChecks.pop()
   }
 
   return {
@@ -152,9 +166,9 @@ export function createMemoryStore(): Store {
         tablesWithRevenue: closed.filter(c => c.paid > 0).length,
         openTablesWithRevenue: openTables.filter(t => t.payments.length > 0).length,
         revenue: round2(closed.reduce((s, c) => s + c.paid, 0) + openPaid),
-        // Долг за то, что гость получил и не оплатил: отменённое в него
-        // не входит уже на этапе закрытия стола
-        debt: round2(closed.reduce((s, c) => s + c.debt, 0)),
+        // Долг за то, что гость получил и не оплатил, посчитанный той же
+        // формулой, что и в чеке: иначе витрина расходится с реестром
+        debt: round2(closed.reduce((s, c) => s + Math.max(0, round2(c.total - c.paid)), 0)),
         // Снятое с кухни: еду не отдали, ингредиенты потеряли — считается отдельно
         writtenOff: round2(closed.reduce((s, c) => s + c.cancelledTotal, 0)),
         overpaid: round2(closed.reduce((s, c) => s + c.overpaid, 0)),
@@ -176,6 +190,11 @@ export function createMemoryStore(): Store {
 
     async shiftChecks(limit) {
       return closedChecks.slice(0, limit)
+    },
+
+    async shiftCheckTotals() {
+      // Свод по ВСЕМ чекам смены, включая те, чей состав уже вытеснен из памяти
+      return { ...checkTotals }
     },
 
     async close() {

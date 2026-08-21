@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { describeTable, summarizeHall, tableStatus, THRESHOLDS } from '../src/hall.ts'
+import { describeTable, summarizeHall, tableAlerts, tableStatus, THRESHOLDS } from '../src/hall.ts'
 
 const NOW = 1_700_000_000_000
 const min = m => m * 60_000
@@ -130,4 +130,20 @@ test('оплаченное на открытом столе попадает в 
     NOW
   )
   assert.equal(s.shiftRevenue, 1900)
+})
+
+test('текст вызова доезжает до официанта, а не подпись причины', () => {
+  // Гостья писала «уронили вилку, принесите новую», а в зале висело
+  // «Ольга зовёт официанта»: официант шёл вслепую и возвращался за вилкой.
+  const withNote = tableAlerts(
+    card({ call: { name: 'Ольга', reason: 'help', note: 'уронили вилку, принесите новую', at: NOW } }),
+    NOW
+  )
+  const call = withNote.find(a => a.id === 'call-waiter')
+  assert.equal(call.label, 'Ольга: уронили вилку, принесите новую')
+
+  // Гость ничего не написал — остаётся подпись причины, а не пустое двоеточие
+  const plain = tableAlerts(card({ call: { name: 'Ольга', reason: 'water', note: null, at: NOW } }), NOW)
+  assert.equal(plain.find(a => a.id === 'call-waiter').label.startsWith('Ольга '), true)
+  assert.equal(plain.find(a => a.id === 'call-waiter').label.includes(':'), false)
 })

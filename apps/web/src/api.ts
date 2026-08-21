@@ -33,6 +33,8 @@ export interface ServerPersona {
   name: string
   animal: Animal
   joinedAt: number
+  /** Что человеку нельзя. Сервер отдаёт это всем за столом с самого join. */
+  allergies?: string[]
 }
 
 export interface ServerLine {
@@ -40,7 +42,9 @@ export interface ServerLine {
   dishId: string
   name?: string
   qty: number
-  price?: number
+  /** Цена, зафиксированная в позиции. Сервер шлёт её всегда — считать деньги
+      по прайсу из меню нельзя: модификатор и правка меню делают её чужой. */
+  price: number
   options?: Record<string, string>
   shared: boolean
   sharedWith?: string[]
@@ -57,6 +61,9 @@ export interface ServerLine {
 }
 
 export interface ServerPayment {
+  /** Чем заплатили и кто принял: без этого наличные не свести с кассой. */
+  method?: string
+  takenByName?: string | null
   personaId: string
   amount: number
   scope: string
@@ -111,8 +118,15 @@ export interface Snapshot {
   calls: ServerCall[]
   waiter: { id: string; name: string } | null
   seats: number
+  /** Заглушка для постороннего: состав и деньги вырезаны, это не пустой стол. */
+  limited?: boolean
+  /** Просьба принять наличные: деньги ещё не в счёте, их берёт человек. */
+  cashIntent?: { personaId: string; scope: string; amount: number; at: number } | null
   totals: ServerTotals
 }
+
+/** Столько ждём ответа, прежде чем честно сказать гостю, что не дождались. */
+const ACTION_TIMEOUT = 12_000
 
 async function post<T>(
   action: string,
@@ -123,13 +137,27 @@ async function post<T>(
   const headers: Record<string, string> = { 'Content-Type': 'application/json' }
   if (opts.staff) headers['x-staff-token'] = getStaffToken()
   if (opts.guest) headers['x-guest-token'] = opts.guest
-  const res = await fetch(`${API}/${action}`, {
-    method: 'POST',
-    headers,
-    // sessionId помогает серверу отличить «этот гость не с нашего стола» от
-    // «стол закрыли, пока вы ели» — гостю нужны разные объяснения
-    body: JSON.stringify(opts.sessionId ? { ...body, sessionId: opts.sessionId } : body)
-  })
+  // Запрос обязан сдаться сам. Без этого при исчерпанном пуле соединений
+  // кнопка вечно показывала «Секунду…» — ни ответа, ни ошибки, ни возможности
+  // повторить: гость просто сидел перед застывшим экраном.
+  const stop = new AbortController()
+  const timer = setTimeout(() => stop.abort(), ACTION_TIMEOUT)
+  let res: Response
+  try {
+    res = await fetch(`${API}/${action}`, {
+      method: 'POST',
+      headers,
+      signal: stop.signal,
+      // sessionId помогает серверу отличить «этот гость не с нашего стола» от
+      // «стол закрыли, пока вы ели» — гостю нужны разные объяснения
+      body: JSON.stringify(opts.sessionId ? { ...body, sessionId: opts.sessionId } : body)
+    })
+  } catch (err) {
+    if (stop.signal.aborted) throw new ApiError('timeout', 0)
+    throw err
+  } finally {
+    clearTimeout(timer)
+  }
   if (!res.ok) {
     const err = (await res.json().catch(() => ({ error: res.statusText }))) as Record<string, unknown>
     throw new ApiError(String(err.error ?? 'request failed'), res.status, err)
@@ -178,15 +206,36 @@ export interface Receipt {
   scope: string
   guest: string
   table: string
-  lines: { name: string; qty: number; price: number; shared: boolean; share: number | null }[]
+  lines: {
+    name: string
+    qty: number
+    price: number
+    /** Модификаторы: чек обязан называть, бутылка это или бокал. */
+    options?: Record<string, string>
+    shared: boolean
+    share: number | null
+  }[]
 }
 
-export const apiPay = (guest: string, scope: 'own' | 'equal' | 'full', idemKey: string) =>
-  post<{ ok: true; amount: number; remaining: number ; receipt?: Receipt }>('pay', { scope, idemKey }, { guest })
+export const apiPay = (
+  guest: string,
+  scope: 'own' | 'equal' | 'full',
+  idemKey: string,
+  /** Чем именно платит гость — иначе в платеже осядет «СБП» на любой выбор. */
+  method?: string
+) =>
+  post<{ ok: true; amount: number; remaining: number; receipt?: Receipt }>(
+    'pay',
+    { scope, idemKey, method },
+    { guest }
+  )
 
 /** «Заплачу наличными»: просьба к официанту, деньги не списываются. */
-export const apiCashIntent = (guest: string, scope: 'own' | 'full') =>
+export const apiCashIntent = (guest: string, scope: 'own' | 'equal' | 'full') =>
   post<{ ok: true; amount: number; scope: string }>('cashIntent', { scope }, { guest })
+
+/** «Передумал»: снять просьбу о наличных, чтобы официант не шёл зря. */
+export const apiCancelCash = (guest: string) => post<{ ok: true }>('cancelCash', {}, { guest })
 
 export const apiTip = (guest: string, amount: number, idemKey: string) =>
   post<{ ok: true; amount: number }>('tip', { amount, idemKey }, { guest })
@@ -213,14 +262,23 @@ export interface Whoami {
 }
 
 /** Кто сейчас в смене на этом устройстве. null — нужно войти. */
-export async function apiWhoami(token: string = getStaffToken()): Promise<Whoami | null> {
+/**
+ * Кто сейчас в смене на этом устройстве.
+ *
+ * `null` — сервер СКАЗАЛ «токена нет». `'offline'` — сервер молчит или отвечает
+ * пятисоткой. Раньше это было одно и то же значение, и рестарт сервера или
+ * моргнувший Wi-Fi выбрасывали повара на PIN-экран посреди смены, стирая
+ * личность из localStorage.
+ */
+export async function apiWhoami(token: string = getStaffToken()): Promise<Whoami | null | 'offline'> {
   if (!token) return null
   try {
     const res = await fetch('/api/staff/me', { headers: { 'x-staff-token': token } })
-    if (!res.ok) return null
+    if (res.status === 401 || res.status === 403) return null
+    if (!res.ok) return 'offline'
     return (await res.json()) as Whoami
   } catch {
-    return null
+    return 'offline'
   }
 }
 
@@ -278,7 +336,24 @@ export interface ShiftCheck {
 export interface ShiftChecksPayload {
   shift: { closedRevenue: number; netRevenue?: number; overpaid: number; debt: number; writtenOff?: number }
   checks: ShiftCheck[]
-  control: { checksPaid: number; closedRevenue: number; openPaid: number; matches: boolean }
+  control: {
+    checksPaid: number
+    closedRevenue: number
+    openPaid: number
+    matches: boolean
+    // Сверка не только денег: долг и переплата тоже обязаны сходиться
+    checksDebt?: number
+    shiftDebt?: number
+    debtMatches?: boolean
+    checksOverpaid?: number
+    overpaidMatches?: boolean
+    checksWrittenOff?: number
+    shiftWrittenOff?: number
+    writtenOffMatches?: boolean
+    /** Сколько чеков за сверкой и сколько из них поместилось в список. */
+    checksTotal?: number
+    checksShown?: number
+  }
 }
 
 /** Реестр чеков смены: то, чем сводят кассу. Только менеджеру. */
@@ -310,6 +385,8 @@ export interface LogEntry {
   action: string
   tableId: string | null
   detail: string | null
+  /** Сумма денежного действия: журнал обязан обосновывать цифры смены. */
+  amount?: number | null
 }
 
 export function subscribe(

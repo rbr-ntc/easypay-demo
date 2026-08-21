@@ -43,7 +43,7 @@ export interface Line {
   comment?: string | null
 }
 
-export type PayMethod = 'sbp' | 'card' | 'cash'
+export type PayMethod = 'sbp' | 'card' | 'cash' | 'tpay' | 'sber' | 'mir'
 
 export interface ReceiptLine {
   name: string

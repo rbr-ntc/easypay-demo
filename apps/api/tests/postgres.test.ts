@@ -168,7 +168,7 @@ const snapshot = (table: string) =>
     // и запись утверждала, что человек ушёл должен за еду, которой не видел.
     const log = await staffGet('/api/log')
     assert.equal(
-      log.entries.some((e: any) => e.action === 'закрыл стол' && e.tableId === table),
+      log.entries.some((e: any) => e.action === 'закрыл стол, не дождавшись кухни' && e.tableId === table),
       true
     )
     assert.equal(
@@ -583,5 +583,42 @@ const snapshot = (table: string) =>
     const log = await staffGet('/api/log')
     const served = log.entries.find((e: any) => e.action === 'подал' && e.tableId === table)
     assert.equal(served.name, 'Менеджер (токен)', 'в журнале виден автор действия')
+  })
+
+  test('сверка складывается по всем чекам смены, а не по видимой сотне', async () => {
+    // Реестр на экране обрезан сотней последних чеков, а итоги смены считались
+    // по всем. После сто первого закрытого стола экран начинал писать
+    // «не сходится» на ровном месте — ровно вечером, когда цифры нужнее всего.
+    const registry = await staffGet('/api/shift/checks')
+    assert.equal(registry.control.checksShown <= registry.control.checksTotal, true)
+    assert.equal(registry.control.matches, true, 'выручка сходится независимо от длины списка')
+    assert.equal(registry.control.debtMatches, true, 'долг тоже считается одной формулой')
+  })
+
+  test('два гостя с одним QR открывают ОДИН стол, а не два', async () => {
+    // `select ... for update` на свободном столе не блокировал ничего: строки
+    // ещё нет. Компания, сканирующая один QR одновременно, открывала две
+    // сессии с closed_at is null — гость то видел свой заказ, то чужой пустой
+    // стол, а гости и выручка смены на этом столе удваивались.
+    const table = '22'
+    await freeTable(table)
+
+    const both = await Promise.all([
+      post(table, 'join', { name: 'Аня', animal: 'fox', idemKey: 'race-a' }),
+      post(table, 'join', { name: 'Боря', animal: 'bear', idemKey: 'race-b' })
+    ])
+    assert.deepEqual(both.map(r => r.status), [200, 200])
+
+    const snap = await snapshot(table)
+    assert.equal(snap.personas.length, 2, 'оба сели за один и тот же стол')
+
+    const probe = connect({ max: 1 })
+    const open = await probe`
+      select count(*)::int as n from table_sessions ts
+      join restaurant_tables rt on rt.id = ts.table_id
+      where rt.number = ${table} and ts.closed_at is null
+    `
+    await probe.end()
+    assert.equal(open[0].n, 1, 'открытая сессия у стола ровно одна')
   })
 }

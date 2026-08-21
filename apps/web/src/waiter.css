@@ -605,3 +605,58 @@
   letter-spacing: -0.6px;
   font-variant-numeric: tabular-nums;
 }
+
+/* Подтверждение необратимого действия — внутри приложения, а не в окне браузера.
+   window.confirm блокирует поток, теряется в PWA и выглядит как сбой сайта. */
+.ep-w-ask-veil {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  background: rgba(14, 14, 20, 0.44);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+
+.ep-w-ask {
+  width: min(420px, 100%);
+  background: var(--ep-surface);
+  border-radius: var(--ep-r-card);
+  padding: 20px;
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.28);
+}
+
+.ep-w-ask-title {
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: -0.3px;
+  margin-bottom: 7px;
+}
+
+.ep-w-ask-body {
+  font-size: 14px;
+  line-height: 1.45;
+  color: var(--ep-text-2);
+  margin-bottom: 18px;
+}
+
+.ep-w-ask-row {
+  display: flex;
+  gap: 10px;
+}
+
+.ep-w-ask-row .ep-w-btn {
+  flex: 1;
+  min-height: 44px;
+}
+
+.ep-w-btn--ghost {
+  background: var(--ep-soft);
+  color: var(--ep-text-2);
+}
+
+.ep-w-btn--danger {
+  background: #9b1c1c;
+  color: #fff;
+}

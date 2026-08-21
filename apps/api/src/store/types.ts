@@ -29,6 +29,14 @@ export interface Store {
   /** Реестр чеков смены: закрытые сессии со всем составом. */
   shiftChecks(limit: number): Promise<ShiftCheck[]>
 
+  /**
+   * Итоги ПО ВСЕМ закрытым чекам смены, а не по видимой их части. Список на
+   * экране обрезан сотней последних, и сверка, сложенная из него, начинала
+   * врать после сто первого стола за вечер — ровно в тот момент, когда цифры
+   * нужнее всего. Сверять надо всё, показывать — сколько поместилось.
+   */
+  shiftCheckTotals(): Promise<ShiftCheckTotals>
+
   close(): Promise<void>
 }
 
@@ -41,6 +49,15 @@ export interface ShiftCheckLine {
   guest: string | null
   cancelled: boolean
   cancelReason: string | null
+}
+
+/** Свод по всем чекам смены: этим сходится касса. */
+export interface ShiftCheckTotals {
+  count: number
+  paid: number
+  debt: number
+  overpaid: number
+  cancelledTotal: number
 }
 
 /** Одна закрытая сессия стола — то, чем сводят кассу. */

@@ -179,7 +179,10 @@ export function kitchenPayload(tables: Map<string, TableSession>) {
       bar: sorted.filter(t => t.station === 'bar').length,
       kitchen: sorted.filter(t => t.station === 'kitchen').length,
       cancelled: cancelled.length,
-      warn: sorted.filter(x => ticketUrgency(x as any, now) === 'warn').length,
+      // «Подгорает» — это всё, что уже вышло из нормы: и жёлтые, и красные.
+      // Считая одни жёлтые, счётчик показывал ноль при горящей красной карточке
+      // — ровно наоборот тому, зачем он нужен повару и менеджеру.
+      warn: sorted.filter(x => ticketUrgency(x as any, now) !== 'ok').length,
       // Сколько тарелок стоит на раздаче и ждёт официанта
       ready: sorted.filter(x => x.readyAt).length
     },

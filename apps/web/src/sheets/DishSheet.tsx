@@ -1,12 +1,45 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import { allergenAccusative } from '@easypay/domain/allergens'
 import { allergenTags, defaultOptions, dietTags, dishEmoji, findDish, NAVY, priceWithOptions } from '../data'
-import type { LineOptions } from '../data'
+import type { Dish, LineOptions } from '../data'
 import { BottomSheet, PrimaryButton, WarnBanner } from '../ui'
 import { useStore } from '../store'
 import { newIdemKey } from '../keys'
 import { fmt } from '../format'
 
 const MAX_QTY = 9 // столько же принимает сервер
+
+/**
+ * Варианты, которые снимают заявленный аллерген. Меню это уже описывает
+ * (`effects.removes`) — кухня видит «Без сметаны — снимает лактозу», а гость
+ * до сих пор нет.
+ */
+function rescues(dish: Dish, blocked: string[] | null, mine: string[]) {
+  if (!blocked || blocked.length === 0) return []
+  const hits: { optionId: string; choice: string; removes: string[] }[] = []
+  for (const opt of dish.options ?? []) {
+    for (const choice of opt.choices ?? []) {
+      const removes = (opt.effects?.[choice]?.removes ?? []).filter(a => blocked.includes(a))
+      const adds = opt.effects?.[choice]?.adds ?? []
+      // Спасение — то, что снимает заявленный аллерген и не приносит другой
+      // из СПИСКА ЭТОГО ГОСТЯ. Овсяное молоко добавляет глютен: человеку с
+      // непереносимостью лактозы оно подходит, человеку с целиакией — нет.
+      const dangerous = adds.some(a => mine.includes(a))
+      if (removes.length > 0 && !dangerous) hits.push({ optionId: opt.id, choice, removes })
+    }
+  }
+  return hits
+}
+
+/**
+ * Что именно гость получит с учётом выбора. Модификатор объёма меняет порцию,
+ * и подпись «150 мл» рядом с выбранной бутылкой — прямой обман.
+ */
+function servingLabel(dish: { serving?: string; options?: { id: string; name: string }[] }, opts: LineOptions): string | null {
+  const volume = dish.options?.find(o => /объ[её]м|порци|размер/i.test(o.name))
+  const chosen = volume ? opts[volume.id] : null
+  return chosen || dish.serving || null
+}
 
 export function DishSheet() {
   const { ui, patch, me, snap, totals, addLine, toast } = useStore()
@@ -17,32 +50,63 @@ export function DishSheet() {
   const [target, setTarget] = useState<'me' | 'table'>('me')
   const [opts, setOpts] = useState<LineOptions>(() => (dish ? defaultOptions(dish) : {}))
   // Сервер остановил заказ: в блюде есть то, на что гость указал аллергию
-  const [blocked, setBlocked] = useState<string[] | null>(null)
+  const [blocked, setBlocked] = useState<string[] | null>(ui.pendingAllergens)
   // Одно открытие карточки — одно намерение заказать. Повторные нажатия
   // «Добавить» приходят на сервер с тем же ключом и не создают вторую порцию:
   // количество выбирается плюсиком, а не частотой тапов.
   const addKey = useRef(newIdemKey())
   const [busy, setBusy] = useState(false)
+  // Защёлка синхронная: setState применяется к следующему рендеру, и семь
+  // тапов внутри одного тика проскакивали мимо флага busy все семь раз
+  const sending = useRef(false)
+
+  // Карточка переиспользуется под разные блюда, и состояние обязано ехать за
+  // блюдом. Раньше модификаторы и ключ намерения создавались один раз на
+  // монтирование: капучино уходил с «volume» от вина и получал 400, а второе
+  // блюдо наследовало чужой ключ идемпотентности.
+  const [shownDish, setShownDish] = useState<string | null>(dish?.id ?? null)
+  if (dish && shownDish !== dish.id) {
+    // Сбрасываем СИНХРОННО, а не эффектом: эффект отставал на один рендер, и
+    // первый кадр нового блюда считал цену, порцию и «спасательные» варианты
+    // по опциям предыдущего. Пока шторка размонтируется между блюдами, это
+    // было только миганием цены, но держаться на этом нельзя.
+    setShownDish(dish.id)
+    addKey.current = newIdemKey()
+    setOpts(defaultOptions(dish))
+    setQty(1)
+    setTarget('me')
+    setBlocked(ui.pendingAllergens)
+  }
+  // Предупреждение, доставшееся от шторки с именем, показано — гасим его в UI
+  useEffect(() => {
+    if (ui.pendingAllergens) patch({ pendingAllergens: null })
+  }, [ui.pendingAllergens])
+
   if (!dish) return null
 
   const close = () => patch({ sheet: null, currentDishId: null, pendingAdd: null })
 
   const add = async () => {
-    if (busy) return
+    if (sending.current) return
     const shared = companyAtTable && target === 'table'
     if (!me) {
       // Имя спрашиваем ровно в момент первой надобности; блюдо НЕ теряется
       patch({ sheet: 'name', pendingAdd: { dishId: dish.id, qty, shared, options: opts } })
       return
     }
+    sending.current = true
     setBusy(true)
-    const hits = await addLine(dish.id, qty, shared, opts, undefined, false, addKey.current)
+    const res = await addLine(dish.id, qty, shared, opts, undefined, false, addKey.current)
+    sending.current = false
     setBusy(false)
-    if (hits && hits.length > 0) {
+    if (res.allergens && res.allergens.length > 0) {
       // Не добавляем молча и не прячем за тостом: это здоровье, а не удобство
-      setBlocked(hits)
+      setBlocked(res.allergens)
       return
     }
+    // Сервер отказал — карточка остаётся открытой, а тоста об успехе нет:
+    // «Капучино → Глеб» при пустом заказе врал гостю в лицо
+    if (!res.ok) return
     patch({ sheet: null, currentDishId: null })
     toast(shared ? `${dish.name} → общее на стол` : `${dish.name} → ${me.name}`)
   }
@@ -51,7 +115,8 @@ export function DishSheet() {
   const addAnyway = async () => {
     const shared = companyAtTable && target === 'table'
     setBlocked(null)
-    await addLine(dish.id, qty, shared, opts, undefined, true, addKey.current)
+    const res = await addLine(dish.id, qty, shared, opts, undefined, true, addKey.current)
+    if (!res.ok) return
     patch({ sheet: null, currentDishId: null })
     toast(`${dish.name} → ${me?.name ?? 'вам'}`)
   }
@@ -112,7 +177,9 @@ export function DishSheet() {
         <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap', marginBottom: 16, alignItems: 'center' }}>
           {(dish.serving || dish.kcal) && (
             <span style={{ fontSize: 12.5, color: 'var(--ep-muted)', background: 'var(--ep-soft)', borderRadius: 'var(--ep-r-pill)', padding: '5px 11px' }}>
-              {[dish.serving, dish.kcal ? `${dish.kcal} ккал` : null].filter(Boolean).join(' · ')}
+              {/* Порция обязана считаться от ВЫБРАННОГО модификатора: при
+                  выбранной бутылке шапка продолжала обещать «150 мл» */}
+              {[servingLabel(dish, opts), dish.kcal ? `${dish.kcal} ккал` : null].filter(Boolean).join(' · ')}
             </span>
           )}
           {dietTags(dish).map(t => (
@@ -164,6 +231,36 @@ export function DishSheet() {
               Вы указали это в аллергиях. Проверьте состав или спросите официанта — если
               уверены, можно заказать.
             </div>
+            {/* Приложение знает, какой модификатор снимает аллерген, — кухне оно
+                это уже говорит. Гостю не сказать об этом было прямой потерей:
+                переключатель «овсяное молоко» стоял на экране прямо под
+                предупреждением, и гость про него не догадывался. */}
+            {rescues(dish, blocked, me?.allergies ?? []).map(r => (
+              <button
+                key={`${r.optionId}-${r.choice}`}
+                onClick={() => {
+                  setOpts(prev => ({ ...prev, [r.optionId]: r.choice }))
+                  setBlocked(null)
+                }}
+                style={{
+                  display: 'block',
+                  width: '100%',
+                  textAlign: 'left',
+                  minHeight: 44,
+                  marginBottom: 8,
+                  padding: '10px 14px',
+                  borderRadius: 'var(--ep-r-sm)',
+                  border: '1px solid #9B1C1C',
+                  background: '#fff',
+                  color: '#9B1C1C',
+                  fontSize: 13.5,
+                  fontWeight: 560,
+                  cursor: 'pointer'
+                }}
+              >
+                Взять «{r.choice}» — снимет {r.removes.map(allergenAccusative).join(' и ')}
+              </button>
+            ))}
             <div style={{ display: 'flex', gap: 8 }}>
               <button
                 onClick={() => setBlocked(null)}

@@ -41,6 +41,23 @@ export const ALLERGENS: string[] = [
 
 const ALLERGEN_SET = new Set(ALLERGENS)
 
+/**
+ * Винительный падеж: «снимет лактозу», а не «снимет лактоза». Интерфейс на
+ * русском, и подпись, собранная склейкой, читается как машинный перевод —
+ * ровно там, где гость решает вопрос про своё здоровье.
+ */
+const ACCUSATIVE: Record<string, string> = {
+  лактоза: 'лактозу',
+  рыба: 'рыбу',
+  соя: 'сою',
+  горчица: 'горчицу',
+  'морепродукты': 'морепродукты'
+}
+
+export function allergenAccusative(a: string): string {
+  return ACCUSATIVE[a] ?? a
+}
+
 export function isAllergen(tag: string): boolean {
   return ALLERGEN_SET.has(tag)
 }

@@ -84,6 +84,23 @@ export function sharersOf(line: MoneyLine, personaIds: string[]): string[] {
  * Считает всё по столу. Цены приходят снаружи (`priceOf`), потому что сервер берёт их
  * из меню заведения, а клиент — из импортированного меню.
  */
+/**
+ * Разложить сумму по долям так, чтобы округлённые части складывались обратно
+ * в неё же. Хвост в одну-две копейки отдаём самой большой доле — иначе на
+ * витрине счёт 490 распадается на 163,33 × 3 = 489,99, и стол «должен» копейку,
+ * которую никому нельзя предъявить.
+ */
+export function splitRounded(shares: number[], total: number): number[] {
+  const rounded = shares.map(round2)
+  const drift = round2(total - rounded.reduce((s, x) => s + x, 0))
+  if (drift === 0 || rounded.length === 0) return rounded
+
+  let target = 0
+  for (let i = 1; i < rounded.length; i++) if (rounded[i] > rounded[target]) target = i
+  rounded[target] = round2(rounded[target] + drift)
+  return rounded
+}
+
 export function computeTotals(state: MoneyState | null | undefined, priceOf: PriceOf): MoneyTotals {
   const personas = state?.personas ?? []
   const lines = state?.lines ?? []
@@ -104,7 +121,7 @@ export function computeTotals(state: MoneyState | null | undefined, priceOf: Pri
   const remaining = Math.max(0, tableTotal - paidTotal)
 
   // Доля персоны в общих блюдах — только по тем, где она в списке участников
-  const shareOf = (pid: string | null) => {
+  const rawShareOf = (pid: string | null) => {
     if (!pid) return 0
     return sharedLines.reduce((sum, line) => {
       const sharers = sharersOf(line, personaIds)
@@ -113,13 +130,20 @@ export function computeTotals(state: MoneyState | null | undefined, priceOf: Pri
     }, 0)
   }
 
+  // Хвост от деления раскладываем здесь и только здесь: сумма долей обязана
+  // сойтись со стоимостью общих блюд, иначе 490 на троих превращается в 489,99,
+  // и дальше эта копейка расползается по всем экранам.
+  const roundedShares = splitRounded(personaIds.map(rawShareOf), round2(sharedTotal))
+  const shareIndex = new Map(personaIds.map((id, i) => [id, roundedShares[i]]))
+  const shareOf = (pid: string | null) => (pid ? shareIndex.get(pid) ?? 0 : 0)
+
   // Округляем в источнике, а не на витрине. Иначе у одного и того же гостя
   // «доля» и «остаток» считались по разным правилам и расходились на копейку:
   // share 163,34 при remaining 163,33. Деньги живут в копейках — там и округляем.
   const ownOf = (pid: string | null) => round2(pid ? sumOf(bill.filter(l => !l.shared && l.personaId === pid)) : 0)
   const paidOf = (pid: string | null) =>
     round2(pid ? payments.filter(p => p.personaId === pid).reduce((s, p) => s + (Number(p.amount) || 0), 0) : 0)
-  const totalOf = (pid: string | null) => round2(ownOf(pid) + round2(shareOf(pid)))
+  const totalOf = (pid: string | null) => round2(ownOf(pid) + shareOf(pid))
   // Личный долг до учёта чужих платежей за стол
   const rawRemainingOf = (pid: string | null) => round2(Math.max(0, totalOf(pid) - paidOf(pid)))
 
@@ -205,19 +229,3 @@ function absorbRounding(amount: number, remaining: number): number {
   return rest > 0 && rest < 1 ? round2(remaining) : amount
 }
 
-/**
- * Разложить сумму по долям так, чтобы округлённые части складывались обратно
- * в неё же. Хвост в одну-две копейки отдаём самой большой доле — иначе на
- * витрине счёт 490 распадается на 163,33 × 3 = 489,99, и стол «должен» копейку,
- * которую никому нельзя предъявить.
- */
-export function splitRounded(shares: number[], total: number): number[] {
-  const rounded = shares.map(round2)
-  const drift = round2(total - rounded.reduce((s, x) => s + x, 0))
-  if (drift === 0 || rounded.length === 0) return rounded
-
-  let target = 0
-  for (let i = 1; i < rounded.length; i++) if (rounded[i] > rounded[target]) target = i
-  rounded[target] = round2(rounded[target] + drift)
-  return rounded
-}

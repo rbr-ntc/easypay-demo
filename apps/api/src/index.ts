@@ -111,6 +111,9 @@ const streams = new Map<string, Set<http.ServerResponse>>()
 const hallStreams = new Set<http.ServerResponse>()
 const kitchenStreams = new Set<http.ServerResponse>()
 const idempotency = new Map<string, { at: number; status: number; body: Record<string, unknown> }>()
+// Запросы с одним ключом, пришедшие одновременно, ждут первый и получают его
+// ответ. Кеш отвечает на повтор ПОСЛЕ выполнения, эта карта — на повтор ВО ВРЕМЯ.
+const inFlight = new Map<string, Promise<MutationResult>>()
 
 const MAX_STREAMS_PER_TABLE = 50
 const MAX_STAFF_STREAMS = 20
@@ -225,7 +228,13 @@ function snapshot(t: TableSession, id: string) {
     call: t.calls[0] ? { ...t.calls[0], name: nameOf(t.calls[0].personaId) } : null,
     waiter: waiterOfTable(id),
     // «Хочу наличными»: официант подойдёт и подтвердит приём денег
-    cashIntent: t.cashIntent ?? null,
+    // Сумму просьбы пересчитываем на каждый снапшот от текущего остатка: она
+    // замерзала в момент нажатия, а списывалась актуальная. Сосед доплачивал,
+    // пока официант шёл, — гость читал 1 200 ₽, официант брал 1 200 ₽,
+    // а проводилось 300 ₽.
+    cashIntent: t.cashIntent
+      ? { ...t.cashIntent, amount: round2(amountFor(money, t.cashIntent.personaId, t.cashIntent.scope as PayScope)) }
+      : null,
     seats: seatsOf(id),
     totals: {
       tableTotal: round2(money.tableTotal),
@@ -279,7 +288,9 @@ function publicStub(t: TableSession, id: string) {
     status: t.status,
     openedAt: t.openedAt,
     closedAt: t.closedAt,
-    occupied: t.personas.length,
+    // У закрытого стола прошлые гости уже не при чём: постороннему незачем
+    // знать, сколько человек тут сидело до него
+    occupied: t.status === 'open' ? t.personas.length : 0,
     seats: seatsOf(id),
     personas: [],
     lines: [],
@@ -403,7 +414,9 @@ const NAME_MAX = 30
 const ANIMALS = new Set(['fox', 'bear', 'panda', 'raccoon', 'owl', 'cat'])
 const TABLE_RE = /^[A-Za-z0-9_-]{1,24}$/
 const STAFF_ACTIONS = new Set(['serve', 'ready', 'start', 'close', 'reset', 'ack', 'dismiss', 'clean', 'cash'])
-const GUEST_ACTIONS = new Set(['lines', 'remove', 'send', 'pay', 'tip', 'call', 'cancelMine', 'cashIntent'])
+const GUEST_ACTIONS = new Set([
+  'lines', 'remove', 'send', 'pay', 'tip', 'call', 'cancelMine', 'cashIntent', 'cancelCash'
+])
 const IDEMPOTENT_ACTIONS = new Set(['join', 'lines', 'pay', 'tip'])
 const CALL_REASONS = new Set(['help', 'bill', 'water'])
 const PAY_METHODS = new Set(['sbp', 'card', 'cash'])
@@ -453,7 +466,10 @@ function cancelPending(table: TableSession, reason: string, actor: Actor | null)
     if (line.sent && !line.served && !line.cancelled) {
       line.cancelled = true
       line.cancelledAt = now
-      line.cancelReason = reason
+      // Один ярлык на два разных случая вводил в заблуждение и повара, и
+      // управляющую: блюдо, снятое с огня, — это испорченный продукт, а
+      // нетронутое из очереди готовить просто не начинали. Потери разные.
+      line.cancelReason = line.startedAt ? `${reason}, снято с плиты` : `${reason}, не начинали`
       line.cancelledBy = actor?.id ?? null
       count += 1
       amount += line.price * line.qty
@@ -642,8 +658,11 @@ function guestAction(t: TableSession, tableId: string, action: string, body: any
       return fail(400, 'unknown pay scope', { allowed: [...PAY_SCOPES, ...Object.keys(PAY_SCOPE_ALIASES)] })
     }
     const scope: PayScope = wanted
-    // С телефона платят только безналом: наличные принимает официант и подтверждает сам
-    const method: PayMethod = body.method === 'card' ? 'card' : 'sbp'
+    // С телефона платят только безналом: наличные принимает официант и подтверждает сам.
+    // Способ берём тот, который гость выбрал на экране: раньше любой выбор
+    // записывался как СБП, и список оплат врал официанту в лицо.
+    const PHONE_METHODS: PayMethod[] = ['sbp', 'card', 'tpay', 'sber', 'mir']
+    const method: PayMethod = PHONE_METHODS.includes(body.method) ? body.method : 'sbp'
     const money = computeTotals(t, priceOf)
     const amount = round2(amountFor(money, persona.id, scope))
     if (amount <= 0) return fail(400, 'nothing to pay')
@@ -666,6 +685,9 @@ function guestAction(t: TableSession, tableId: string, action: string, body: any
         name: dishName(l.dishId),
         qty: l.qty,
         price: l.price,
+        // Без модификаторов чек за 2 800 ₽ выглядит как чек за бокал вина:
+        // гостю нечем перепроверить, за что именно с него списали
+        options: l.options ?? {},
         shared: !!l.shared,
         share: l.shared ? round2((l.price * l.qty) / Math.max(1, (l.sharedWith ?? []).length || t.personas.length)) : null
       }))
@@ -676,7 +698,12 @@ function guestAction(t: TableSession, tableId: string, action: string, body: any
     const left = round2(computeTotals(t, priceOf).remaining)
     // Причина вызова исчезла — снимаем его сам, иначе официант идёт с папкой
     // к гостю, который уже расплатился, а красный чип приучает игнорировать зал
-    if (left <= 0.01) t.calls = t.calls.filter(c => c.reason !== 'bill')
+    if (left <= 0.01) {
+      t.calls = t.calls.filter(c => c.reason !== 'bill')
+      // И просьба о наличных тоже: гость передумал и заплатил телефоном,
+      // а официант всё ещё шёл к нему за купюрами, и стол горел красным
+      t.cashIntent = null
+    }
 
     return ok({
       ok: true,
@@ -762,9 +789,27 @@ function guestAction(t: TableSession, tableId: string, action: string, body: any
     const amount = round2(amountFor(money, persona.id, wanted as PayScope))
     if (amount <= 0) return fail(400, 'nothing to pay')
 
+    // Тихо перезаписывать чужую просьбу нельзя: у соседа исчезает баннер, его
+    // «передумал» отвечает 403, а официант приходит с одной суммой на двоих
+    if (t.cashIntent && t.cashIntent.personaId !== persona.id) {
+      const who = t.personas.find(p => p.id === t.cashIntent!.personaId)?.name ?? 'гость'
+      return fail(409, 'cash request pending', { by: who, amount: t.cashIntent.amount })
+    }
+
     t.cashIntent = { personaId: persona.id, scope: wanted, amount, at: Date.now() }
     audit(null, 'просит принять наличные', tableId, `${persona.name} · ${wanted}`, amount, persona)
     return ok({ ok: true, amount, scope: wanted })
+  }
+
+  if (action === 'cancelCash') {
+    // Гость передумал и платит телефоном. Без этого просьба была билетом в
+    // один конец: официант всё равно шёл за наличными, которых уже не ждут.
+    if (!t.cashIntent) return fail(409, 'no cash request')
+    if (t.cashIntent.personaId !== persona.id) return fail(403, 'not your request')
+    const was = t.cashIntent.amount
+    t.cashIntent = null
+    audit(null, 'передумал платить наличными', tableId, persona.name, was, persona)
+    return ok()
   }
 
   // call
@@ -940,7 +985,8 @@ function staffAction(t: TableSession, tableId: string, action: string, body: any
           actor,
           'списание с кухни',
           tableId,
-          `${cancelled.count} поз. снято с приготовления`,
+          // Позиции ничего не доказывают: управляющая обосновывает деньгами
+          `${cancelled.count} поз. на ${round2(cancelled.amount)} ₽ снято с приготовления`,
           cancelled.amount
         )
       }
@@ -965,11 +1011,20 @@ function staffAction(t: TableSession, tableId: string, action: string, body: any
       // до-отменочные числа, и одна и та же сумма расходилась на четырёх экранах
       const debt = round2(after.remaining)
       const withDebt = debt > 0.01
+      // Закрытие поверх готовящейся еды — отдельное событие: гости заплатили и
+      // не получили блюда. Раньше в журнале это выглядело как обычное закрытие.
+      const verb = closing ? 'закрыл' : 'сбросил'
+      const what = withDebt
+        ? `${verb} стол с долгом`
+        : cancelled.count > 0
+          ? `${verb} стол, не дождавшись кухни`
+          : `${verb} стол`
       audit(
         actor,
-        withDebt ? `${closing ? 'закрыл' : 'сбросил'} стол с долгом` : `${closing ? 'закрыл' : 'сбросил'} стол`,
+        what,
         tableId,
-        `оплачено ${round2(after.paidTotal)} ₽${withDebt ? `, долг ${debt} ₽` : ''}`,
+        `оплачено ${round2(after.paidTotal)} ₽${withDebt ? `, долг ${debt} ₽` : ''}` +
+          (cancelled.count > 0 ? `, снято с кухни ${round2(cancelled.amount)} ₽` : ''),
         withDebt ? debt : round2(after.paidTotal)
       )
     }
@@ -1091,7 +1146,11 @@ async function handleApi(req: any, res: any, url: URL) {
     if (!actor) return json(res, 401, staffUnauthorized(req))
     if (!allowed(actor, 'log')) return json(res, 403, { error: 'role not allowed' })
     const shift = await store.shift()
-    const checks = await store.shiftChecks(100)
+    const CHECKS_SHOWN = 100
+    const [checks, checkTotals] = await Promise.all([
+      store.shiftChecks(CHECKS_SHOWN),
+      store.shiftCheckTotals()
+    ])
     return json(res, 200, {
       shift: {
         startedAt: shift.startedAt,
@@ -1111,22 +1170,29 @@ async function handleApi(req: any, res: any, url: URL) {
       // Сверка: сумма чеков обязана совпасть с выручкой смены
       // Сверка кассы: сумма чеков закрытых столов обязана совпасть с их выручкой.
       // Деньги на ещё открытых столах в реестр не входят и показаны отдельно.
+      // Сверка складывается из ВСЕХ чеков смены, а список на экране обрезан
+      // сотней последних: иначе после сто первого закрытого стола экран начинал
+      // писать «не сходится» на ровном месте.
       control: {
-        checksPaid: round2(checks.reduce((s, c) => s + c.paid, 0)),
+        checksPaid: checkTotals.paid,
         closedRevenue: round2(shift.closedRevenue),
         openPaid: round2(shift.revenue - shift.closedRevenue),
         // Сверка ловила одно поле из четырёх и при этом рапортовала «сходится» —
         // расхождение по долгу проходило мимо. Теперь сверяем всё, чем отчитываемся.
-        checksDebt: round2(checks.reduce((s, c) => s + c.debt, 0)),
+        checksDebt: checkTotals.debt,
         shiftDebt: round2(shift.debt),
-        checksOverpaid: round2(checks.reduce((s, c) => s + c.overpaid, 0)),
+        checksOverpaid: checkTotals.overpaid,
         shiftOverpaid: round2(shift.overpaid),
-        checksWrittenOff: round2(checks.reduce((s, c) => s + c.cancelledTotal, 0)),
+        checksWrittenOff: checkTotals.cancelledTotal,
         shiftWrittenOff: round2(shift.writtenOff ?? 0),
-        debtMatches: Math.abs(round2(checks.reduce((s, c) => s + c.debt, 0)) - round2(shift.debt)) < 0.01,
-        overpaidMatches:
-          Math.abs(round2(checks.reduce((s, c) => s + c.overpaid, 0)) - round2(shift.overpaid)) < 0.01,
-        matches: Math.abs(round2(checks.reduce((s, c) => s + c.paid, 0)) - round2(shift.closedRevenue)) < 0.01
+        // Сколько чеков за сверкой и сколько из них видно списком
+        checksTotal: checkTotals.count,
+        checksShown: Math.min(checks.length, checkTotals.count),
+        debtMatches: Math.abs(checkTotals.debt - round2(shift.debt)) < 0.01,
+        writtenOffMatches:
+          Math.abs(checkTotals.cancelledTotal - round2(shift.writtenOff ?? 0)) < 0.01,
+        overpaidMatches: Math.abs(checkTotals.overpaid - round2(shift.overpaid)) < 0.01,
+        matches: Math.abs(checkTotals.paid - round2(shift.closedRevenue)) < 0.01
       }
     })
   }
@@ -1206,35 +1272,87 @@ async function handleApi(req: any, res: any, url: URL) {
   if ((action === 'pay' || action === 'tip') && !asId(body.idemKey)) {
     return json(res, 400, { error: 'idemKey required' })
   }
+  // Ключ прислали, но он не годится (слишком длинный, не строка) — раньше он
+  // молча отбрасывался, и защита от двойного нажатия исчезала незаметно
+  if (IDEMPOTENT_ACTIONS.has(action) && body.idemKey !== undefined && !asId(body.idemKey)) {
+    return json(res, 400, { error: 'bad idemKey', max: 64 })
+  }
   const idemKey = IDEMPOTENT_ACTIONS.has(action) ? asId(body.idemKey) : null
   const cacheKey = idemKey && `${tableId}:${action}:${idemKey}`
   if (cacheKey) {
     const hit = idempotency.get(cacheKey)
     if (hit) return json(res, hit.status, hit.body)
+
+    // Тот же ключ уже выполняется — не начинаем второй раз, ждём первый.
+    // Без этого семь одновременных нажатий создавали семь позиций: проверка
+    // кеша и запись в него происходили в разные моменты, и соседние запросы
+    // успевали проскочить между ними.
+    const running = inFlight.get(cacheKey)
+    if (running) {
+      const shared = await running
+      return json(res, shared.status, shared.body)
+    }
   }
 
   const actor = actorFrom(req)
-  const out = await store.withTable(tableId, session => mutate(session, tableId, action, body, actor, req))
-  await flushAudit(store)
-  if (cacheKey && out.status === 200) idemRemember(cacheKey, out.status, out.body)
+  const work = (async () => {
+    const result = await store.withTable(tableId, session => mutate(session, tableId, action, body, actor, req))
+    await flushAudit(store)
+    if (cacheKey && result.status === 200) idemRemember(cacheKey, result.status, result.body)
+    return result
+  })()
+
+  if (cacheKey) inFlight.set(cacheKey, work)
+  let out: MutationResult
+  try {
+    out = await work
+  } finally {
+    if (cacheKey) inFlight.delete(cacheKey)
+  }
+
   if (out.status === 200) await broadcast(store, tableId)
   return json(res, out.status, out.body)
 }
 
 export function createServer() {
-  return http.createServer(async (req, res) => {
-    const url = new URL(req.url ?? '/', `http://${req.headers.host}`)
+  const server = http.createServer(async (req, res) => {
     try {
+      // Разбор адреса ОБЯЗАН быть внутри try. Он стоял снаружи, и запрос без
+      // заголовка Host — кривой клиент, старый прокси, сканер портов —
+      // выбрасывал исключение мимо обработчика и убивал процесс целиком.
+      // Ресторан переставал работать от одного плохого запроса, а всё, что было
+      // в полёте, повисало навсегда: повар жал «Унёс гостю» и кнопка гасла.
+      const url = new URL(req.url ?? '/', `http://${req.headers.host || 'localhost'}`)
       if (url.pathname.startsWith('/api/')) return await handleApi(req, res, url)
       return await serveStatic(req, res, url.pathname)
     } catch (err) {
       console.error('request failed:', err)
-      return json(res, 500, { error: 'internal' })
+      // Ответ уже начат (оборвалась отдача файла, упал хвост SSE) — писать
+      // заголовки поверх нельзя: writeHead кинет ERR_HTTP_HEADERS_SENT прямо
+      // здесь, в catch, и уронит процесс. То есть «последний рубеж» сам
+      // становился причиной падения, от которого он же и защищает.
+      if (res.headersSent) return res.destroy()
+      const bad = err instanceof TypeError && String((err as any).code) === 'ERR_INVALID_URL'
+      return json(res, bad ? 400 : 500, { error: bad ? 'bad request' : 'internal' })
     }
   })
+
+  // Последний рубеж: что бы ни случилось в асинхронном хвосте запроса, зал не
+  // должен оставаться без сервера. Падение одного запроса — не повод ронять смену.
+  server.on('clientError', (err, socket) => {
+    console.error('bad client request:', (err as any)?.code ?? err)
+    if ((socket as any).writable) socket.end('HTTP/1.1 400 Bad Request\r\n\r\n')
+  })
+
+  return server
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  // Ни один отклонённый промис не имеет права уронить смену: Node 22 гасит
+  // процесс по unhandledRejection, а ресторан от этого перестаёт работать целиком
+  process.on('unhandledRejection', err => console.error('unhandled rejection:', err))
+  process.on('uncaughtException', err => console.error('uncaught exception:', err))
+
   const store = await getStore()
   createServer().listen(PORT, () => {
     console.log(`EasyPay API on :${PORT} · хранилище: ${store.kind}`)

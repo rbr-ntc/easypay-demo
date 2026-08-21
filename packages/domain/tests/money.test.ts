@@ -128,7 +128,11 @@ test('round2 округляет до копеек и переживает мус
   assert.equal(round2(undefined), 0)
 })
 
-test('копейка от деления на троих не остаётся висеть на столе', () => {
+test('копейка от деления видна сразу и достаётся одному, а не всплывает в конце', () => {
+  // 490 на троих — это 163,33 с хвостом. Раньше всем показывали 163,33,
+  // сумма долей давала 489,99, а копейку молча дописывали последнему
+  // плательщику: он видел одно число, а списывали другое. Теперь хвост
+  // разложен сразу и видно, у кого он.
   const t = {
     personas: [{ id: 'a' }, { id: 'b' }, { id: 'c' }],
     lines: [
@@ -139,19 +143,18 @@ test('копейка от деления на троих не остаётся �
   }
   const priceOf = () => 490
 
-  // Первые двое платят свою долю как есть
-  const first = amountFor(computeTotals(t, priceOf), 'a', 'own')
-  assert.equal(first, 163.33)
-  t.payments.push({ personaId: 'a', amount: first })
+  const shares = ['a', 'b', 'c'].map(id => computeTotals(t, priceOf).shareOf(id))
+  assert.equal(round2(shares.reduce((s, x) => s + x, 0)), 490, 'доли складываются в стоимость блюда')
+  assert.deepEqual(shares, [163.34, 163.33, 163.33])
 
-  const second = amountFor(computeTotals(t, priceOf), 'b', 'own')
-  assert.equal(second, 163.33)
-  t.payments.push({ personaId: 'b', amount: second })
-
-  // Третий добирает хвост округления, иначе стол закрывать через force
-  const third = amountFor(computeTotals(t, priceOf), 'c', 'own')
-  assert.equal(third, 163.34, 'последний плательщик забирает копейку округления')
-  t.payments.push({ personaId: 'c', amount: third })
+  // Каждый платит ровно то, что ему показали
+  for (const id of ['a', 'b', 'c']) {
+    const money = computeTotals(t, priceOf)
+    const shown = money.remainingOf(id)
+    const charged = amountFor(money, id, 'own')
+    assert.equal(charged, shown, `показанное ${shown} и списанное ${charged} совпадают`)
+    t.payments.push({ personaId: id, amount: charged })
+  }
 
   assert.equal(round2(computeTotals(t, priceOf).remaining), 0, 'стол рассчитан полностью')
 })

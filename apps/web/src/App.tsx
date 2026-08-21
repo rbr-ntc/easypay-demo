@@ -25,7 +25,9 @@ function ConnBanner() {
   const { connected, snap } = useStore()
   if (!tableId || connected || snap) return null
   return (
-    <div style={{ position: 'fixed', top: 0, left: 0, right: 0, zIndex: 70, background: '#B00020', color: 'var(--ep-on-ink)', textAlign: 'center', fontSize: 12.5, padding: '7px 12px' }}>
+    // Полоса не накрывает шапку, а сдвигает её: раньше она ложилась поверх
+    // логотипа, и первое, что видел гость, — обрезанное название заведения
+    <div style={{ flexShrink: 0, background: '#B00020', color: 'var(--ep-on-ink)', textAlign: 'center', fontSize: 12.5, padding: '7px 12px' }}>
       Подключаемся к серверу демо…
     </div>
   )
@@ -135,6 +137,7 @@ export default function App() {
   useDocumentTitle(route)
   return (
     <StoreProvider>
+      <div style={{ height: '100%', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
       <ConnBanner />
       {route.startsWith('#/hall') ? (
         <StaffGate need="hall">
@@ -159,6 +162,7 @@ export default function App() {
       ) : (
         <TablePicker />
       )}
+      </div>
     </StoreProvider>
   )
 }
