@@ -208,9 +208,14 @@ EASYPAY_STORE=postgres npm run dev:api
 ### Тесты
 
 `node:test`, без внешних раннеров. Перед прогоном собирается domain.
+На Node 22.18+ достаточно `npm test`. На 22.14 (и раньше внутри 22.x)
+нужен type stripping:
 
 ```bash
 npm test
+# если «Unknown file extension .ts»:
+NODE_OPTIONS=--experimental-strip-types npm test
+
 npm test -w @easypay/domain
 node --test packages/domain/tests/money.test.ts
 ```
