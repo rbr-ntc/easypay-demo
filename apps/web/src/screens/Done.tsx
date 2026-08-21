@@ -1,4 +1,4 @@
-import { WAITER_NAME } from '../data'
+import { optionsLabel, WAITER_NAME } from '../data'
 import { SharedIcon } from '../avatars'
 import { Card, GhostButton, PrimaryButton, StickyFooter, WarnBanner } from '../ui'
 import { useStore, tipAmount } from '../store'
@@ -71,6 +71,9 @@ export function Done() {
                     {l.name}
                     {l.qty > 1 ? ` ×${l.qty}` : ''}
                     {l.shared ? ' · общее' : ''}
+                    {optionsLabel(l.options) && (
+                      <span style={{ color: 'var(--ep-muted)' }}> · {optionsLabel(l.options)}</span>
+                    )}
                   </span>
                   <span style={{ fontVariantNumeric: 'tabular-nums' }}>
                     {fmt(l.shared && l.share !== null ? l.share : l.price * l.qty)}

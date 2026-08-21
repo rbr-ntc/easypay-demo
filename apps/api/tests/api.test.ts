@@ -1,6 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import http from 'node:http'
+import net from 'node:net'
 
 process.env.EASYPAY_MANAGER_TOKEN = 'test-manager-token'
 process.env.EASYPAY_ANY_TABLE = '1' // тестам нужны произвольные столы вне плана зала
@@ -375,7 +376,7 @@ test('закрытие стола отменяет то, что висит на 
   assert.equal(kitchen.tickets.some(t => t.tableId === table), false, 'из очереди ушло')
   const cancelled = kitchen.cancelled.find(t => t.tableId === table)
   assert.equal(!!cancelled, true, 'но повар видит отмену')
-  assert.equal(cancelled.reason, 'стол закрыт')
+  assert.equal(cancelled.reason, 'стол закрыт, не начинали', 'причина различает снятое с плиты и нетронутое')
   // Денег на кухонном экране быть не должно: он висит у плиты и его видят все
   assert.equal(cancelled.amount, undefined, 'цена не уезжает на экран кухни')
   assert.equal(cancelled.wasCooking, false, 'блюдо не успели взять в работу')
@@ -434,7 +435,11 @@ test('стол с долгом не закрыть случайно — толь
   // Стейк на кухню отправили, но не подали — гость его не получил, значит
   // и не должен за него. В журнале это списание с кухни, а не долг гостя.
   const log = await (await fetch(`${base}/api/log`, { headers: { 'x-staff-token': TOKEN } })).json()
-  assert.equal(log.entries.some(e => e.action === 'закрыл стол' && e.tableId === table), true)
+  // Закрытие поверх готовящейся еды — отдельное событие в журнале
+  assert.equal(
+    log.entries.some(e => e.action === 'закрыл стол, не дождавшись кухни' && e.tableId === table),
+    true
+  )
   assert.equal(
     log.entries.some(e => e.action === 'списание с кухни' && e.tableId === table && e.amount === 1290),
     true,
@@ -1080,4 +1085,201 @@ test('стол после закрытия снова можно убрать, �
   const hall = await (await fetch(`${base}/api/hall`, { headers: { 'x-staff-token': TOKEN } })).json()
   const card = hall.tables.find(t => t.id === table)
   assert.equal(card.cleanedAt > closed.closedAt, true, 'метка уборки от нового цикла')
+})
+
+test('одновременные нажатия с одним ключом дают одну позицию', async () => {
+  // Последовательные повторы схлопывались и раньше, а семь ОДНОВРЕМЕННЫХ
+  // создавали семь позиций: проверка ключа и запись в кеш происходили в разные
+  // моменты, и соседние запросы успевали проскочить между ними. На дохлой
+  // мобильной сети ретрай-шторм выставлял гостю счёт за семь одинаковых блюд.
+  const table = freshTable()
+  const { guest } = await joinGuest(table)
+
+  const rapid = await Promise.all(
+    Array.from({ length: 7 }, () =>
+      post(table, 'lines', { dishId: 'steak', qty: 1, idemKey: 'одна-порция' }, { guest })
+    )
+  )
+  assert.equal(rapid.every(r => r.status === 200), true, 'каждый ответ спокойный')
+
+  const bodies = await Promise.all(rapid.map(r => r.json()))
+  const uids = new Set(bodies.map(b => b.uid))
+  assert.equal(uids.size, 1, 'все семь получили один и тот же uid')
+
+  const snap = await snapshot(table)
+  assert.equal(snap.lines.length, 1)
+  assert.equal(snap.totals.draftTotal, 1290, 'счёт за одну порцию, а не за семь')
+})
+
+test('кривой ключ отклоняется, а не выбрасывается молча', async () => {
+  // Ключ длиной в тысячу символов раньше просто не считался ключом: запрос
+  // проходил, а защита от двойного нажатия исчезала незаметно для клиента.
+  const table = freshTable()
+  const { guest } = await joinGuest(table)
+
+  const huge = await post(table, 'lines', { dishId: 'fries', idemKey: 'x'.repeat(500) }, { guest })
+  assert.equal(huge.status, 400)
+  assert.equal((await huge.json()).error, 'bad idemKey')
+
+  // Без ключа заказ проходит: это осознанный отказ от защиты, а не ошибка
+  const plain = await post(table, 'lines', { dishId: 'fries' }, { guest })
+  assert.equal(plain.status, 200)
+})
+
+test('кривой запрос не роняет сервер', async () => {
+  // Разбор адреса стоял снаружи try/catch: запрос без заголовка Host убивал
+  // процесс целиком. Ресторан переставал работать от одного плохого запроса,
+  // а всё, что было в полёте, повисало навсегда — повар жал «Унёс гостю»
+  // и кнопка гасла до конца смены.
+  const raw = await new Promise((resolve, reject) => {
+    const socket = net.connect(server.address().port, '127.0.0.1', () => {
+      // HTTP/1.0 без Host — так ходят старые прокси и сканеры портов
+      socket.write('GET / HTTP/1.0\r\n\r\n')
+    })
+    let data = ''
+    socket.on('data', chunk => (data += chunk))
+    socket.on('end', () => resolve(data))
+    socket.on('error', reject)
+    setTimeout(() => resolve(data), 2000)
+  })
+  assert.equal(String(raw).length > 0, true, 'сервер ответил, а не умер')
+
+  // И главное: он жив после этого
+  const alive = await fetch(`${base}/api/menu`)
+  assert.equal(alive.status, 200, 'смена продолжается')
+})
+
+// --- Четвёртый круг: что нашли глаза гостя ---
+
+test('способ оплаты сохраняется тот, который выбрал гость', async () => {
+  // На экране был выбран T-Pay, а в платеже оседало «СБП»: способ выбирали
+  // и не отправляли. Свести кассу по способам вечером было нечем.
+  const table = freshTable()
+  const { guest } = await joinGuest(table)
+  await post(table, 'lines', { dishId: 'espresso' }, { guest })
+  await post(table, 'send', { scope: 'mine' }, { guest })
+  await post(table, 'pay', { scope: 'full', idemKey: 'm-1', method: 'tpay' }, { guest })
+
+  const snap = await snapshot(table)
+  assert.equal(snap.payments[0].method, 'tpay')
+
+  // Чужое слово в способе не проходит: платёж не может ссылаться на выдумку
+  const other = freshTable()
+  const g2 = await joinGuest(other)
+  await post(other, 'lines', { dishId: 'espresso' }, { guest: g2.guest })
+  await post(other, 'send', { scope: 'mine' }, { guest: g2.guest })
+  await post(other, 'pay', { scope: 'full', idemKey: 'm-2', method: 'bitcoin' }, { guest: g2.guest })
+  assert.equal((await snapshot(other)).payments[0].method, 'sbp')
+})
+
+test('гость может передумать платить наличными', async () => {
+  // Просьба была билетом в один конец: официант шёл за деньгами, которых
+  // уже не ждут, а снять её мог только персонал.
+  const table = freshTable()
+  const { guest } = await joinGuest(table)
+  await post(table, 'lines', { dishId: 'espresso' }, { guest })
+  await post(table, 'send', { scope: 'mine' }, { guest })
+  await post(table, 'cashIntent', { scope: 'full' }, { guest })
+  assert.equal((await snapshot(table)).cashIntent.amount > 0, true)
+
+  assert.equal((await post(table, 'cancelCash', {}, { guest })).status, 200)
+  assert.equal((await snapshot(table)).cashIntent, null)
+
+  // Отменять нечего — говорим об этом, а не делаем вид, что сработало
+  assert.equal((await post(table, 'cancelCash', {}, { guest })).status, 409)
+})
+
+test('просьба о наличных снимается, когда счёт закрыт телефоном', async () => {
+  // Гость попросил наличными, потом расплатился по СБП — жёлтая карточка
+  // продолжала висеть, и официант шёл к рассчитавшемуся столу за купюрами.
+  const table = freshTable()
+  const { guest } = await joinGuest(table)
+  await post(table, 'lines', { dishId: 'espresso' }, { guest })
+  await post(table, 'send', { scope: 'mine' }, { guest })
+  await post(table, 'cashIntent', { scope: 'full' }, { guest })
+  await post(table, 'pay', { scope: 'full', idemKey: 'ci-1' }, { guest })
+
+  assert.equal((await snapshot(table)).cashIntent, null, 'долга нет — и просьбы нет')
+})
+
+test('чужую просьбу о наличных снять нельзя', async () => {
+  const table = freshTable()
+  const a = await joinGuest(table, 'Аня', 'fox')
+  const b = await joinGuest(table, 'Боря', 'bear')
+  await post(table, 'lines', { dishId: 'espresso' }, { guest: a.guest })
+  await post(table, 'send', { scope: 'all' }, { guest: a.guest })
+  await post(table, 'cashIntent', { scope: 'own' }, { guest: a.guest })
+
+  assert.equal((await post(table, 'cancelCash', {}, { guest: b.guest })).status, 403)
+  assert.equal((await snapshot(table)).cashIntent !== null, true)
+})
+
+test('в чеке видно, за какой именно вариант блюда списаны деньги', async () => {
+  // «Красное сухое — 2 800 ₽» без слова «бутылка» гость перепроверить не может
+  const table = freshTable()
+  const { guest } = await joinGuest(table)
+  await post(table, 'lines', { dishId: 'wine-red', options: { volume: 'Бутылка 750 мл' } }, { guest })
+  await post(table, 'send', { scope: 'mine' }, { guest })
+  const res = await post(table, 'pay', { scope: 'full', idemKey: 'r-1' }, { guest })
+  const { receipt } = await res.json()
+
+  assert.equal(receipt.lines[0].options.volume, 'Бутылка 750 мл')
+  assert.equal(receipt.lines[0].price, 2800, 'цена варианта, а не базовая цена бокала')
+})
+
+test('чужая просьба о наличных не затирается молча', async () => {
+  // Аня просила наличными, Боря просил следом — ячейка была одна на стол.
+  // У Ани баннер исчезал, её «передумал» отвечал 403, а официант приходил
+  // с одной суммой на двоих.
+  const table = freshTable()
+  const a = await joinGuest(table, 'Аня', 'fox')
+  const b = await joinGuest(table, 'Боря', 'bear')
+  await post(table, 'lines', { dishId: 'espresso' }, { guest: a.guest })
+  await post(table, 'lines', { dishId: 'espresso' }, { guest: b.guest })
+  await post(table, 'send', { scope: 'all' }, { guest: a.guest })
+
+  assert.equal((await post(table, 'cashIntent', { scope: 'own' }, { guest: a.guest })).status, 200)
+  const second = await post(table, 'cashIntent', { scope: 'own' }, { guest: b.guest })
+  assert.equal(second.status, 409)
+  assert.equal((await second.json()).error, 'cash request pending')
+
+  // Просьба Ани на месте, и она всё ещё её хозяйка
+  assert.equal((await snapshot(table)).cashIntent.personaId, a.personaId)
+  assert.equal((await post(table, 'cancelCash', {}, { guest: a.guest })).status, 200)
+})
+
+test('сумма просьбы о наличных живая, а не замороженная', async () => {
+  // Гость просил принять 360 ₽, сосед доплачивал, пока официант шёл, — и
+  // на экране висела старая сумма, а списывалась актуальная.
+  const table = freshTable()
+  const a = await joinGuest(table, 'Аня', 'fox')
+  const b = await joinGuest(table, 'Боря', 'bear')
+  await post(table, 'lines', { dishId: 'espresso' }, { guest: a.guest }) // 180
+  await post(table, 'lines', { dishId: 'espresso' }, { guest: b.guest }) // 180
+  await post(table, 'send', { scope: 'all' }, { guest: a.guest })
+
+  await post(table, 'cashIntent', { scope: 'full' }, { guest: a.guest })
+  assert.equal((await snapshot(table)).cashIntent.amount, 360)
+
+  // Боря платит за себя телефоном — официанту остаётся забрать меньше
+  await post(table, 'pay', { scope: 'own', idemKey: 'live-1' }, { guest: b.guest })
+  assert.equal((await snapshot(table)).cashIntent.amount, 180, 'просьба пересчиталась')
+})
+
+test('ключ идемпотентности проверяется только там, где он нужен', async () => {
+  // Проверка стояла на всех действиях подряд, и явный idemKey: null от
+  // стороннего клиента ломал закрытие стола и подачу блюда.
+  const table = freshTable()
+  const { guest } = await joinGuest(table)
+  await post(table, 'lines', { dishId: 'espresso' }, { guest })
+  await post(table, 'send', { scope: 'mine' }, { guest })
+
+  const snap = await snapshot(table)
+  const uid = snap.lines[0].uid
+  const started = await post(table, 'start', { uid, sessionId: snap.sessionId, idemKey: null }, { staff: TOKEN })
+  assert.equal(started.status, 200, 'персоналу ключ не нужен и мешать не должен')
+
+  // А там, где ключ работает, кривой ключ по-прежнему отвергается
+  const bad = await post(table, 'lines', { dishId: 'espresso', idemKey: {} }, { guest })
+  assert.equal(bad.status, 400)
 })

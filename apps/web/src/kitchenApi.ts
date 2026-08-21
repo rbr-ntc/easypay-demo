@@ -9,23 +9,33 @@ export interface KitchenPayload {
 }
 
 /** Кухня действует по любому столу, поэтому шлём запрос напрямую в нужный. */
+/** Дольше этого повар ждать не станет — он вернётся к плите. */
+const ACTION_TIMEOUT_MS = 8000
+
 async function tableAction(
   tableId: string,
   action: 'start' | 'ready' | 'serve' | 'dismiss',
   uid: number,
   sessionId: string
 ): Promise<boolean> {
+  // Без таймаута повисший запрос оставлял кнопку в disabled навсегда: тикет
+  // нельзя было ни отдать, ни вернуть, и экран молчал о том, что случилось
+  const abort = new AbortController()
+  const timer = setTimeout(() => abort.abort(), ACTION_TIMEOUT_MS)
   try {
     const res = await fetch(`/api/t/${encodeURIComponent(tableId)}/${action}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-staff-token': getStaffToken() },
       // sessionId защищает от попадания в чужой заказ: uid переиспользуются после закрытия
-      body: JSON.stringify({ uid, sessionId })
+      body: JSON.stringify({ uid, sessionId }),
+      signal: abort.signal
     })
     return res.ok
   } catch (err) {
     console.error('kitchen action failed:', err)
     return false
+  } finally {
+    clearTimeout(timer)
   }
 }
 

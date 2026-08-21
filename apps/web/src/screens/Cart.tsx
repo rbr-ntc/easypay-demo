@@ -5,11 +5,18 @@ import { Avatar, SharedIcon } from '../avatars'
 import { Card, GhostButton, PrimaryButton, StickyFooter } from '../ui'
 import { useStore } from '../store'
 import { fmt } from '../format'
+import { lineStage, stageLabel, STAGE_TINT } from '../lineStage'
 
-function SentBadge() {
+/**
+ * Бейдж называет ровно то состояние, в котором блюдо находится. Раньше здесь
+ * было жёстко «Готовится» на всём отправленном — и корзина спорила с экраном
+ * статуса, где та же позиция называлась «В очереди».
+ */
+function SentBadge({ line }: { line: Parameters<typeof stageLabel>[0] }) {
+  const tint = STAGE_TINT[lineStage(line)]
   return (
-    <span style={{ fontFamily: 'ui-monospace, monospace', fontSize: 9.5, textTransform: 'uppercase', padding: '4px 9px', borderRadius: 'var(--ep-r-pill)', background: '#FFF2DA', color: '#B07A12', flexShrink: 0 }}>
-      Готовится
+    <span style={{ fontFamily: 'ui-monospace, monospace', fontSize: 10.5, textTransform: 'uppercase', padding: '4px 9px', borderRadius: 'var(--ep-r-pill)', background: tint.bg, color: tint.fg, flexShrink: 0 }}>
+      {stageLabel(line)}
     </span>
   )
 }
@@ -63,7 +70,7 @@ export function Cart() {
                 </div>
                 <span style={{ fontSize: 14.5, color: 'var(--ep-text-2)' }}>{fmt((l.price ?? d.price) * l.qty)}</span>
                 {l.sent ? (
-                  <SentBadge />
+                  <SentBadge line={l} />
                 ) : (
                   <button
                     aria-label={`Убрать ${d.name}`}
@@ -154,7 +161,7 @@ export function Cart() {
                     </span>
                     <span style={{ fontSize: 14, color: 'var(--ep-text-2)' }}>{fmt((l.price ?? d.price) * l.qty)}</span>
                     {l.sent ? (
-                      <SentBadge />
+                      <SentBadge line={l} />
                     ) : mineAdded ? (
                       <span style={{ cursor: 'pointer', fontSize: 13, color: 'var(--ep-muted)' }} onClick={() => void removeLine(l.uid)}>
                         ✕

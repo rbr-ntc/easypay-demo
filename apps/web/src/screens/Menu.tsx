@@ -59,7 +59,11 @@ export function Menu() {
   // Категория из состояния может устареть после правки меню — падаем на первую
   const cat = MENU[ui.menuCat] ? ui.menuCat : CATEGORIES[0]
   const items = MENU[cat] ?? []
-  const hasCart = !!me && (snap?.lines ?? []).some(l => l.personaId === me.id)
+  // Считаем и свои позиции, и общие блюда стола: и то, и другое лежит «в заказе»
+  const cartCount = me
+    ? (snap?.lines ?? []).filter(l => l.personaId === me.id || l.shared).length
+    : 0
+  const hasCart = cartCount > 0
 
   return (
     <div className="ep-screen">
@@ -84,10 +88,12 @@ export function Menu() {
             </div>
           )}
           <button
+            aria-label={cartCount > 0 ? `Заказ, позиций: ${cartCount}` : 'Заказ пуст'}
             onClick={() => hasCart && patch({ screen: 'cart' })}
             style={{
-              width: 42,
-              height: 42,
+              position: 'relative',
+              width: 44,
+              height: 44,
               borderRadius: '50%',
               border: 'none',
               background: 'var(--ep-soft)',
@@ -95,10 +101,35 @@ export function Menu() {
               alignItems: 'center',
               justifyContent: 'center',
               cursor: hasCart ? 'pointer' : 'default',
+              opacity: hasCart ? 1 : 0.55,
               fontSize: 18
             }}
           >
             🛒
+            {/* Без счётчика полная корзина выглядела ровно как пустая */}
+            {cartCount > 0 && (
+              <span
+                style={{
+                  position: 'absolute',
+                  top: -2,
+                  right: -2,
+                  minWidth: 19,
+                  height: 19,
+                  padding: '0 5px',
+                  borderRadius: 'var(--ep-r-pill)',
+                  background: NAVY,
+                  color: 'var(--ep-surface)',
+                  fontSize: 11.5,
+                  fontWeight: 700,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  boxSizing: 'border-box'
+                }}
+              >
+                {cartCount}
+              </span>
+            )}
           </button>
         </div>
         <div style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 2 }}>
@@ -175,8 +206,9 @@ export function Menu() {
                   {[it.serving, it.kcal ? `${it.kcal} ккал` : null].filter(Boolean).join(' · ')}
                 </div>
               )}
+              {/* Строка аллергенов — не мелкий шрифт: это здоровье гостя */}
               {possibleAllergens(it).length > 0 && (
-                <div style={{ fontSize: 11.5, color: 'var(--ep-warn)', marginBottom: 8 }}>
+                <div style={{ fontSize: 12.5, fontWeight: 560, color: 'var(--ep-warn)', marginBottom: 8 }}>
                   аллергены: {possibleAllergens(it).join(' · ')}
                 </div>
               )}
@@ -184,9 +216,12 @@ export function Menu() {
                 <span style={{ fontWeight: 620, fontSize: 15 }}>{fmt(it.price)}</span>
                 <button
                   onClick={() => !it.stop && patch({ sheet: 'dish', currentDishId: it.id })}
+                  aria-label={`Добавить ${it.name}`}
                   style={{
-                    width: 34,
-                    height: 34,
+                    // 44×44 — минимальная цель для пальца. Было 34: гость
+                    // промахивался по самой частой кнопке в приложении
+                    width: 44,
+                    height: 44,
                     borderRadius: '50%',
                     border: 'none',
                     cursor: it.stop ? 'not-allowed' : 'pointer',

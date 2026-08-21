@@ -57,14 +57,18 @@ export function Kitchen() {
     return [...waves.entries()].map(([key, items]) => ({ key, items }))
   }
 
+  // Что-то пошло не так — повар должен это увидеть, а не гадать на серую кнопку
+  const [failed, setFailed] = useState<string | null>(null)
+
   const act = async (ticket: (typeof tickets)[number]) => {
     setBusy(ticket.uid)
+    setFailed(null)
     const done = ticket.readyAt
       ? await handOver(ticket.tableId, ticket.uid, ticket.sessionId)
       : ticket.startedAt
         ? await markReady(ticket.tableId, ticket.uid, ticket.sessionId)
         : await takeToWork(ticket.tableId, ticket.uid, ticket.sessionId)
-    if (!done) console.error('действие кухни не прошло')
+    if (!done) setFailed('Не прошло — проверьте связь и нажмите ещё раз')
     setBusy(null)
   }
 
@@ -72,7 +76,7 @@ export function Kitchen() {
   const dismiss = async (ticket: (typeof cancelled)[number]) => {
     setBusy(ticket.uid)
     const done = await dismissCancelled(ticket.tableId, ticket.uid, ticket.sessionId)
-    if (!done) console.error('подтверждение отмены не прошло')
+    if (!done) setFailed('Не прошло — проверьте связь и нажмите ещё раз')
     setBusy(null)
   }
 
@@ -114,6 +118,8 @@ export function Kitchen() {
           Выйти
         </button>
       </div>
+
+      {failed && <div className="ep-k-failed">{failed}</div>}
 
       {cancelled.length > 0 && (
         <div className="ep-k-cancelled">

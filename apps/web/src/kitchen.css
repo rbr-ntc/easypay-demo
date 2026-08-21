@@ -77,6 +77,10 @@
 }
 
 .ep-k-lane-title {
+  /* Было 11px серым — заголовок, который повар физически не читает */
+  font-size: 15px !important;
+  font-weight: 800;
+  color: #3d3d46;
   display: flex;
   align-items: baseline;
   gap: 8px;
@@ -252,6 +256,11 @@
 }
 
 .ep-k-ticket--cancelled {
+  /* Было opacity 0.75 и пунктир серым: то, что надо снять с плиты, выглядело
+     бледнее всего на доске — ровно наоборот тому, как надо */
+  opacity: 1 !important;
+  border: 2px solid #9b1c1c !important;
+  background: #fdecec !important;
   opacity: 0.75;
   border-style: dashed;
 }
@@ -315,24 +324,32 @@
 
 /* Волна подачи: позиции одного стола выходят вместе */
 .ep-k-wave {
-  border: 2px dashed var(--ep-border);
+  /* Было 2px dashed светло-серым по светло-серому — контраст 1.06:1, то есть
+     рамки не существовало. «Отдавать вместе» должно читаться от плиты. */
+  border: 2px dashed #6b6b76;
   border-radius: 12px;
-  padding: 8px;
-  margin-bottom: 10px;
+  padding: 10px;
+  margin-bottom: 12px;
+  background: rgba(107, 107, 118, 0.06);
 }
 
 .ep-k-wave-head {
-  font-size: 12px;
-  font-weight: 700;
+  font-size: 14px;
+  font-weight: 800;
   text-transform: uppercase;
   letter-spacing: 0.4px;
-  color: var(--ep-muted);
-  margin: 2px 0 8px 4px;
+  color: #3d3d46;
+  margin: 2px 0 9px 4px;
 }
 
 
 /* Раздача: тарелка готова и остывает, пока её не унесли */
 .ep-k-pass {
+  /* Доска при восьми тикетах выше экрана, и раздача уезжала вверх — а это
+     ровно то, за чем повар и официант следят чаще всего */
+  position: sticky;
+  top: 0;
+  z-index: 3;
   border: 2px solid #1f9d55;
   border-radius: 14px;
   padding: 10px;
@@ -343,4 +360,25 @@
 .ep-k-btn--pass {
   background: #1f9d55;
   color: #fff;
+}
+
+
+/* Действие не прошло: у плиты нельзя молча гасить кнопку и ждать догадки */
+.ep-k-failed {
+  margin-bottom: 12px;
+  padding: 12px 16px;
+  border-radius: 12px;
+  background: #fdecec;
+  border: 2px solid #9b1c1c;
+  color: #9b1c1c;
+  font-size: 15px;
+  font-weight: 640;
+}
+
+
+/* Станция — первое, что повару нужно знать: моё это или барменово */
+.ep-k-station {
+  font-size: 13px !important;
+  font-weight: 800 !important;
+  letter-spacing: 0.3px;
 }

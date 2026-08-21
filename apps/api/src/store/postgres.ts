@@ -1,6 +1,7 @@
 // Хранилище в Postgres. Состояние стола переживает рестарт, а деньги считаются
 // под блокировкой строки сессии: двое одновременно не спишут один и тот же остаток.
 import { connect } from '@easypay/db'
+import crypto from 'node:crypto'
 import { computeTotals, round2 } from '@easypay/domain/money'
 import { dishName, priceOf } from '../menu.ts'
 import { waiterOfTable } from '../staff.ts'
@@ -57,8 +58,15 @@ export async function createPostgresStore(url?: string): Promise<Store> {
     const tid = await tableUuid(tx, number)
     if (!tid) return emptySession()
 
+    // Блокируем САМ СТОЛ, а не сессию: на свободном столе строки сессии ещё
+    // нет, и `for update` по пустой выборке ничего не блокирует — двое гостей
+    // с одним QR открывали два стола сразу. Блокировка родителя сериализует
+    // их, а частичный уникальный индекс (миграция 0006) делает второй открытый
+    // стол невозможным даже мимо этого кода.
+    if (lock) await tx`select id from restaurant_tables where id = ${tid} for update`
+
     const rows = lock
-      ? await tx`select * from table_sessions where table_id = ${tid} and closed_at is null for update`
+      ? await tx`select * from table_sessions where table_id = ${tid} and closed_at is null limit 1 for update`
       : await tx`select * from table_sessions where table_id = ${tid} and closed_at is null limit 1`
     let row = rows[0]
 
@@ -168,9 +176,18 @@ export async function createPostgresStore(url?: string): Promise<Store> {
 
     if (session.status === 'open' && !sid) {
       const shiftId = await currentShiftId(tx)
+      // Идентификатор сессии задаём САМИ, тем самым, который уже ушёл гостю в
+      // ответе на join. Раньше его генерировала база, и он не совпадал с тем,
+      // что получил первый гость: клиент видел расхождение sessionId, считал
+      // стол пересозданным и стирал личность — человек, который сам открыл
+      // стол, на первом же обновлении оказывался «не отсюда», а его заказ
+      // оставался висеть на осиротевшей персоне.
       const [created] = await tx`
-        insert into table_sessions (table_id, shift_id, opened_at)
-        values (${tid}, ${shiftId}, ${new Date(session.openedAt ?? Date.now())})
+        insert into table_sessions (id, table_id, shift_id, opened_at)
+        values (
+          ${session.sessionId ?? crypto.randomUUID()}, ${tid}, ${shiftId},
+          ${new Date(session.openedAt ?? Date.now())}
+        )
         returning id
       `
       sid = created.id
@@ -339,9 +356,20 @@ export async function createPostgresStore(url?: string): Promise<Store> {
         )
         select
           (select count(*) from s where closed_at is not null)                        as tables,
-          -- closed_with_debt снимается уже после отмены неподанного, поэтому
-          -- вычитать списания здесь не нужно: в долге только то, что гость получил
-          (select coalesce(sum(closed_with_debt), 0) from s where closed_at is not null) as debt,
+          -- Долг смены считается ТОЙ ЖЕ формулой, что и долг в чеке: получено
+          -- минус оплачено по каждому закрытому столу. Раньше здесь суммировался
+          -- closed_with_debt, и витрина расходилась с реестром на 3 320 ₽ —
+          -- управляющей было нечем объяснить эту разницу владельцу, а экран
+          -- при этом успокаивал словом «сходится».
+          (select coalesce(sum(greatest(0, billed.total - billed.paid)), 0) from (
+             select s.id,
+               coalesce((select sum(ol.price * ol.qty) from order_lines ol
+                          where ol.table_session_id = s.id
+                            and ol.sent_at is not null and ol.cancelled_at is null), 0) as total,
+               coalesce((select sum(p.amount) from payments p
+                          where p.table_session_id = s.id), 0) as paid
+             from s where s.closed_at is not null
+           ) billed)                                                                    as debt,
           (select coalesce(sum(ol.price * ol.qty), 0)
              from order_lines ol join s on s.id = ol.table_session_id
             where s.closed_at is not null and ol.cancelled_at is not null)              as written_off,
@@ -486,6 +514,45 @@ export async function createPostgresStore(url?: string): Promise<Store> {
         })
       }
       return checks
+    },
+
+    async shiftCheckTotals() {
+      // Те же формулы, что и в чеке, но одним запросом по всем закрытым столам
+      // смены: сверка не имеет права зависеть от того, сколько строк влезло на экран.
+      const [row] = await sql`
+        with closed as (
+          select ts.id, ts.overpaid
+          from table_sessions ts
+          join restaurant_tables rt on rt.id = ts.table_id
+          join shifts sh on sh.id = ts.shift_id
+          where rt.venue_id = ${venueId} and sh.closed_at is null and ts.closed_at is not null
+        ), money as (
+          select c.id, c.overpaid,
+            coalesce((select sum(l.price * l.qty) from order_lines l
+                       where l.table_session_id = c.id
+                         and l.sent_at is not null and l.cancelled_at is null), 0) as total,
+            coalesce((select sum(p.amount) from payments p
+                       where p.table_session_id = c.id), 0)                        as paid,
+            coalesce((select sum(l.price * l.qty) from order_lines l
+                       where l.table_session_id = c.id and l.cancelled_at is not null), 0) as written_off
+          from closed c
+        )
+        select count(*) as n,
+               coalesce(sum(round(paid, 2)), 0)                                     as paid,
+               -- Округляем ПО КАЖДОМУ чеку, ровно как в самом чеке: иначе
+               -- цена с тремя знаками разведёт debtMatches на копейку
+               coalesce(sum(greatest(0, round(total, 2) - round(paid, 2))), 0)       as debt,
+               coalesce(sum(overpaid), 0)                    as overpaid,
+               coalesce(sum(written_off), 0)                 as written_off
+        from money
+      `
+      return {
+        count: Number(row.n),
+        paid: round2(Number(row.paid)),
+        debt: round2(Number(row.debt)),
+        overpaid: round2(Number(row.overpaid)),
+        cancelledTotal: round2(Number(row.written_off))
+      }
     },
 
     async close() {

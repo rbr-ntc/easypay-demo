@@ -167,7 +167,11 @@ export function tableAlerts(card: HallCard, now: number): HallAlert[] {
   if (card.call) {
     alerts.push({
       id: 'call-waiter',
-      label: `${card.call.name} ${CALL_LABEL[card.call.reason] ?? CALL_LABEL.help}`,
+      // Текст гостя важнее подписи причины: официант должен знать, зачем идёт.
+      // «Ольга зовёт официанта» вместо «уронили вилку» — это лишний заход.
+      label: card.call.note
+        ? `${card.call.name}: ${card.call.note}`
+        : `${card.call.name} ${CALL_LABEL[card.call.reason] ?? CALL_LABEL.help}`,
       severity: 'danger',
       since: card.call.at
     })

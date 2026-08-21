@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { newIdemKey } from '../keys'
 import { NAVY, SBP_GRADIENT } from '../data'
 import { Avatar } from '../avatars'
-import { Mono, PrimaryButton, StickyFooter, WarnBanner } from '../ui'
+import { GhostButton, Mono, PrimaryButton, StickyFooter, WarnBanner } from '../ui'
 import { useStore } from '../store'
 import type { PayScope, PayMethod } from '../store'
 import { fmt } from '../format'
@@ -61,12 +61,15 @@ function QrStage({ amount, onBack, onPaid }: { amount: number; onBack: () => voi
 }
 
 export function Payment() {
-  const { ui, patch, me, snap, totals, pay, askCash } = useStore()
+  const { ui, patch, me, snap, totals, pay, askCash, cancelCash } = useStore()
   // Ключ живёт до успешной оплаты: повтор после обрыва связи не создаёт второй платёж
   const payKey = useRef(newIdemKey())
   if (!me || !snap) return null
   const amount = totals.scopeAmount(ui.payScope)
   const sbp = ui.payMethod === 'sbp'
+  const cash = ui.payMethod === 'cash'
+  // Просьба о наличных — это состояние стола, и гость обязан его видеть
+  const myCashRequest = snap.cashIntent?.personaId === me.id ? snap.cashIntent : null
 
   // Кто уже оплатил (реальные платежи других гостей)
   const otherPayments = snap.payments.filter(p => p.personaId !== me.id)
@@ -98,7 +101,7 @@ export function Payment() {
 
   const doPay = async () => {
     patch({ payStage: 'processing' })
-    const paid = await pay(ui.payScope, payKey.current)
+    const paid = await pay(ui.payScope, payKey.current, ui.payMethod)
     if (paid > 0) {
       payKey.current = newIdemKey() // следующая оплата — новый ключ
       setTimeout(() => patch({ payStage: 'form', screen: 'tips' }), 1400)
@@ -154,6 +157,15 @@ export function Payment() {
             return (
               <div
                 key={o.id}
+                role="button"
+                tabIndex={o.disabled ? -1 : 0}
+                aria-pressed={active}
+                aria-disabled={o.disabled}
+                onKeyDown={e => {
+                  if (e.key !== 'Enter' && e.key !== ' ') return
+                  e.preventDefault() // иначе пробел выбирает И прокручивает экран
+                  if (!o.disabled) patch({ payScope: o.id })
+                }}
                 onClick={() => !o.disabled && patch({ payScope: o.id })}
                 style={{
                   display: 'flex',
@@ -211,10 +223,14 @@ export function Payment() {
           )}
         </div>
 
-        {/* Наличные телефон принять не может: их берёт человек. Кнопка зовёт
-            официанта и показывает ему сумму — деньги спишутся, когда он подтвердит. */}
+        {/* Наличные телефон принять не может: их берёт человек. Но выбор
+            способа и вызов официанта — разные шаги: тап выбирает наличные,
+            а зовёт официанта только кнопка внизу. Раньше касание строки
+            мгновенно отправляло просьбу, и гость об этом даже не узнавал. */}
         <div
-          onClick={() => void askCash(ui.payScope === 'full' ? 'full' : 'own')}
+          role="button"
+          aria-pressed={cash}
+          onClick={() => patch({ payMethod: 'cash' })}
           style={{
             display: 'flex',
             alignItems: 'center',
@@ -223,7 +239,7 @@ export function Payment() {
             marginTop: 9,
             borderRadius: 'var(--ep-r-card)',
             background: 'var(--ep-surface)',
-            border: '1px solid var(--ep-border)',
+            border: cash ? `2px solid ${NAVY}` : '1px solid var(--ep-border)',
             cursor: 'pointer'
           }}
         >
@@ -236,12 +252,33 @@ export function Payment() {
               позовём официанта — он примет деньги
             </div>
           </div>
+          <div style={{ width: 18, height: 18, borderRadius: '50%', flexShrink: 0, border: cash ? `5px solid ${NAVY}` : '2px solid var(--ep-border)', background: 'var(--ep-surface)', boxSizing: 'border-box' }} />
         </div>
+
+        {myCashRequest && (
+          <div style={{ marginTop: 9, padding: '12px 14px', borderRadius: 'var(--ep-r-card)', background: '#FFF6E5', border: '1px solid #E8C989' }}>
+            <div style={{ fontWeight: 600, fontSize: 14 }}>Официант идёт за наличными · {fmt(myCashRequest.amount)}</div>
+            <div style={{ fontSize: 12.5, color: 'var(--ep-muted)', marginTop: 3 }}>
+              Приготовьте деньги. Если передумали — можно оплатить телефоном.
+            </div>
+            <GhostButton style={{ marginTop: 9, padding: '9px 14px', fontSize: 13.5 }} onClick={() => void cancelCash()}>
+              Передумал, заплачу телефоном
+            </GhostButton>
+          </div>
+        )}
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 9 }}>
           {METHODS.map(m => (
             <div
               key={m.id}
+              role="button"
+              tabIndex={0}
+              aria-pressed={ui.payMethod === m.id}
+              onKeyDown={e => {
+                if (e.key !== 'Enter' && e.key !== ' ') return
+                e.preventDefault()
+                patch({ payMethod: m.id })
+              }}
               onClick={() => patch({ payMethod: m.id })}
               style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '13px 14px', borderRadius: 'var(--ep-r-card)', background: 'var(--ep-surface)', border: '1px solid var(--ep-border)', cursor: 'pointer' }}
             >
@@ -257,11 +294,27 @@ export function Payment() {
 
       <StickyFooter>
         <PrimaryButton
-          disabled={amount <= 0}
-          onClick={() => (sbp ? patch({ payStage: 'qr' }) : void doPay())}
+          // Наличные не списываются с телефона: кнопка честно зовёт человека,
+          // а не притворяется оплатой
+          disabled={amount <= 0 || (cash && !!myCashRequest)}
+          onClick={() =>
+            cash
+              // Тот же scope, что на кнопке: «разделить поровну» схлопывалось
+              // в «своё», и официант шёл за другой суммой, чем видел гость
+              ? void askCash(ui.payScope)
+              : sbp
+                ? patch({ payStage: 'qr' })
+                : void doPay()
+          }
           style={ sbp ? { background: SBP_GRADIENT, color: '#fff', border: 'none', fontSize: 17 } : { fontSize: 17 } }
         >
-          {sbp ? `Оплатить по СБП · ${fmt(amount)}` : `Оплатить ${fmt(amount)}`}
+          {cash
+            ? myCashRequest
+              ? 'Официант уже идёт'
+              : `Позвать официанта · ${fmt(amount)}`
+            : sbp
+              ? `Оплатить по СБП · ${fmt(amount)}`
+              : `Оплатить ${fmt(amount)}`}
         </PrimaryButton>
       </StickyFooter>
     </div>

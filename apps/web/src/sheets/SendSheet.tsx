@@ -10,7 +10,9 @@ export function SendSheet() {
   const [sending, setSending] = useState(false)
   if (!me || !snap) return null
 
-  const price = (l: { dishId: string; qty: number }) => (findDish(l.dishId)?.price ?? 0) * l.qty
+  // Цена берётся ИЗ ПОЗИЦИИ, а не из меню: модификатор (бутылка вместо бокала)
+  // и правка прайса меняют её так, что цифра из меню оказывается чужой
+  const price = (l: { price: number; qty: number }) => l.price * l.qty
   const unsentMine = snap.lines.filter(l => !l.sent && l.personaId === me.id)
   const alreadySent = snap.lines.filter(l => l.sent)
   const unsentAll = snap.lines.filter(l => !l.sent)

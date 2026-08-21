@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { apiShiftLog } from '../api'
 import type { LogEntry } from '../api'
 import { ROLE_LABEL } from '@easypay/domain/roles'
+import { fmt } from '../format'
 import type { RoleName } from '@easypay/domain/roles'
 
 function time(at: number): string {
@@ -49,6 +50,11 @@ export function ShiftLog() {
                 {e.tableId ? ` · стол №${e.tableId}` : ''}
                 {e.detail ? ` · ${e.detail}` : ''}
               </span>
+              {/* Деньги в журнале называются суммой: без неё запись
+                  «принял наличные от Олега» ничего не доказывает */}
+              {typeof e.amount === 'number' && e.amount > 0 && (
+                <span className="ep-h-log-sum">{fmt(e.amount)}</span>
+              )}
             </div>
           ))}
         </div>

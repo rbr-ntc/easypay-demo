@@ -4,6 +4,7 @@ import { Card, GhostButton, PrimaryButton, StickyFooter, WarnBanner } from '../u
 import { useStore } from '../store'
 import { sharersOf } from '@easypay/domain/money'
 import { OrderProgress } from './OrderProgress'
+import { lineStage, stageLabel, STAGE_TINT } from '../lineStage'
 
 const STEP_LABELS = ['Принят', 'Готовится', 'Подано']
 
@@ -87,8 +88,8 @@ export function Status() {
                   </div>
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 5 }}>
-                  <span style={{ fontFamily: 'ui-monospace, monospace', fontSize: 9.5, textTransform: 'uppercase', padding: '4px 9px', borderRadius: 'var(--ep-r-pill)', background: l.served ? '#E4F6EA' : l.startedAt ? '#FFF2DA' : 'var(--ep-soft)', color: l.served ? '#1F9D55' : l.startedAt ? '#B07A12' : 'var(--ep-muted)' }}>
-                    {l.served ? 'Подано' : l.readyAt ? 'Несут' : l.startedAt ? 'Готовится' : 'В очереди'}
+                  <span style={{ fontFamily: 'ui-monospace, monospace', fontSize: 10.5, textTransform: 'uppercase', padding: '4px 9px', borderRadius: 'var(--ep-r-pill)', background: STAGE_TINT[lineStage(l)].bg, color: STAGE_TINT[lineStage(l)].fg }}>
+                    {stageLabel(l)}
                   </span>
                   {/* Пока кухня не взялась, гость может передумать сам: раньше он
                       платил за капучино, который начали делать через восемь минут */}
@@ -120,7 +121,7 @@ export function Status() {
                 const servedSome = sentShared.some(l => l.served)
                 const label = servedAll ? 'Подано' : servedSome ? 'Частично' : 'Готовится'
                 return (
-                  <span style={{ fontFamily: 'ui-monospace, monospace', fontSize: 9.5, textTransform: 'uppercase', padding: '4px 9px', borderRadius: 'var(--ep-r-pill)', background: servedAll ? '#E4F6EA' : '#FFF2DA', color: servedAll ? '#1F9D55' : '#B07A12' }}>
+                  <span style={{ fontFamily: 'ui-monospace, monospace', fontSize: 10.5, textTransform: 'uppercase', padding: '4px 9px', borderRadius: 'var(--ep-r-pill)', background: servedAll ? STAGE_TINT.served.bg : STAGE_TINT.cooking.bg, color: servedAll ? STAGE_TINT.served.fg : STAGE_TINT.cooking.fg }}>
                     {label}
                   </span>
                 )

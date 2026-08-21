@@ -14,6 +14,7 @@ import {
   apiJoin,
   apiPay,
   apiCancelMine,
+  apiCancelCash,
   apiCashIntent,
   apiRemoveLine,
   apiReset,
@@ -35,7 +36,10 @@ export type Screen = 'welcome' | 'menu' | 'cart' | 'status' | 'payment' | 'tips'
 export type Sheet = null | 'dish' | 'name' | 'send' | 'call'
 export type PayStage = 'form' | 'qr' | 'processing'
 export type PayScope = 'own' | 'equal' | 'full'
-export type PayMethod = 'sbp' | 'card' | 'tpay' | 'sber' | 'mir'
+// «cash» — такой же выбор способа, как остальные. Раньше наличные были не
+// выбором, а мгновенным действием: гость трогал строку, чтобы посмотреть, и
+// официант уже шёл за деньгами, а на экране ничего не менялось.
+export type PayMethod = 'sbp' | 'card' | 'tpay' | 'sber' | 'mir' | 'cash'
 
 export interface PendingAdd {
   dishId: string
@@ -49,6 +53,12 @@ export interface UiState {
   sheet: Sheet
   currentDishId: string | null
   pendingAdd: PendingAdd | null
+  /**
+   * Аллергены, на которых сервер остановил заказ, когда карточка блюда была
+   * уже закрыта (имя спрашивали в отдельной шторке). Карточка открывается
+   * заново и сразу показывает предупреждение — проглотить его нельзя.
+   */
+  pendingAllergens: string[] | null
   menuCat: string
   payScope: PayScope
   payMethod: PayMethod
@@ -69,6 +79,7 @@ const initialUi: UiState = {
   sheet: null,
   currentDishId: null,
   pendingAdd: null,
+  pendingAllergens: null,
   menuCat: CATEGORIES[0] ?? '',
   payScope: 'own',
   payMethod: 'sbp',
@@ -173,6 +184,8 @@ export function computeTotals(snap: Snapshot | null, myId: string | null): Total
 /** Человеческий текст вместо кода ошибки: гость должен понять, что делать дальше. */
 export function humanError(err: ApiError): string {
   const map: Record<string, string> = {
+    // Не дождались ответа — говорим об этом словами, а не вечным «Секунду…»
+    timeout: 'Сервер не ответил вовремя. Проверьте связь и попробуйте ещё раз',
     'guest token required': 'Похоже, вы вышли из заказа. Откройте меню заново со своего QR',
     'unknown guest': 'Этот заказ принадлежит другому гостю',
     'session ended': 'Стол закрыли. Отсканируйте QR на столе, чтобы начать заново',
@@ -216,6 +229,12 @@ export function tipAmount(ui: UiState): number {
   return Math.round((ui.lastPaid * Number(ui.tip)) / 100)
 }
 
+/** Чем закончилась попытка заказать: успехом, аллергеном или отказом сервера. */
+export interface AddResult {
+  ok: boolean
+  allergens?: string[]
+}
+
 interface Ctx {
   ui: UiState
   patch: (p: Partial<UiState>) => void
@@ -227,8 +246,9 @@ interface Ctx {
   // server actions
   join: (name: string, animal: Animal, idemKey: string, allergies?: string[]) => Promise<ServerPersona | null>
   /**
-   * Возвращает список аллергенов, если сервер остановил заказ, иначе null.
-   * Гость с заявленной аллергией обязан подтвердить осознанно, а не узнать за столом.
+   * Возвращает исход попытки. `allergens` — сервер остановил заказ, гость с
+   * заявленной аллергией обязан подтвердить осознанно. `ok: false` без
+   * аллергенов — сервер отказал: праздновать успех в этом случае нельзя.
    */
   addLine: (
     dishId: string,
@@ -239,14 +259,17 @@ interface Ctx {
     confirmAllergen?: boolean,
     /** Ключ намерения: один на карточку блюда, а не на каждый тап по кнопке. */
     idemKey?: string
-  ) => Promise<string[] | null>
+  ) => Promise<AddResult>
   removeLine: (uid: number) => Promise<void>
   /** Отменить своё блюдо, пока кухня не взяла его в работу. */
   cancelMine: (uid: number) => Promise<void>
   /** Позвать официанта с наличными: сумма ждёт подтверждения человека. */
-  askCash: (scope: 'own' | 'full') => Promise<number>
+  askCash: (scope: PayScope) => Promise<number>
+  /** Передумал: снять просьбу, чтобы официант не шёл за деньгами зря. */
+  cancelCash: () => Promise<void>
   sendWave: (scope: 'mine' | 'all') => Promise<void>
-  pay: (scope: PayScope, idemKey: string) => Promise<number>
+  /** Способ передаём серверу: иначе в платеже оседает «СБП» на любой выбор гостя. */
+  pay: (scope: PayScope, idemKey: string, method?: PayMethod) => Promise<number>
   leaveTip: (amount: number, idemKey: string) => Promise<number>
   callWaiter: (reason: 'help' | 'bill' | 'water', note?: string) => Promise<void>
   forgetMe: () => void // «Я другой гость» — телефон передали новому человеку
@@ -287,6 +310,37 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [streamKey, setStreamKey] = useState(0)
   useEffect(() => subscribe(setSnap, setConnected, identityRef.current?.guestToken ?? null), [streamKey])
 
+  // Личность сотрудника обязана следовать за токеном, а не жить своей жизнью.
+  // Токен могли заменить на этом же устройстве (сменился человек) или погасить
+  // с другого — и то, и другое должно немедленно отразиться на экране.
+  useEffect(() => {
+    let alive = true
+    const resync = async () => {
+      const who = await apiWhoami()
+      if (!alive) return
+      // Рестарт сервера или моргнувший Wi-Fi — не повод разлогинить повара
+      // посреди смены. Ресинк висит на focus, то есть срабатывал бы десятки
+      // раз за вечер.
+      if (who === 'offline') return
+      setStaff(who?.staff ?? null)
+      setCachedStaff(who?.staff ?? null)
+      setShiftTips(who?.shiftTips ?? 0)
+    }
+
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === null || e.key === 'easypay-staff-token') void resync()
+    }
+    const onFocus = () => void resync()
+
+    window.addEventListener('storage', onStorage)
+    window.addEventListener('focus', onFocus)
+    return () => {
+      alive = false
+      window.removeEventListener('storage', onStorage)
+      window.removeEventListener('focus', onFocus)
+    }
+  }, [])
+
   // На закрытом столе личность недействительна: первое действие гостя
   // должно пройти через join и открыть НОВУЮ сессию
   const me = useMemo(
@@ -295,13 +349,30 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   )
 
   // Сессия сменилась (стол закрыли/сбросили) — локальная личность устарела
+  // Заглушка для постороннего (`limited`) значит две разные вещи, и путать их
+  // нельзя. Если она прилетела ПОСЛЕ полного снапшота — это запоздавший кадр
+  // старого потока сразу после join: личность трогать нельзя, иначе гость
+  // теряет корзину и садится за стол вторым с тем же именем. Если она пришла
+  // ПЕРВОЙ в подписке, открытой с токеном, — токен мёртв (стол сбросили, пока
+  // телефон спал), и держаться за такую личность значит запереть гостя: любое
+  // действие отвечает «session ended», а пересканирование QR подтягивает её же.
+  const sawFullSnapshot = useRef(false)
+  useEffect(() => {
+    sawFullSnapshot.current = false
+  }, [streamKey])
+
   useEffect(() => {
     if (!snap || !identity) return
-    if (snap.sessionId !== identity.sessionId || !me) {
+    if (snap.limited) {
+      if (sawFullSnapshot.current) return
+    } else {
+      sawFullSnapshot.current = true
+    }
+    if (snap.limited || snap.sessionId !== identity.sessionId || !me) {
       localStorage.removeItem(ID_KEY)
       setIdentity(null)
     }
-  }, [snap, identity, me])
+  }, [snap, identity, me, streamKey])
 
   // Стол закрыли, пока гость был в потоке — мягко возвращаем на приветствие
   useEffect(() => {
@@ -376,21 +447,21 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       }, null),
     addLine: async (dishId, qty, shared, options, asGuestToken, confirmAllergen = false, idemKey) => {
       const token = asGuestToken ?? guestToken()
-      if (!token) return null
+      if (!token) return { ok: false }
       try {
         // Без ключа снаружи каждый повтор был бы новым намерением — и семь
         // быстрых нажатий превращались в семь порций
         await apiAddLine(token, dishId, qty, shared, options, idemKey ?? newIdemKey(), confirmAllergen)
-        return null
+        return { ok: true }
       } catch (err) {
         // Аллерген — не ошибка связи: гостю нужен осознанный выбор, а не тост
         if (err instanceof ApiError && err.error === 'allergen warning') {
-          return (err.extra?.allergens as string[]) ?? []
+          return { ok: false, allergens: (err.extra?.allergens as string[]) ?? [] }
         }
         toastRef.current?.(
           err instanceof ApiError ? humanError(err) : 'Не получилось — проверьте связь и попробуйте ещё раз'
         )
-        return null
+        return { ok: false }
       }
     },
     removeLine: uid =>
@@ -410,15 +481,24 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         toastRef.current?.('Официант подойдёт за наличными')
         return r.amount
       }, 0),
+    cancelCash: () =>
+      guard(async () => {
+        if (!guestToken()) return
+        await apiCancelCash(guestToken()!)
+        // Иначе футер продолжает предлагать «Позвать официанта» человеку,
+        // который только что от этого отказался
+        setUi(prev => ({ ...prev, payMethod: 'sbp' }))
+        toast('Хорошо, платим телефоном')
+      }, undefined),
     sendWave: scope =>
       guard(async () => {
         if (!guestToken()) return
         await apiSend(guestToken()!, scope)
       }, undefined),
-    pay: (scope, idemKey) =>
+    pay: (scope, idemKey, method) =>
       guard(async () => {
         if (!guestToken()) return 0
-        const r = await apiPay(guestToken()!, scope, idemKey)
+        const r = await apiPay(guestToken()!, scope, idemKey, method)
         patch({ lastPaid: r.amount, lastReceipt: r.receipt ?? null })
         return r.amount
       }, 0),
@@ -431,7 +511,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     callWaiter: (reason, note) =>
       guard(async () => {
         if (!guestToken()) return
-        await apiCall(guestToken()!, reason)
+        await apiCall(guestToken()!, reason, note)
         toast('Официант уже идёт 👋')
       }, undefined),
     forgetMe: () => {
@@ -445,6 +525,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     may: permission => can(staff?.role, permission),
     checkStaff: async () => {
       const who = await apiWhoami()
+      // Сервер молчит — держим то, что знали. Выгонять человека из смены можно
+      // только по прямому ответу сервера, а не по обрыву связи.
+      if (who === 'offline') {
+        setStaffChecked(true)
+        return
+      }
       setStaff(who?.staff ?? null)
       setCachedStaff(who?.staff ?? null)
       setShiftTips(who?.shiftTips ?? 0)

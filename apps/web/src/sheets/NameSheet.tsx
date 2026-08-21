@@ -39,14 +39,41 @@ export function NameSheet() {
       setBusy(false)
       return
     }
-    // Блюдо, ради которого спросили имя, НЕ теряется — добавляем сразу
+    // Блюдо, ради которого спросили имя, НЕ теряется — добавляем сразу.
+    // Шторку закрываем ПОСЛЕ ответа сервера: иначе некуда вернуть гостя, если
+    // заказ не прошёл, и тост «Капучино → Глеб» врал при пустом заказе — тот же
+    // дефект, который правился в карточке блюда, только на самом частом пути:
+    // первое блюдо новичка.
     const pending = ui.pendingAdd
-    patch({ sheet: null, currentDishId: null, pendingAdd: null })
-    if (pending) {
-      const dish = findDish(pending.dishId)
-      await addLine(pending.dishId, pending.qty, pending.shared, pending.options)
-      if (dish) toast(pending.shared ? `${dish.name} → общее на стол` : `${dish.name} → ${persona.name}`)
+    if (!pending) {
+      patch({ sheet: null, currentDishId: null, pendingAdd: null })
+      setBusy(false)
+      return
     }
+
+    const dish = findDish(pending.dishId)
+    const res = await addLine(pending.dishId, pending.qty, pending.shared, pending.options)
+    setBusy(false)
+
+    if (res.allergens && res.allergens.length > 0) {
+      // Предупреждение об аллергене показывает карточка блюда — вместе с
+      // вариантами, которые аллерген снимают. Молча проглотить его нельзя.
+      patch({
+        sheet: 'dish',
+        currentDishId: pending.dishId,
+        pendingAdd: null,
+        pendingAllergens: res.allergens
+      })
+      return
+    }
+    if (!res.ok) {
+      // Сервер отказал: гость остаётся в карточке и видит тост с причиной
+      patch({ sheet: 'dish', currentDishId: pending.dishId, pendingAdd: null })
+      return
+    }
+
+    patch({ sheet: null, currentDishId: null, pendingAdd: null })
+    if (dish) toast(pending.shared ? `${dish.name} → общее на стол` : `${dish.name} → ${persona.name}`)
   }
 
   return (
@@ -57,25 +84,50 @@ export function NameSheet() {
           Выберите зверюшку и впишите имя — за ним закрепятся блюда
         </div>
 
-        <div style={{ display: 'flex', gap: 11, overflowX: 'auto', padding: '4px 2px 14px' }}>
-          {ANIMAL_LIST.map(a => {
-            const disabled = taken.has(a)
-            return (
-              <div
-                key={a}
-                onClick={() => !disabled && setAnimal(a)}
-                style={{
-                  borderRadius: '50%',
-                  cursor: disabled ? 'not-allowed' : 'pointer',
-                  opacity: disabled ? 0.35 : 1,
-                  boxShadow: a === effectiveAnimal ? '0 0 0 2px #fff, 0 0 0 4px var(--ep-ink)' : 'none',
-                  transition: 'box-shadow 120ms'
-                }}
-              >
-                <Avatar animal={a} size={60} label={name || 'А'} />
-              </div>
-            )
-          })}
+        {/* Ряд шире экрана, и последний зверь раньше просто пропадал за краем.
+            Затухание у правой границы показывает, что список листается. */}
+        <div style={{ position: 'relative', marginBottom: 14 }}>
+          <div style={{ display: 'flex', gap: 11, overflowX: 'auto', padding: '4px 2px 10px', scrollSnapType: 'x proximity' }}>
+            {ANIMAL_LIST.map(a => {
+              const disabled = taken.has(a)
+              return (
+                <button
+                  key={a}
+                  type="button"
+                  aria-label={`Зверюшка ${a}`}
+                  aria-pressed={a === effectiveAnimal}
+                  disabled={disabled}
+                  onClick={() => setAnimal(a)}
+                  style={{
+                    flexShrink: 0,
+                    padding: 0,
+                    border: 'none',
+                    background: 'transparent',
+                    borderRadius: '50%',
+                    scrollSnapAlign: 'center',
+                    cursor: disabled ? 'not-allowed' : 'pointer',
+                    opacity: disabled ? 0.35 : 1,
+                    boxShadow: a === effectiveAnimal ? '0 0 0 2px #fff, 0 0 0 4px var(--ep-ink)' : 'none',
+                    transition: 'box-shadow 120ms'
+                  }}
+                >
+                  <Avatar animal={a} size={60} label={name || 'А'} />
+                </button>
+              )
+            })}
+          </div>
+          <div
+            aria-hidden
+            style={{
+              position: 'absolute',
+              top: 0,
+              right: 0,
+              width: 28,
+              bottom: 10,
+              pointerEvents: 'none',
+              background: 'linear-gradient(90deg, rgba(255,255,255,0) 0%, var(--ep-surface) 100%)'
+            }}
+          />
         </div>
 
         <div style={{ background: 'var(--ep-bg)', border: '1px solid var(--ep-border)', borderRadius: 'var(--ep-r-sm)', padding: '14px 16px', marginBottom: 14 }}>
@@ -114,9 +166,12 @@ export function NameSheet() {
                 <button
                   key={a}
                   type="button"
+                  aria-pressed={on}
                   onClick={() => setAllergies(list => (on ? list.filter(x => x !== a) : [...list, a]))}
                   style={{
-                    padding: '7px 12px',
+                    // 44 по высоте: чипсы аллергенов были 32-34 и мазали пальцем
+                    minHeight: 44,
+                    padding: '7px 14px',
                     borderRadius: 'var(--ep-r-pill)',
                     border: on ? '2px solid #9B1C1C' : '1px solid var(--ep-border)',
                     background: on ? '#FDECEC' : 'var(--ep-surface)',
