@@ -78,16 +78,14 @@ export function NameSheet() {
 
   return (
     <BottomSheet onClose={close}>
-      <div style={{ padding: '0 22px', paddingBottom: 'calc(26px + env(safe-area-inset-bottom))' }}>
-        <div style={{ fontWeight: 680, fontSize: 22, letterSpacing: '-0.5px', marginBottom: 4 }}>За кем записать заказ?</div>
-        <div style={{ fontSize: 14, color: 'var(--ep-muted)', marginBottom: 18 }}>
-          Выберите зверюшку и впишите имя — за ним закрепятся блюда
-        </div>
+      <div className="px-5 pb-[calc(1.625rem+env(safe-area-inset-bottom))]">
+        <div className="mb-1 text-2xl font-bold tracking-tight">За кем записать заказ?</div>
+        <p className="mb-4 text-base-content/60">Выберите зверюшку и впишите имя — за ним закрепятся блюда</p>
 
         {/* Ряд шире экрана, и последний зверь раньше просто пропадал за краем.
             Затухание у правой границы показывает, что список листается. */}
-        <div style={{ position: 'relative', marginBottom: 14 }}>
-          <div style={{ display: 'flex', gap: 11, overflowX: 'auto', padding: '4px 2px 10px', scrollSnapType: 'x proximity' }}>
+        <div className="relative mb-3.5">
+          <div className="flex snap-x gap-3 overflow-x-auto px-0.5 pt-1 pb-2.5">
             {ANIMAL_LIST.map(a => {
               const disabled = taken.has(a)
               return (
@@ -98,18 +96,9 @@ export function NameSheet() {
                   aria-pressed={a === effectiveAnimal}
                   disabled={disabled}
                   onClick={() => setAnimal(a)}
-                  style={{
-                    flexShrink: 0,
-                    padding: 0,
-                    border: 'none',
-                    background: 'transparent',
-                    borderRadius: '50%',
-                    scrollSnapAlign: 'center',
-                    cursor: disabled ? 'not-allowed' : 'pointer',
-                    opacity: disabled ? 0.35 : 1,
-                    boxShadow: a === effectiveAnimal ? '0 0 0 2px #fff, 0 0 0 4px var(--ep-ink)' : 'none',
-                    transition: 'box-shadow 120ms'
-                  }}
+                  className={`btn btn-circle size-16 shrink-0 snap-center p-0 ${
+                    a === effectiveAnimal ? 'btn-primary' : 'btn-ghost'
+                  }`}
                 >
                   <Avatar animal={a} size={60} label={name || 'А'} />
                 </button>
@@ -118,48 +107,26 @@ export function NameSheet() {
           </div>
           <div
             aria-hidden
-            style={{
-              position: 'absolute',
-              top: 0,
-              right: 0,
-              width: 28,
-              bottom: 10,
-              pointerEvents: 'none',
-              background: 'linear-gradient(90deg, rgba(255,255,255,0) 0%, var(--ep-surface) 100%)'
-            }}
+            className="pointer-events-none absolute top-0 right-0 bottom-2.5 w-7 bg-gradient-to-r from-transparent to-base-100"
           />
         </div>
 
-        <div style={{ background: 'var(--ep-bg)', border: '1px solid var(--ep-border)', borderRadius: 'var(--ep-r-sm)', padding: '14px 16px', marginBottom: 14 }}>
-          <input
-            placeholder="Ваше имя"
-            value={name}
-            onChange={e => setName(e.target.value)}
-            style={{ width: '100%', border: 'none', outline: 'none', background: 'transparent', fontSize: 17, fontWeight: 540, color: 'var(--ep-ink)' }}
-          />
-        </div>
+        <label className="input input-lg mb-3.5 w-full">
+          <input placeholder="Ваше имя" value={name} onChange={e => setName(e.target.value)} />
+        </label>
 
         {/* Аллергии: система уже умеет считать их по модификаторам, но не знала,
             что человеку нельзя. Спрашиваем один раз — дальше предупреждаем сами. */}
         <button
           type="button"
+          className={`btn btn-ghost btn-block justify-start ${allergies.length > 0 ? 'text-error' : ''}`}
           onClick={() => setShowAllergies(v => !v)}
-          style={{
-            width: '100%',
-            textAlign: 'left',
-            border: 'none',
-            background: 'transparent',
-            padding: '10px 0',
-            fontSize: 14,
-            color: allergies.length > 0 ? 'var(--ep-danger, #9B1C1C)' : 'var(--ep-muted)',
-            cursor: 'pointer'
-          }}
         >
           {allergies.length > 0 ? `Аллергии: ${allergies.join(', ')}` : 'У меня аллергия…'}
         </button>
 
         {showAllergies && (
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7, marginBottom: 14 }}>
+          <div className="mt-2 mb-3.5 flex flex-wrap gap-2">
             {ALLERGENS.map(a => {
               const on = allergies.includes(a)
               return (
@@ -167,19 +134,9 @@ export function NameSheet() {
                   key={a}
                   type="button"
                   aria-pressed={on}
+                  // h-11 — это 44 px: чипсы аллергенов были 32-34 и мазали пальцем
+                  className={`btn h-11 ${on ? 'btn-error' : ''}`}
                   onClick={() => setAllergies(list => (on ? list.filter(x => x !== a) : [...list, a]))}
-                  style={{
-                    // 44 по высоте: чипсы аллергенов были 32-34 и мазали пальцем
-                    minHeight: 44,
-                    padding: '7px 14px',
-                    borderRadius: 'var(--ep-r-pill)',
-                    border: on ? '2px solid #9B1C1C' : '1px solid var(--ep-border)',
-                    background: on ? '#FDECEC' : 'var(--ep-surface)',
-                    color: on ? '#9B1C1C' : 'inherit',
-                    fontSize: 13.5,
-                    fontWeight: on ? 640 : 480,
-                    cursor: 'pointer'
-                  }}
                 >
                   {a}
                 </button>
@@ -188,16 +145,11 @@ export function NameSheet() {
           </div>
         )}
 
-        {others.length > 0 && (
-          <div style={{ fontSize: 12.5, color: 'var(--ep-muted)', marginBottom: 18 }}>
-            За столом уже: {others.map(p => p.name).join(' · ')}
-          </div>
-        )}
-        {others.length === 0 && (
-          <div style={{ fontSize: 12.5, color: 'var(--ep-muted)', marginBottom: 18 }}>Вы первый за этим столом</div>
-        )}
+        <div className="mt-2 mb-4 text-xs text-base-content/60">
+          {others.length > 0 ? `За столом уже: ${others.map(p => p.name).join(' · ')}` : 'Вы первый за этим столом'}
+        </div>
 
-        <PrimaryButton onClick={() => void confirm()} disabled={busy} style={{ minHeight: 54 }}>
+        <PrimaryButton onClick={() => void confirm()} disabled={busy}>
           {busy ? 'Секунду…' : 'Готово'}
         </PrimaryButton>
       </div>

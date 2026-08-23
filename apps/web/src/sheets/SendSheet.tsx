@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { NAVY, findDish } from '../data'
+import { findDish } from '../data'
 import { Avatar } from '../avatars'
 import { BottomSheet, PrimaryButton, WarnBanner } from '../ui'
 import { useStore } from '../store'
@@ -36,129 +36,111 @@ export function SendSheet() {
     }, 1200)
   }
 
-  const rowStyle = (active: boolean, disabled = false): React.CSSProperties => ({
-    display: 'flex',
-    alignItems: 'center',
-    gap: 12,
-    padding: '13px 14px',
-    borderRadius: 'var(--ep-r-card)',
-    cursor: disabled ? 'not-allowed' : 'pointer',
-    opacity: disabled ? 0.45 : 1,
-    background: 'var(--ep-surface)',
-    border: active ? `2px solid ${NAVY}` : '1px solid var(--ep-border)'
-  })
-  const dotStyle = (active: boolean): React.CSSProperties => ({
-    width: 20,
-    height: 20,
-    borderRadius: '50%',
-    flexShrink: 0,
-    border: active ? `6px solid ${NAVY}` : '2px solid var(--ep-border)',
-    background: 'var(--ep-surface)',
-    boxSizing: 'border-box'
-  })
-
   if (sending) {
     return (
-      <div style={{ position: 'fixed', inset: 0, zIndex: 50, background: 'rgba(255,255,255,.94)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 20 }}>
-        <div className="ep-spin" style={{ width: 56, height: 56, borderRadius: '50%', border: '5px solid var(--ep-border)', borderTopColor: NAVY }} />
-        <div style={{ fontWeight: 600, fontSize: 18 }}>Передаём на кухню…</div>
+      <div className="fixed inset-0 z-50 flex flex-col items-center justify-center gap-5 bg-base-100/95">
+        <span className="loading loading-spinner loading-xl" />
+        <div className="text-lg font-semibold">Передаём на кухню…</div>
       </div>
     )
   }
 
   return (
     <BottomSheet onClose={close}>
-      <div style={{ padding: '0 22px', paddingBottom: 'calc(26px + env(safe-area-inset-bottom))' }}>
-        <div style={{ fontWeight: 680, fontSize: 22, letterSpacing: '-0.5px', marginBottom: 16 }}>Отправить заказ на кухню?</div>
+      <div className="px-5 pb-[calc(1.625rem+env(safe-area-inset-bottom))]">
+        <div className="mb-4 text-2xl font-bold tracking-tight">Отправить заказ на кухню?</div>
 
         {alone && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '13px 14px', borderRadius: 'var(--ep-r-card)', background: 'var(--ep-surface)', border: '1px solid var(--ep-border)', marginBottom: 14 }}>
-            <div style={{ flex: 1 }}>
-              <div style={{ fontWeight: 600, fontSize: 15 }}>Ваш заказ</div>
-              <div style={{ fontSize: 12, color: 'var(--ep-muted)', marginTop: 2 }}>
+          <div className="card card-border mb-3.5 bg-base-100">
+            <div className="card-body p-3.5">
+              <div className="font-semibold">Ваш заказ</div>
+              <div className="text-xs text-base-content/60">
                 {unsentMine.length} поз. · {fmt(unsentMine.reduce((s, l) => s + price(l), 0))}
               </div>
               {snap.personas.length > 1 && (
-                <div style={{ fontSize: 12, color: 'var(--ep-muted)', marginTop: 4 }}>
-                  У остальных за столом сейчас нечего отправлять
-                </div>
+                <div className="text-xs text-base-content/60">У остальных за столом сейчас нечего отправлять</div>
               )}
             </div>
           </div>
         )}
+
         {!alone && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 9, marginBottom: 14 }}>
-          <div
-            style={rowStyle(scope === 'mine', unsentMine.length === 0)}
-            onClick={() => unsentMine.length > 0 && patch({ sendScope: 'mine' })}
-          >
-            <div style={dotStyle(scope === 'mine')} />
-            <div style={{ flex: 1 }}>
-              <div style={{ fontWeight: 600, fontSize: 15 }}>Отправить мой заказ</div>
-              <div style={{ fontSize: 12, color: 'var(--ep-muted)', marginTop: 2 }}>
-                {me.name} · {unsentMine.length} поз. · {fmt(unsentMine.reduce((s, l) => s + price(l), 0))}
-              </div>
-            </div>
-          </div>
-          <div style={rowStyle(scope === 'all')} onClick={() => patch({ sendScope: 'all' })}>
-            <div style={dotStyle(scope === 'all')} />
-            <div style={{ flex: 1 }}>
-              <div style={{ fontWeight: 600, fontSize: 15 }}>Отправить за весь стол</div>
-              <div style={{ fontSize: 12, color: 'var(--ep-muted)', marginTop: 2 }}>
-                {unsentAll.length} поз. · {fmt(unsentAll.reduce((s, l) => s + price(l), 0))}
-              </div>
-            </div>
-          </div>
-        </div>
-        )}
-
-        {scope === 'all' && stillChoosing.length > 0 && (
-          <div style={{ marginBottom: 14 }}>
-            <WarnBanner>
-              <Avatar animal={stillChoosing[0].animal} size={26} label={stillChoosing[0].name} />
-              <span style={{ fontSize: 13, color: '#7A5A12', lineHeight: 1.4 }}>
-                <b style={{ fontWeight: 640 }}>{stillChoosing.map(p => p.name).join(', ')}</b> ещё{' '}
-                {stillChoosing.length === 1 ? 'выбирает' : 'выбирают'}. Все точно готовы?
-              </span>
-            </WarnBanner>
-          </div>
-        )}
-
-        {scope === 'all' && stillChoosing.length > 0 && (
-          <div onClick={() => patch({ sendChecked: !checked })} style={{ display: 'flex', alignItems: 'center', gap: 11, marginBottom: 18, cursor: 'pointer' }}>
-            <div
-              style={{
-                width: 22,
-                height: 22,
-                borderRadius: 'var(--ep-r-xs)',
-                flexShrink: 0,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                fontSize: 13,
-                fontWeight: 700,
-                background: checked ? NAVY : 'var(--ep-surface)',
-                color: 'var(--ep-on-ink)',
-                border: checked ? 'none' : '2px solid var(--ep-border)'
-              }}
+          <div className="mb-3.5 flex flex-col gap-2.5">
+            <label
+              className={`flex cursor-pointer items-center gap-3 rounded-box border bg-base-100 p-3.5 ${
+                scope === 'mine' ? 'border-primary border-2' : 'border-base-300'
+              } ${unsentMine.length === 0 ? 'cursor-not-allowed opacity-45' : ''}`}
             >
-              ✓
-            </div>
-            <span style={{ fontSize: 14.5 }}>Я всё выбрал(а), отправляем за всех</span>
+              <input
+                type="radio"
+                name="send-scope"
+                className="radio radio-primary"
+                checked={scope === 'mine'}
+                disabled={unsentMine.length === 0}
+                onChange={() => patch({ sendScope: 'mine' })}
+              />
+              <div className="flex-1">
+                <div className="font-semibold">Отправить мой заказ</div>
+                <div className="text-xs text-base-content/60">
+                  {me.name} · {unsentMine.length} поз. · {fmt(unsentMine.reduce((s, l) => s + price(l), 0))}
+                </div>
+              </div>
+            </label>
+            <label
+              className={`flex cursor-pointer items-center gap-3 rounded-box border bg-base-100 p-3.5 ${
+                scope === 'all' ? 'border-primary border-2' : 'border-base-300'
+              }`}
+            >
+              <input
+                type="radio"
+                name="send-scope"
+                className="radio radio-primary"
+                checked={scope === 'all'}
+                onChange={() => patch({ sendScope: 'all' })}
+              />
+              <div className="flex-1">
+                <div className="font-semibold">Отправить за весь стол</div>
+                <div className="text-xs text-base-content/60">
+                  {unsentAll.length} поз. · {fmt(unsentAll.reduce((s, l) => s + price(l), 0))}
+                </div>
+              </div>
+            </label>
           </div>
+        )}
+
+        {scope === 'all' && stillChoosing.length > 0 && (
+          <>
+            <div className="mb-3.5">
+              <WarnBanner>
+                <Avatar animal={stillChoosing[0].animal} size={26} label={stillChoosing[0].name} />
+                <span className="text-sm leading-snug">
+                  <b>{stillChoosing.map(p => p.name).join(', ')}</b> ещё{' '}
+                  {stillChoosing.length === 1 ? 'выбирает' : 'выбирают'}. Все точно готовы?
+                </span>
+              </WarnBanner>
+            </div>
+            <label className="mb-4 flex cursor-pointer items-center gap-3">
+              <input
+                type="checkbox"
+                className="checkbox checkbox-primary"
+                checked={checked}
+                onChange={() => patch({ sendChecked: !checked })}
+              />
+              <span>Я всё выбрал(а), отправляем за всех</span>
+            </label>
+          </>
         )}
 
         {alreadySent.length > 0 && (
-          <div style={{ fontSize: 12.5, color: 'var(--ep-muted)', marginBottom: 14 }}>
-            Уже на кухне (не отправится повторно):{' '}
-            {alreadySent.map(l => findDish(l.dishId)?.name ?? '?').join(', ')}
+          <div className="mb-3.5 text-xs text-base-content/60">
+            Уже на кухне (не отправится повторно): {alreadySent.map(l => findDish(l.dishId)?.name ?? '?').join(', ')}
           </div>
         )}
 
-        <PrimaryButton onClick={() => void send()} disabled={gated || unsentAll.length === 0} style={{ minHeight: 54, marginBottom: 8 }}>
+        <PrimaryButton className="mb-2" onClick={() => void send()} disabled={gated || unsentAll.length === 0}>
           Отправить
         </PrimaryButton>
-        <button onClick={close} style={{ width: '100%', minHeight: 44, border: 'none', background: 'transparent', color: 'var(--ep-muted)', fontWeight: 520, fontSize: 15, cursor: 'pointer' }}>
+        <button className="btn btn-ghost btn-block" onClick={close}>
           Ещё подумаю
         </button>
       </div>

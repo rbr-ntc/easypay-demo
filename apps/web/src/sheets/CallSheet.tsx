@@ -34,74 +34,48 @@ export function CallSheet() {
 
   return (
     <BottomSheet onClose={close}>
-      <div style={{ padding: '0 22px', paddingBottom: 'calc(26px + env(safe-area-inset-bottom))' }}>
-        <div style={{ fontWeight: 680, fontSize: 22, letterSpacing: '-0.5px', marginBottom: 6 }}>
-          Позвать официанта
-        </div>
-        {waiter && (
-          <div style={{ fontSize: 13.5, color: 'var(--ep-muted)', marginBottom: 16 }}>
-            К вашему столу подойдёт {waiter}
-          </div>
-        )}
+      <div className="px-5 pb-[calc(1.625rem+env(safe-area-inset-bottom))]">
+        <div className="mb-1.5 text-2xl font-bold tracking-tight">Позвать официанта</div>
+        {waiter && <div className="mb-4 text-sm text-base-content/60">К вашему столу подойдёт {waiter}</div>}
 
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 9, marginBottom: 16 }}>
+        <div className="mb-4 flex flex-col gap-2.5">
           {REASONS.map(r => {
             const on = reason === r.id
             return (
-              <button
+              <label
                 key={r.id}
-                onClick={() => setReason(r.id)}
-                style={{
-                  textAlign: 'left',
-                  padding: '13px 14px',
-                  borderRadius: 'var(--ep-r-card)',
-                  background: 'var(--ep-surface)',
-                  border: on ? '2px solid var(--ep-ink, #101828)' : '1px solid var(--ep-border)',
-                  cursor: 'pointer'
-                }}
+                className={`flex cursor-pointer items-center gap-3 rounded-box border bg-base-100 p-3.5 ${
+                  on ? 'border-primary border-2' : 'border-base-300'
+                }`}
               >
-                <div style={{ fontWeight: 600, fontSize: 15 }}>{r.label}</div>
-                <div style={{ fontSize: 12.5, color: 'var(--ep-muted)', marginTop: 2 }}>{r.hint}</div>
-              </button>
+                <input
+                  type="radio"
+                  name="call-reason"
+                  className="radio radio-primary"
+                  checked={on}
+                  onChange={() => setReason(r.id)}
+                />
+                <div className="flex-1">
+                  <div className="font-semibold">{r.label}</div>
+                  <div className="text-xs text-base-content/60">{r.hint}</div>
+                </div>
+              </label>
             )
           })}
         </div>
 
         <textarea
+          className="textarea mb-4 w-full"
           value={note}
           onChange={e => setNote(e.target.value.slice(0, NOTE_MAX))}
           placeholder="Можно написать словами — например, про аллергию"
           rows={3}
-          style={{
-            width: '100%',
-            boxSizing: 'border-box',
-            padding: '12px 14px',
-            borderRadius: 'var(--ep-r-card)',
-            border: '1px solid var(--ep-border)',
-            background: 'var(--ep-surface)',
-            fontSize: 15,
-            fontFamily: 'inherit',
-            resize: 'none',
-            marginBottom: 16
-          }}
         />
 
-        <PrimaryButton onClick={() => void send()} disabled={busy} style={{ minHeight: 54, marginBottom: 8 }}>
+        <PrimaryButton className="mb-2" onClick={() => void send()} disabled={busy}>
           Позвать
         </PrimaryButton>
-        <button
-          onClick={close}
-          style={{
-            width: '100%',
-            minHeight: 44,
-            border: 'none',
-            background: 'transparent',
-            color: 'var(--ep-muted)',
-            fontWeight: 520,
-            fontSize: 15,
-            cursor: 'pointer'
-          }}
-        >
+        <button className="btn btn-ghost btn-block" onClick={close}>
           Не сейчас
         </button>
       </div>

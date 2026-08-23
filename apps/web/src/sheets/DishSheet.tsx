@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { allergenAccusative } from '@easypay/domain/allergens'
-import { allergenTags, defaultOptions, dietTags, dishEmoji, findDish, NAVY, priceWithOptions } from '../data'
+import { allergenTags, defaultOptions, dietTags, dishEmoji, findDish, priceWithOptions } from '../data'
 import type { Dish, LineOptions } from '../data'
 import { BottomSheet, PrimaryButton, WarnBanner } from '../ui'
 import { useStore } from '../store'
@@ -121,93 +121,62 @@ export function DishSheet() {
     toast(`${dish.name} → ${me?.name ?? 'вам'}`)
   }
 
-  const choiceStyle = (active: boolean): React.CSSProperties => ({
-    flex: 1,
-    textAlign: 'center',
-    padding: 10,
-    borderRadius: 'var(--ep-r-sm)',
-    border: active ? `2px solid ${NAVY}` : '1px solid var(--ep-border)',
-    background: 'var(--ep-surface)',
-    fontWeight: active ? 600 : 440,
-    fontSize: 14,
-    cursor: 'pointer'
-  })
-
-  const segStyle = (active: boolean): React.CSSProperties => ({
-    flex: 1,
-    textAlign: 'center',
-    padding: '10px 6px',
-    borderRadius: 'var(--ep-r-pill)',
-    cursor: 'pointer',
-    fontSize: 13.5,
-    fontWeight: active ? 600 : 440,
-    background: active ? NAVY : 'transparent',
-    color: active ? 'var(--ep-on-ink)' : 'var(--ep-text-2)',
-    border: 'none'
-  })
-
   return (
     <BottomSheet onClose={close}>
-      <div className="ep-scroll" style={{ padding: '4px 22px 16px' }}>
+      <div className="ep-scroll px-5 pt-1 pb-4">
         {dish.photo ? (
           <img
             src={`./dishes/${dish.id}.jpg`}
             alt={dish.name}
-            style={{ width: '100%', height: 190, objectFit: 'cover', borderRadius: 'var(--ep-r-card)', marginBottom: 16, background: 'var(--ep-soft)' }}
+            className="mb-4 h-48 w-full rounded-box bg-base-200 object-cover"
           />
         ) : (
-          <div
-            style={{
-              width: '100%',
-              height: 150,
-              borderRadius: 'var(--ep-r-card)',
-              marginBottom: 16,
-              background: 'linear-gradient(135deg, #FDF6D8, #D9EAC4)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              fontSize: 44
-            }}
-          >
+          <div className="mb-4 flex h-38 w-full items-center justify-center rounded-box bg-base-200 text-5xl">
             {dishEmoji(dish)}
           </div>
         )}
-        <div style={{ fontWeight: 680, fontSize: 22, letterSpacing: '-0.5px' }}>{dish.name}</div>
-        <div style={{ fontSize: 14, color: 'var(--ep-muted)', lineHeight: 1.5, margin: '6px 0 10px' }}>{dish.desc}</div>
-        <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap', marginBottom: 16, alignItems: 'center' }}>
+        <div className="text-2xl font-bold tracking-tight">{dish.name}</div>
+        <p className="mt-1.5 mb-2.5 leading-relaxed text-base-content/60">{dish.desc}</p>
+        <div className="mb-4 flex flex-wrap items-center gap-2">
           {(dish.serving || dish.kcal) && (
-            <span style={{ fontSize: 12.5, color: 'var(--ep-muted)', background: 'var(--ep-soft)', borderRadius: 'var(--ep-r-pill)', padding: '5px 11px' }}>
+            <span className="badge badge-ghost">
               {/* Порция обязана считаться от ВЫБРАННОГО модификатора: при
                   выбранной бутылке шапка продолжала обещать «150 мл» */}
               {[servingLabel(dish, opts), dish.kcal ? `${dish.kcal} ккал` : null].filter(Boolean).join(' · ')}
             </span>
           )}
           {dietTags(dish).map(t => (
-            <span key={t} style={{ fontSize: 12.5, color: t === 'острое' ? '#B4451F' : '#5C7A4A', background: t === 'острое' ? '#FDEDE6' : '#EDF5E6', borderRadius: 'var(--ep-r-pill)', padding: '5px 11px' }}>
+            <span key={t} className={t === 'острое' ? 'badge badge-error badge-soft' : 'badge badge-success badge-soft'}>
               {t === 'острое' ? '🌶 острое' : t}
             </span>
           ))}
         </div>
 
         {allergenTags(dish, opts).length > 0 ? (
-          <div style={{ fontSize: 12.5, color: 'var(--ep-warn)', marginBottom: 16 }}>
+          <div className="mb-4 text-sm text-warning">
             Аллергены: {allergenTags(dish, opts).join(' · ')}
             {(dish.options ?? []).some(o => o.effects) ? ' · зависит от выбора ниже' : ''}
           </div>
         ) : (
-          <div style={{ fontSize: 12.5, color: 'var(--ep-ok)', marginBottom: 16 }}>Аллергенов из списка нет</div>
+          <div className="mb-4 text-sm text-success">Аллергенов из списка нет</div>
         )}
 
         {/* Кому блюдо — витрина УТП: привязка к персоне в момент заказа.
             В одиночку выбора нет: делить не с кем, и «÷1» только путает. */}
         {companyAtTable && (
           <>
-            <div style={{ fontWeight: 600, fontSize: 15, marginBottom: 8 }}>Кому</div>
-            <div style={{ display: 'flex', gap: 4, background: 'var(--ep-soft)', borderRadius: 'var(--ep-r-pill)', padding: 4, marginBottom: 18 }}>
-              <button style={segStyle(target === 'me')} onClick={() => setTarget('me')}>
+            <div className="mb-2 font-semibold">Кому</div>
+            <div className="join mb-4 w-full">
+              <button
+                className={`btn join-item flex-1 ${target === 'me' ? 'btn-active btn-primary' : ''}`}
+                onClick={() => setTarget('me')}
+              >
                 {me ? me.name : 'Себе'}
               </button>
-              <button style={segStyle(target === 'table')} onClick={() => setTarget('table')}>
+              <button
+                className={`btn join-item flex-1 ${target === 'table' ? 'btn-active btn-primary' : ''}`}
+                onClick={() => setTarget('table')}
+              >
                 Общее на стол ÷{totals.participants}
               </button>
             </div>
@@ -215,21 +184,12 @@ export function DishSheet() {
         )}
 
         {blocked && (
-          <div
-            style={{
-              marginBottom: 16,
-              padding: '14px 16px',
-              borderRadius: 'var(--ep-r-card)',
-              background: '#FDECEC',
-              border: '2px solid #9B1C1C'
-            }}
-          >
-            <div style={{ fontWeight: 700, fontSize: 15, color: '#9B1C1C', marginBottom: 6 }}>
-              Здесь есть {blocked.join(' и ')}
-            </div>
-            <div style={{ fontSize: 13.5, lineHeight: 1.45, marginBottom: 12 }}>
-              Вы указали это в аллергиях. Проверьте состав или спросите официанта — если
-              уверены, можно заказать.
+          <div role="alert" className="alert alert-error mb-4 flex-col items-stretch">
+            <div>
+              <div className="font-bold">Здесь есть {blocked.join(' и ')}</div>
+              <div className="text-sm leading-snug">
+                Вы указали это в аллергиях. Проверьте состав или спросите официанта — если уверены, можно заказать.
+              </div>
             </div>
             {/* Приложение знает, какой модификатор снимает аллерген, — кухне оно
                 это уже говорит. Гостю не сказать об этом было прямой потерей:
@@ -238,59 +198,20 @@ export function DishSheet() {
             {rescues(dish, blocked, me?.allergies ?? []).map(r => (
               <button
                 key={`${r.optionId}-${r.choice}`}
+                className="btn btn-outline btn-block justify-start"
                 onClick={() => {
                   setOpts(prev => ({ ...prev, [r.optionId]: r.choice }))
                   setBlocked(null)
-                }}
-                style={{
-                  display: 'block',
-                  width: '100%',
-                  textAlign: 'left',
-                  minHeight: 44,
-                  marginBottom: 8,
-                  padding: '10px 14px',
-                  borderRadius: 'var(--ep-r-sm)',
-                  border: '1px solid #9B1C1C',
-                  background: '#fff',
-                  color: '#9B1C1C',
-                  fontSize: 13.5,
-                  fontWeight: 560,
-                  cursor: 'pointer'
                 }}
               >
                 Взять «{r.choice}» — снимет {r.removes.map(allergenAccusative).join(' и ')}
               </button>
             ))}
-            <div style={{ display: 'flex', gap: 8 }}>
-              <button
-                onClick={() => setBlocked(null)}
-                style={{
-                  flex: 1,
-                  minHeight: 44,
-                  borderRadius: 'var(--ep-r-pill)',
-                  border: 'none',
-                  background: '#9B1C1C',
-                  color: '#fff',
-                  fontWeight: 640,
-                  fontSize: 15,
-                  cursor: 'pointer'
-                }}
-              >
+            <div className="flex gap-2">
+              <button className="btn btn-error flex-1" onClick={() => setBlocked(null)}>
                 Не буду
               </button>
-              <button
-                onClick={() => void addAnyway()}
-                style={{
-                  flex: 1,
-                  minHeight: 44,
-                  borderRadius: 'var(--ep-r-pill)',
-                  border: '1px solid var(--ep-border)',
-                  background: 'var(--ep-surface)',
-                  fontWeight: 540,
-                  fontSize: 15,
-                  cursor: 'pointer'
-                }}
-              >
+              <button className="btn flex-1" onClick={() => void addAnyway()}>
                 Всё равно заказать
               </button>
             </div>
@@ -298,11 +219,11 @@ export function DishSheet() {
         )}
 
         {target === 'table' && (snap?.lines ?? []).some(l => l.shared && l.dishId === dish.id) && (
-          <div style={{ marginBottom: 16 }}>
+          <div className="mb-4">
             <WarnBanner>
-              <span style={{ fontSize: 13, color: '#7A5A12', lineHeight: 1.4 }}>
-                {dish.name} уже есть в общих блюдах стола — вы добавите{' '}
-                <b style={{ fontWeight: 640 }}>ещё одну порцию</b>. Если хотели ту же — она уже заказана 😉
+              <span className="text-sm leading-snug">
+                {dish.name} уже есть в общих блюдах стола — вы добавите <b>ещё одну порцию</b>. Если хотели ту же —
+                она уже заказана 😉
               </span>
             </WarnBanner>
           </div>
@@ -311,12 +232,12 @@ export function DishSheet() {
         {/* Модификаторы блюда — реальные: уходят на кухню вместе с позицией */}
         {(dish.options ?? []).map(opt => (
           <div key={opt.id}>
-            <div style={{ fontWeight: 600, fontSize: 15, marginBottom: 10 }}>{opt.name}</div>
-            <div style={{ display: 'flex', gap: 8, marginBottom: 18, flexWrap: 'wrap' }}>
+            <div className="mb-2.5 font-semibold">{opt.name}</div>
+            <div className="mb-4 flex flex-wrap gap-2">
               {opt.choices.map(choice => (
                 <button
                   key={choice}
-                  style={choiceStyle(opts[opt.id] === choice)}
+                  className={`btn ${opts[opt.id] === choice ? 'btn-active btn-primary' : ''}`}
                   onClick={() => setOpts(prev => ({ ...prev, [opt.id]: choice }))}
                 >
                   {choice}
@@ -327,20 +248,27 @@ export function DishSheet() {
         ))}
       </div>
 
-      <div style={{ padding: '12px 22px', paddingBottom: 'calc(20px + env(safe-area-inset-bottom))', borderTop: '1px solid var(--ep-border)', display: 'flex', alignItems: 'center', gap: 14 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 14, border: '1px solid var(--ep-border)', borderRadius: 'var(--ep-r-pill)', padding: '7px 12px' }}>
-          <span style={{ fontSize: 20, color: 'var(--ep-muted)', cursor: 'pointer' }} onClick={() => setQty(Math.max(1, qty - 1))}>
+      <div className="flex items-center gap-3.5 border-t border-base-300 px-5 pt-3 pb-[calc(1.25rem+env(safe-area-inset-bottom))]">
+        <div className="join">
+          <button
+            className="btn join-item size-11"
+            aria-label="Меньше"
+            disabled={qty <= 1}
+            onClick={() => setQty(Math.max(1, qty - 1))}
+          >
             −
-          </span>
-          <span style={{ fontWeight: 600, fontSize: 16, minWidth: 14, textAlign: 'center' }}>{qty}</span>
-          <span
-            style={{ fontSize: 20, cursor: qty >= MAX_QTY ? 'not-allowed' : 'pointer', opacity: qty >= MAX_QTY ? 0.35 : 1 }}
+          </button>
+          <span className="btn join-item pointer-events-none size-11 font-semibold">{qty}</span>
+          <button
+            className="btn join-item size-11"
+            aria-label="Больше"
+            disabled={qty >= MAX_QTY}
             onClick={() => setQty(Math.min(MAX_QTY, qty + 1))}
           >
             +
-          </span>
+          </button>
         </div>
-        <PrimaryButton onClick={() => void add()} style={{ flex: 1, minHeight: 52, fontSize: 14.5 }}>
+        <PrimaryButton className="flex-1" onClick={() => void add()}>
           Добавить · {fmt(priceWithOptions(dish, opts) * qty)}
         </PrimaryButton>
       </div>
