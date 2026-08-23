@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { newIdemKey } from '../keys'
-import { NAVY, SBP_GRADIENT } from '../data'
+import { SBP_GRADIENT } from '../data'
 import { Avatar } from '../avatars'
 import { GhostButton, Mono, PrimaryButton, StickyFooter, WarnBanner } from '../ui'
 import { useStore } from '../store'
@@ -24,36 +24,40 @@ function QrStage({ amount, onBack, onPaid }: { amount: number; onBack: () => voi
   const ss = String(ttl % 60).padStart(2, '0')
 
   return (
-    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', padding: '18px 24px', paddingBottom: 'calc(26px + env(safe-area-inset-bottom))' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 8 }}>
-        <button onClick={onBack} style={{ width: 38, height: 38, borderRadius: '50%', border: '1px solid var(--ep-border)', background: 'var(--ep-surface)', fontSize: 18, cursor: 'pointer' }}>
+    <div className="flex flex-1 flex-col px-6 pt-4 pb-[calc(1.625rem+env(safe-area-inset-bottom))]">
+      <div className="mb-2 flex items-center gap-3">
+        <button className="btn btn-circle" onClick={onBack} aria-label="Назад">
           ←
         </button>
-        <div style={{ fontWeight: 640, fontSize: 18 }}>Оплата по СБП</div>
+        <div className="text-lg font-semibold">Оплата по СБП</div>
       </div>
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center' }}>
-        <div style={{ width: 60, height: 24, borderRadius: 'var(--ep-r-xs)', background: SBP_GRADIENT, color: 'var(--ep-on-ink)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: 12, marginBottom: 18 }}>
+      <div className="flex flex-1 flex-col items-center justify-center text-center">
+        {/* Плашка СБП — фирменный знак платёжной системы, поэтому цвет
+            фиксированный и темой не управляется */}
+        <div
+          className="mb-4 flex h-6 w-15 items-center justify-center rounded-selector text-xs font-bold text-white"
+          style={{ background: SBP_GRADIENT }}
+        >
           СБП
         </div>
-        <div style={{ padding: 18, background: 'var(--ep-surface)', borderRadius: 'var(--ep-r-lg)', boxShadow: '0 10px 30px rgba(20,18,45,.12)', marginBottom: 18 }}>
-          <div
-            style={{
-              width: 200,
-              height: 200,
-              borderRadius: 'var(--ep-r-sm)',
-              backgroundImage: 'repeating-conic-gradient(var(--ep-ink) 0% 25%, #fff 0% 50%)',
-              backgroundSize: '17px 17px',
-              border: '8px solid #fff'
-            }}
-          />
+        <div className="card mb-4 bg-base-100 shadow-lg">
+          <div className="card-body p-4">
+            <div
+              className="size-50 rounded-field border-8 border-white"
+              style={{
+                backgroundImage: 'repeating-conic-gradient(currentColor 0% 25%, #fff 0% 50%)',
+                backgroundSize: '17px 17px'
+              }}
+            />
+          </div>
         </div>
-        <div style={{ fontWeight: 300, fontSize: 34, letterSpacing: '-1px', marginBottom: 6 }}>{fmt(amount)}</div>
-        <div style={{ fontSize: 13.5, color: 'var(--ep-muted)', marginBottom: 4 }}>Наведите камеру или откройте приложение банка</div>
-        <div style={{ fontFamily: 'ui-monospace, monospace', fontSize: 12, color: '#B5249C' }}>
+        <div className="mb-1.5 text-4xl font-light tracking-tight">{fmt(amount)}</div>
+        <div className="mb-1 text-sm text-base-content/60">Наведите камеру или откройте приложение банка</div>
+        <div className="font-mono text-xs text-base-content/60">
           Код действителен {mm}:{ss}
         </div>
       </div>
-      <PrimaryButton onClick={onPaid} style={{ background: SBP_GRADIENT, color: '#fff', border: 'none' }}>
+      <PrimaryButton className="border-none text-white" style={{ background: SBP_GRADIENT }} onClick={onPaid}>
         Открыть приложение банка
       </PrimaryButton>
     </div>
@@ -112,11 +116,11 @@ export function Payment() {
 
   if (ui.payStage === 'processing') {
     return (
-      <div className="ep-screen" style={{ alignItems: 'center', justifyContent: 'center', gap: 22 }}>
-        <div className="ep-spin" style={{ width: 62, height: 62, borderRadius: '50%', border: `5px solid var(--ep-border)`, borderTopColor: NAVY }} />
-        <div style={{ textAlign: 'center' }}>
-          <div style={{ fontWeight: 600, fontSize: 19, marginBottom: 5 }}>Проводим оплату…</div>
-          <div style={{ fontSize: 14, color: 'var(--ep-muted)' }}>Не закрывайте экран</div>
+      <div className="ep-screen items-center justify-center gap-5">
+        <span className="loading loading-spinner loading-xl" />
+        <div className="text-center">
+          <div className="mb-1 text-xl font-semibold">Проводим оплату…</div>
+          <div className="text-sm text-base-content/60">Не закрывайте экран</div>
         </div>
       </div>
     )
@@ -132,162 +136,138 @@ export function Payment() {
 
   return (
     <div className="ep-screen">
-      <div className="ep-scroll" style={{ padding: '14px 20px 20px' }}>
-        <div style={{ fontWeight: 700, fontSize: 24, letterSpacing: '-0.6px', marginBottom: 16 }}>Оплата</div>
+      <div className="ep-scroll px-5 pt-3.5 pb-5">
+        <div className="mb-4 text-2xl font-bold tracking-tight">Оплата</div>
 
         {otherPayments.length > 0 && (
-          <div style={{ marginBottom: 16 }}>
+          <div className="mb-4">
             <WarnBanner>
               <Avatar animal={snap.personas.find(p => p.id === otherPayments[0].personaId)?.animal ?? 'fox'} size={26} />
-              <span style={{ fontSize: 13, lineHeight: 1.45, color: '#7A5A12' }}>
+              <span className="text-sm leading-snug">
                 {otherPayments
                   .map(p => `${snap.personas.find(x => x.id === p.personaId)?.name ?? '?'} — ${fmt(p.amount)}`)
                   .join(', ')}{' '}
-                уже оплачено. Осталось <b style={{ fontWeight: 640 }}>{fmt(totals.remaining)}</b>
+                уже оплачено. Осталось <b>{fmt(totals.remaining)}</b>
               </span>
             </WarnBanner>
           </div>
         )}
 
-        <Mono style={{ marginBottom: 9 }}>Что оплачиваем</Mono>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 9, marginBottom: 22 }}>
+        <Mono className="mb-2">Что оплачиваем</Mono>
+        {/* Радиокнопки, а не кликабельные div: выбор «за что платим» обязан
+            работать с клавиатуры и читаться скринридером — на экране, где
+            списываются деньги, это была единственная настоящая кнопка внизу */}
+        <div className="mb-5 flex flex-col gap-2.5">
           {SCOPES.map(o => {
             const active = o.id === ui.payScope
-            const amt = totals.scopeAmount(o.id)
             return (
-              <div
+              <label
                 key={o.id}
-                role="button"
-                tabIndex={o.disabled ? -1 : 0}
-                aria-pressed={active}
-                aria-disabled={o.disabled}
-                onKeyDown={e => {
-                  if (e.key !== 'Enter' && e.key !== ' ') return
-                  e.preventDefault() // иначе пробел выбирает И прокручивает экран
-                  if (!o.disabled) patch({ payScope: o.id })
-                }}
-                onClick={() => !o.disabled && patch({ payScope: o.id })}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 12,
-                  padding: '13px 14px',
-                  borderRadius: 'var(--ep-r-card)',
-                  cursor: o.disabled ? 'not-allowed' : 'pointer',
-                  opacity: o.disabled ? 0.45 : 1,
-                  background: 'var(--ep-surface)',
-                  border: active ? `2px solid ${NAVY}` : '1px solid var(--ep-border)'
-                }}
+                className={`flex cursor-pointer items-center gap-3 rounded-box border bg-base-100 p-3.5 ${
+                  active ? 'border-primary border-2' : 'border-base-300'
+                } ${o.disabled ? 'cursor-not-allowed opacity-45' : ''}`}
               >
-                <div style={{ width: 20, height: 20, borderRadius: '50%', flexShrink: 0, border: active ? `6px solid ${NAVY}` : '2px solid var(--ep-border)', background: 'var(--ep-surface)', boxSizing: 'border-box' }} />
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontWeight: 600, fontSize: 15 }}>{o.label}</div>
-                  <div style={{ fontSize: 12, color: 'var(--ep-muted)', marginTop: 2 }}>{o.disabled ? 'уже оплачено' : o.sub}</div>
+                <input
+                  type="radio"
+                  name="pay-scope"
+                  className="radio radio-primary"
+                  checked={active}
+                  disabled={o.disabled}
+                  onChange={() => patch({ payScope: o.id })}
+                />
+                <div className="min-w-0 flex-1">
+                  <div className="font-semibold">{o.label}</div>
+                  <div className="mt-0.5 text-xs text-base-content/60">{o.disabled ? 'уже оплачено' : o.sub}</div>
                 </div>
-                <span style={{ fontWeight: 660, fontSize: 16 }}>{fmt(amt)}</span>
-              </div>
+                <span className="font-semibold">{fmt(totals.scopeAmount(o.id))}</span>
+              </label>
             )
           })}
         </div>
 
-        <Mono style={{ marginBottom: 9 }}>Способ оплаты</Mono>
-        <div
-          onClick={() => patch({ payMethod: 'sbp' })}
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 12,
-            padding: 14,
-            borderRadius: 'var(--ep-r-card)',
-            cursor: 'pointer',
-            background: sbp ? 'linear-gradient(118deg,#FBF0F8,#F4ECFB)' : 'var(--ep-surface)',
-            border: sbp ? '2px solid #B5249C' : '1px solid var(--ep-border)'
-          }}
-        >
-          <div style={{ width: 46, height: 46, borderRadius: 'var(--ep-r-sm)', background: SBP_GRADIENT, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, color: 'var(--ep-on-ink)', fontWeight: 700, fontSize: 15 }}>
-            СБП
-          </div>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
-              <span style={{ fontWeight: 620, fontSize: 15.5 }}>СБП</span>
-              <span style={{ fontFamily: 'ui-monospace, monospace', fontSize: 9, textTransform: 'uppercase', background: SBP_GRADIENT, color: 'var(--ep-on-ink)', padding: '3px 8px', borderRadius: 'var(--ep-r-pill)' }}>
-                Рекомендуем
-              </span>
+        <Mono className="mb-2">Способ оплаты</Mono>
+        <div className="flex flex-col gap-2.5">
+          <label
+            className={`flex cursor-pointer items-center gap-3 rounded-box border bg-base-100 p-3.5 ${
+              sbp ? 'border-primary border-2' : 'border-base-300'
+            }`}
+          >
+            <input
+              type="radio"
+              name="pay-method"
+              className="radio radio-primary"
+              checked={sbp}
+              onChange={() => patch({ payMethod: 'sbp' })}
+            />
+            <div
+              className="flex size-11 shrink-0 items-center justify-center rounded-field text-sm font-bold text-white"
+              style={{ background: SBP_GRADIENT }}
+            >
+              СБП
             </div>
-            <div style={{ fontSize: 12.5, color: 'var(--ep-muted)', marginTop: 2 }}>Оплата по QR или кнопке банка</div>
-          </div>
-          {sbp && (
-            <div style={{ width: 22, height: 22, borderRadius: '50%', background: '#B5249C', color: 'var(--ep-on-ink)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700, flexShrink: 0 }}>
-              ✓
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-2">
+                <span className="font-semibold">СБП</span>
+                <span className="badge badge-xs badge-secondary">Рекомендуем</span>
+              </div>
+              <div className="mt-0.5 text-xs text-base-content/60">Оплата по QR или кнопке банка</div>
+            </div>
+          </label>
+
+          {/* Наличные телефон принять не может: их берёт человек. Но выбор
+              способа и вызов официанта — разные шаги: тап выбирает наличные,
+              а зовёт официанта только кнопка внизу. Раньше касание строки
+              мгновенно отправляло просьбу, и гость об этом даже не узнавал. */}
+          <label
+            className={`flex cursor-pointer items-center gap-3 rounded-box border bg-base-100 p-3.5 ${
+              cash ? 'border-primary border-2' : 'border-base-300'
+            }`}
+          >
+            <input
+              type="radio"
+              name="pay-method"
+              className="radio radio-primary"
+              checked={cash}
+              onChange={() => patch({ payMethod: 'cash' })}
+            />
+            <div className="flex size-9 shrink-0 items-center justify-center rounded-field bg-base-200 font-semibold">
+              ₽
+            </div>
+            <div className="flex-1">
+              <div className="font-medium">Заплачу наличными</div>
+              <div className="mt-0.5 text-xs text-base-content/60">позовём официанта — он примет деньги</div>
+            </div>
+          </label>
+
+          {myCashRequest && (
+            <div role="alert" className="alert alert-warning alert-soft flex-col items-start">
+              <div className="font-semibold">Официант идёт за наличными · {fmt(myCashRequest.amount)}</div>
+              <div className="text-sm">Приготовьте деньги. Если передумали — можно оплатить телефоном.</div>
+              <GhostButton className="btn-sm" onClick={() => void cancelCash()}>
+                Передумал, заплачу телефоном
+              </GhostButton>
             </div>
           )}
-        </div>
 
-        {/* Наличные телефон принять не может: их берёт человек. Но выбор
-            способа и вызов официанта — разные шаги: тап выбирает наличные,
-            а зовёт официанта только кнопка внизу. Раньше касание строки
-            мгновенно отправляло просьбу, и гость об этом даже не узнавал. */}
-        <div
-          role="button"
-          aria-pressed={cash}
-          onClick={() => patch({ payMethod: 'cash' })}
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 12,
-            padding: '13px 14px',
-            marginTop: 9,
-            borderRadius: 'var(--ep-r-card)',
-            background: 'var(--ep-surface)',
-            border: cash ? `2px solid ${NAVY}` : '1px solid var(--ep-border)',
-            cursor: 'pointer'
-          }}
-        >
-          <div style={{ width: 34, height: 34, borderRadius: 'var(--ep-r-xs)', background: 'var(--ep-soft)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 600, fontSize: 14, color: 'var(--ep-text-2)', flexShrink: 0 }}>
-            ₽
-          </div>
-          <div style={{ flex: 1 }}>
-            <div style={{ fontWeight: 520, fontSize: 14.5 }}>Заплачу наличными</div>
-            <div style={{ fontSize: 12, color: 'var(--ep-muted)', marginTop: 2 }}>
-              позовём официанта — он примет деньги
-            </div>
-          </div>
-          <div style={{ width: 18, height: 18, borderRadius: '50%', flexShrink: 0, border: cash ? `5px solid ${NAVY}` : '2px solid var(--ep-border)', background: 'var(--ep-surface)', boxSizing: 'border-box' }} />
-        </div>
-
-        {myCashRequest && (
-          <div style={{ marginTop: 9, padding: '12px 14px', borderRadius: 'var(--ep-r-card)', background: '#FFF6E5', border: '1px solid #E8C989' }}>
-            <div style={{ fontWeight: 600, fontSize: 14 }}>Официант идёт за наличными · {fmt(myCashRequest.amount)}</div>
-            <div style={{ fontSize: 12.5, color: 'var(--ep-muted)', marginTop: 3 }}>
-              Приготовьте деньги. Если передумали — можно оплатить телефоном.
-            </div>
-            <GhostButton style={{ marginTop: 9, padding: '9px 14px', fontSize: 13.5 }} onClick={() => void cancelCash()}>
-              Передумал, заплачу телефоном
-            </GhostButton>
-          </div>
-        )}
-
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 9 }}>
           {METHODS.map(m => (
-            <div
+            <label
               key={m.id}
-              role="button"
-              tabIndex={0}
-              aria-pressed={ui.payMethod === m.id}
-              onKeyDown={e => {
-                if (e.key !== 'Enter' && e.key !== ' ') return
-                e.preventDefault()
-                patch({ payMethod: m.id })
-              }}
-              onClick={() => patch({ payMethod: m.id })}
-              style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '13px 14px', borderRadius: 'var(--ep-r-card)', background: 'var(--ep-surface)', border: '1px solid var(--ep-border)', cursor: 'pointer' }}
+              className={`flex cursor-pointer items-center gap-3 rounded-box border bg-base-100 p-3.5 ${
+                ui.payMethod === m.id ? 'border-primary border-2' : 'border-base-300'
+              }`}
             >
-              <div style={{ width: 34, height: 34, borderRadius: 'var(--ep-r-xs)', background: 'var(--ep-soft)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 600, fontSize: 14, color: 'var(--ep-text-2)', flexShrink: 0 }}>
+              <input
+                type="radio"
+                name="pay-method"
+                className="radio radio-primary"
+                checked={ui.payMethod === m.id}
+                onChange={() => patch({ payMethod: m.id })}
+              />
+              <div className="flex size-9 shrink-0 items-center justify-center rounded-field bg-base-200 font-semibold">
                 {m.glyph}
               </div>
-              <span style={{ flex: 1, fontWeight: 520, fontSize: 14.5 }}>{m.label}</span>
-              <div style={{ width: 18, height: 18, borderRadius: '50%', flexShrink: 0, border: ui.payMethod === m.id ? `5px solid ${NAVY}` : '2px solid var(--ep-border)', background: 'var(--ep-surface)', boxSizing: 'border-box' }} />
-            </div>
+              <span className="flex-1 font-medium">{m.label}</span>
+            </label>
           ))}
         </div>
       </div>
@@ -297,16 +277,17 @@ export function Payment() {
           // Наличные не списываются с телефона: кнопка честно зовёт человека,
           // а не притворяется оплатой
           disabled={amount <= 0 || (cash && !!myCashRequest)}
+          className={sbp ? 'border-none text-white' : ''}
+          style={sbp ? { background: SBP_GRADIENT } : undefined}
           onClick={() =>
             cash
-              // Тот же scope, что на кнопке: «разделить поровну» схлопывалось
-              // в «своё», и официант шёл за другой суммой, чем видел гость
-              ? void askCash(ui.payScope)
+              ? // Тот же scope, что на кнопке: «разделить поровну» схлопывалось
+                // в «своё», и официант шёл за другой суммой, чем видел гость
+                void askCash(ui.payScope)
               : sbp
                 ? patch({ payStage: 'qr' })
                 : void doPay()
           }
-          style={ sbp ? { background: SBP_GRADIENT, color: '#fff', border: 'none', fontSize: 17 } : { fontSize: 17 } }
         >
           {cash
             ? myCashRequest

@@ -14,119 +14,107 @@ export function Done() {
 
   return (
     <div className="ep-screen">
-      <div className="ep-scroll" style={{ padding: '30px 22px 20px' }}>
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', marginBottom: 22 }}>
-          <div className="ep-pop" style={{ width: 74, height: 74, borderRadius: '50%', background: '#1F9D55', color: 'var(--ep-on-ink)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 38, marginBottom: 16 }}>
+      <div className="ep-scroll px-5 pt-7 pb-5">
+        <div className="mb-5 flex flex-col items-center text-center">
+          <div className="ep-pop mb-4 flex size-19 items-center justify-center rounded-full bg-success text-4xl text-success-content">
             ✓
           </div>
-          <div style={{ fontWeight: 300, fontSize: 18, color: 'var(--ep-text-2)' }}>Оплачено</div>
-          <div style={{ fontWeight: 300, fontSize: 44, letterSpacing: '-1.6px', lineHeight: 1 }}>{fmt(ui.lastPaid)}</div>
+          <div className="text-lg font-light text-base-content/70">Оплачено</div>
+          <div className="text-5xl leading-none font-light tracking-tight">{fmt(ui.lastPaid)}</div>
           {tip > 0 && (
-            <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, marginTop: 12, background: 'var(--ep-accent-bg2)', color: 'var(--ep-accent)', borderRadius: 'var(--ep-r-pill)', padding: '6px 13px', fontSize: 13, fontWeight: 540 }}>
+            <div className="badge badge-accent badge-soft mt-3">
               + {fmt(tip)} чаевых официанту {snap?.waiter?.name ?? WAITER_NAME}
             </div>
           )}
         </div>
 
         {remaining > 0.01 && (
-          <div style={{ marginBottom: 14 }}>
+          <div className="mb-3.5">
             <WarnBanner>
               <SharedIcon size={26} />
-              <span style={{ flex: 1, fontSize: 13, color: '#7A5A12', lineHeight: 1.4 }}>
-                Ваша часть оплачена. По столу осталось <b style={{ fontWeight: 640 }}>{fmt(remaining)}</b>
+              <span className="flex-1 text-sm leading-snug">
+                Ваша часть оплачена. По столу осталось <b>{fmt(remaining)}</b>
               </span>
-              <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--ep-ink)', whiteSpace: 'nowrap', cursor: 'pointer' }}>Поделиться →</span>
             </WarnBanner>
           </div>
         )}
 
-        <Card style={{ padding: 16, marginBottom: 16 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 11 }}>
-            <div style={{ width: 40, height: 40, borderRadius: 'var(--ep-r-sm)', background: '#E4F6EA', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontSize: 18 }}>
-              🧾
-            </div>
-            <div style={{ flex: 1 }}>
-              <div style={{ fontWeight: 600, fontSize: 14.5 }}>
-                Чек {receipt ? `№ ${receipt.no}` : 'заказа'}
+        <Card className="mb-4">
+          <div className="card-body p-4">
+            <div className="flex items-center gap-3">
+              <div className="flex size-10 shrink-0 items-center justify-center rounded-field bg-success/20 text-lg">
+                🧾
               </div>
-              <div style={{ fontSize: 12.5, color: 'var(--ep-muted)', marginTop: 1 }}>
-                {receipt
-                  ? `${new Date(receipt.at).toLocaleString('ru-RU', { day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' })} · стол №${receipt.table}`
-                  : 'Сохраните номер операции'}
-              </div>
-            </div>
-          </div>
-
-          {/* Раньше здесь было «фискальный чек отправлен» и две кнопки, которые
-              ничего не делали. Теперь показываем то, что действительно есть:
-              за что именно списаны деньги. Фискальный чек придёт из кассы. */}
-          {receipt && receipt.lines.length > 0 && (
-            <div style={{ marginTop: 14, borderTop: '1px solid var(--ep-soft)', paddingTop: 12 }}>
-              {receipt.lines.map((l, i) => (
-                <div
-                  key={`${l.name}-${i}`}
-                  style={{ display: 'flex', justifyContent: 'space-between', gap: 12, fontSize: 13.5, padding: '4px 0' }}
-                >
-                  <span style={{ color: 'var(--ep-text-2)' }}>
-                    {l.name}
-                    {l.qty > 1 ? ` ×${l.qty}` : ''}
-                    {l.shared ? ' · общее' : ''}
-                    {optionsLabel(l.options) && (
-                      <span style={{ color: 'var(--ep-muted)' }}> · {optionsLabel(l.options)}</span>
-                    )}
-                  </span>
-                  <span style={{ fontVariantNumeric: 'tabular-nums' }}>
-                    {fmt(l.shared && l.share !== null ? l.share : l.price * l.qty)}
-                  </span>
+              <div className="flex-1">
+                <div className="font-semibold">Чек {receipt ? `№ ${receipt.no}` : 'заказа'}</div>
+                <div className="text-xs text-base-content/60">
+                  {receipt
+                    ? `${new Date(receipt.at).toLocaleString('ru-RU', { day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' })} · стол №${receipt.table}`
+                    : 'Сохраните номер операции'}
                 </div>
-              ))}
-              <div
-                style={{
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  fontWeight: 640,
-                  fontSize: 14.5,
-                  borderTop: '1px solid var(--ep-soft)',
-                  marginTop: 8,
-                  paddingTop: 8
-                }}
-              >
-                <span>Списано</span>
-                <span style={{ fontVariantNumeric: 'tabular-nums' }}>{fmt(receipt.amount)}</span>
               </div>
             </div>
-          )}
+
+            {/* Раньше здесь было «фискальный чек отправлен» и две кнопки, которые
+                ничего не делали. Теперь показываем то, что действительно есть:
+                за что именно списаны деньги. Фискальный чек придёт из кассы. */}
+            {receipt && receipt.lines.length > 0 && (
+              <div className="mt-3 border-t border-base-200 pt-3">
+                {receipt.lines.map((l, i) => (
+                  <div key={`${l.name}-${i}`} className="flex justify-between gap-3 py-1 text-sm">
+                    <span className="text-base-content/70">
+                      {l.name}
+                      {l.qty > 1 ? ` ×${l.qty}` : ''}
+                      {l.shared ? ' · общее' : ''}
+                      {optionsLabel(l.options) && (
+                        <span className="text-base-content/60"> · {optionsLabel(l.options)}</span>
+                      )}
+                    </span>
+                    <span className="tabular-nums">{fmt(l.shared && l.share !== null ? l.share : l.price * l.qty)}</span>
+                  </div>
+                ))}
+                <div className="mt-2 flex justify-between border-t border-base-200 pt-2 font-semibold">
+                  <span>Списано</span>
+                  <span className="tabular-nums">{fmt(receipt.amount)}</span>
+                </div>
+              </div>
+            )}
+          </div>
         </Card>
 
-        <Card style={{ padding: '18px 16px' }}>
-          <div style={{ textAlign: 'center', fontWeight: 600, fontSize: 16, marginBottom: 13 }}>Как всё прошло?</div>
-          <div style={{ display: 'flex', justifyContent: 'center', gap: 8, marginBottom: 14 }}>
-            {[1, 2, 3, 4, 5].map(n => (
-              <button
-                key={n}
-                onClick={() => patch({ rating: n })}
-                style={{ border: 'none', background: 'transparent', cursor: 'pointer', fontSize: 34, lineHeight: 1, color: n <= ui.rating ? '#F4B400' : 'var(--ep-border)' }}
-              >
-                ★
-              </button>
-            ))}
-          </div>
-          <div style={{ display: 'flex', justifyContent: 'center', gap: 8, flexWrap: 'wrap' }}>
-            {CHIPS.map(ch => (
-              <span key={ch} style={{ fontSize: 13, fontWeight: 520, padding: '8px 15px', borderRadius: 'var(--ep-r-pill)', background: 'var(--ep-soft)', color: 'var(--ep-text-2)', cursor: 'pointer' }}>
-                {ch}
-              </span>
-            ))}
+        <Card>
+          <div className="card-body items-center p-4">
+            <div className="font-semibold">Как всё прошло?</div>
+            <div className="rating rating-lg">
+              {[1, 2, 3, 4, 5].map(n => (
+                <input
+                  key={n}
+                  type="radio"
+                  name="visit-rating"
+                  className="mask mask-star-2 bg-warning"
+                  aria-label={`${n} из 5`}
+                  checked={n === ui.rating}
+                  onChange={() => patch({ rating: n })}
+                />
+              ))}
+            </div>
+            <div className="flex flex-wrap justify-center gap-2">
+              {CHIPS.map(ch => (
+                <button key={ch} className="btn btn-sm">
+                  {ch}
+                </button>
+              ))}
+            </div>
           </div>
         </Card>
       </div>
 
       <StickyFooter>
-        <div style={{ display: 'flex', gap: 10 }}>
-          <GhostButton style={{ flex: 1 }} onClick={() => patch({ screen: 'menu' })}>
+        <div className="flex gap-2.5">
+          <GhostButton className="flex-1" onClick={() => patch({ screen: 'menu' })}>
             Заказать ещё
           </GhostButton>
-          <PrimaryButton style={{ flex: 1 }} onClick={() => patch({ screen: 'welcome' })}>
+          <PrimaryButton className="flex-1" onClick={() => patch({ screen: 'welcome' })}>
             Готово
           </PrimaryButton>
         </div>

@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react'
 import { newIdemKey } from '../keys'
-import { NAVY, WAITER_NAME } from '../data'
+import { WAITER_NAME } from '../data'
 import { PrimaryButton, StickyFooter } from '../ui'
 import { Avatar } from '../avatars'
 import { useStore, tipAmount } from '../store'
@@ -30,95 +30,64 @@ export function Tips() {
 
   return (
     <div className="ep-screen">
-      <div className="ep-scroll" style={{ padding: '24px 24px 20px' }}>
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', marginBottom: 24 }}>
-          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 7, background: '#E4F6EA', color: '#1F9D55', borderRadius: 'var(--ep-r-pill)', padding: '7px 14px', fontSize: 13, fontWeight: 600, marginBottom: 16 }}>
-            ✓ Оплачено · {fmt(paidNow)}
+      <div className="ep-scroll px-6 pt-6 pb-5">
+        <div className="mb-6 flex flex-col items-center text-center">
+          <div className="badge badge-success badge-lg mb-4">✓ Оплачено · {fmt(paidNow)}</div>
+          {/* Продуктовый инвариант: аватары иллюстрированные, не эмодзи.
+              Здесь вдобавок стоял повар на экране благодарности официанту. */}
+          <div className="avatar mb-3.5">
+            <div className="flex size-22 items-center justify-center rounded-full bg-base-200">
+              <Avatar animal="fox" size={64} label={snap?.waiter?.name ?? WAITER_NAME} />
+            </div>
           </div>
-          <div
-            style={{
-              width: 88,
-              height: 88,
-              borderRadius: '50%',
-              marginBottom: 14,
-              background: 'linear-gradient(135deg,#E7EFFD,#C9D8F4)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              fontSize: 38
-            }}
-          >
-            {/* Продуктовый инвариант: аватары иллюстрированные, не эмодзи.
-                Здесь вдобавок стоял повар на экране благодарности официанту. */}
-            <Avatar animal="fox" size={64} label={snap?.waiter?.name ?? WAITER_NAME} />
+          <div className="badge badge-outline mb-4 gap-1.5">
+            <span className="text-warning">★</span>
+            <span className="font-semibold">4.9</span>
+            <span className="text-base-content/60">· официант {snap?.waiter?.name ?? WAITER_NAME}</span>
           </div>
-          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: 'var(--ep-surface)', border: '1px solid var(--ep-border)', borderRadius: 'var(--ep-r-pill)', padding: '5px 12px', marginBottom: 16 }}>
-            <span style={{ color: '#F4B400', fontSize: 13 }}>★</span>
-            <span style={{ fontSize: 12.5, fontWeight: 600 }}>4.9</span>
-            <span style={{ fontSize: 12.5, color: 'var(--ep-muted)' }}>· официант {snap?.waiter?.name ?? WAITER_NAME}</span>
-          </div>
-          <div style={{ fontWeight: 300, fontSize: 28, lineHeight: 1.1, letterSpacing: '-0.9px' }}>
+          <div className="text-3xl leading-tight font-light tracking-tight">
             Поблагодарить
             <br />
             официанта?
           </div>
         </div>
 
-        <div style={{ display: 'flex', gap: 9, marginBottom: 16 }}>
+        <div className="join mb-4 w-full">
           {PRESETS.map(p => (
-            <button
-              key={p.v}
-              onClick={() => patch({ tip: p.v })}
-              style={{
-                position: 'relative',
-                flex: 1,
-                textAlign: 'center',
-                padding: '15px 6px',
-                borderRadius: 'var(--ep-r-card)',
-                cursor: 'pointer',
-                fontWeight: ui.tip === p.v ? 600 : 480,
-                fontSize: 16,
-                background: ui.tip === p.v ? NAVY : 'var(--ep-soft)',
-                color: ui.tip === p.v ? 'var(--ep-on-ink)' : 'var(--ep-text-2)',
-                border: 'none'
-              }}
-            >
-              {p.popular && (
-                <span style={{ position: 'absolute', top: -9, left: '50%', transform: 'translateX(-50%)', fontFamily: 'ui-monospace, monospace', fontSize: 8, textTransform: 'uppercase', background: '#1F9D55', color: 'var(--ep-on-ink)', padding: '2px 7px', borderRadius: 'var(--ep-r-pill)', whiteSpace: 'nowrap' }}>
-                  популярно
-                </span>
-              )}
-              {p.label}
-            </button>
+            <div key={p.v} className="indicator join-item flex-1">
+              {p.popular && <span className="indicator-item indicator-center badge badge-xs badge-success">популярно</span>}
+              <button
+                className={`btn join-item w-full ${ui.tip === p.v ? 'btn-active btn-primary' : ''}`}
+                onClick={() => patch({ tip: p.v })}
+              >
+                {p.label}
+              </button>
+            </div>
           ))}
         </div>
 
         {ui.tip === 'custom' && (
-          <div style={{ background: 'var(--ep-surface)', border: '1px solid var(--ep-border)', borderRadius: 'var(--ep-r-card)', padding: '14px 16px', display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16 }}>
+          <label className="input input-lg mb-4 w-full">
             <input
               placeholder="Введите сумму"
               inputMode="numeric"
               value={ui.tipCustom || ''}
               onChange={e => patch({ tipCustom: Number(e.target.value.replace(/\D/g, '')) || 0 })}
-              style={{ flex: 1, border: 'none', outline: 'none', fontSize: 18, fontWeight: 540, color: 'var(--ep-ink)' }}
             />
-            <span style={{ fontSize: 18, color: 'var(--ep-muted)' }}>₽</span>
-          </div>
+            <span className="label">₽</span>
+          </label>
         )}
 
-        {tip > 0 && <div style={{ textAlign: 'center', fontWeight: 300, fontSize: 42, letterSpacing: '-1.4px', margin: '6px 0 10px' }}>{fmt(tip)}</div>}
+        {tip > 0 && <div className="my-2 text-center text-5xl font-light tracking-tight">{fmt(tip)}</div>}
 
-        <div style={{ textAlign: 'center', fontSize: 12.5, color: 'var(--ep-muted)' }}>Чаевые поступают напрямую официанту</div>
+        <div className="text-center text-xs text-base-content/60">Чаевые поступают напрямую официанту</div>
       </div>
 
       <StickyFooter>
-        <PrimaryButton onClick={() => void confirm()} disabled={busy} style={{ fontSize: 17 }}>
+        <PrimaryButton onClick={() => void confirm()} disabled={busy}>
           {busy ? 'Отправляем…' : tip > 0 ? `Оставить ${fmt(tip)}` : 'Оставить чаевые'}
         </PrimaryButton>
-        <button
-          onClick={() => patch({ tip: '0', screen: 'done' })}
-          style={{ width: '100%', minHeight: 44, border: 'none', background: 'transparent', color: 'var(--ep-muted)', fontWeight: 520, fontSize: 15, cursor: 'pointer' }}
-        >
+        <button className="btn btn-ghost btn-block" onClick={() => patch({ tip: '0', screen: 'done' })}>
           Пропустить
         </button>
       </StickyFooter>

@@ -10,63 +10,35 @@ export function TablePicker() {
   const unknown = requestedTable && seatsOfTable(requestedTable) === null
 
   return (
-    <div className="ep-screen" style={{ background: 'var(--ep-surface)' }}>
-      <div className="ep-scroll" style={{ padding: '22px 24px 28px' }}>
-        <div style={{ fontWeight: 700, fontSize: 19, letterSpacing: '-0.4px', marginBottom: 20 }}>{HALL.restaurant}</div>
+    <div className="ep-screen bg-base-100">
+      <div className="ep-scroll px-6 pt-5 pb-7">
+        <div className="mb-5 text-xl font-bold tracking-tight">{HALL.restaurant}</div>
 
         {unknown ? (
-          <div
-            style={{
-              display: 'flex',
-              gap: 11,
-              background: 'var(--ep-warn-bg)',
-              border: '1px solid var(--ep-warn-border)',
-              borderRadius: 'var(--ep-r-card)',
-              padding: '14px 16px',
-              marginBottom: 20
-            }}
-          >
-            <span style={{ fontSize: 13.5, lineHeight: 1.5, color: 'var(--ep-warn)' }}>
-              Стол <b>№{requestedTable}</b> не найден в этом зале. Отсканируйте QR со своего стола или выберите
-              стол ниже.
+          <div role="alert" className="alert alert-warning alert-soft mb-5">
+            <span>
+              Стол <b>№{requestedTable}</b> не найден в этом зале. Отсканируйте QR со своего стола или выберите стол
+              ниже.
             </span>
           </div>
         ) : (
           <>
-            <div style={{ fontWeight: 300, fontSize: 30, lineHeight: 1.15, letterSpacing: '-1px', marginBottom: 10 }}>
-              За каким вы столом?
-            </div>
-            <div style={{ fontSize: 15, lineHeight: 1.5, color: 'var(--ep-text-2)', marginBottom: 22 }}>
+            <div className="mb-2.5 text-3xl leading-tight font-light tracking-tight">За каким вы столом?</div>
+            <p className="mb-5 leading-relaxed text-base-content/70">
               Обычно меню открывается само — достаточно навести камеру на QR-код, который стоит у вас на столе.
               Здесь, в демо, стол можно выбрать руками.
-            </div>
+            </p>
           </>
         )}
 
         {HALL.zones.map(zone => (
-          <div key={zone.id} style={{ marginBottom: 22 }}>
-            <Mono style={{ marginBottom: 10 }}>{zone.name}</Mono>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(96px, 1fr))', gap: 10 }}>
+          <div key={zone.id} className="mb-5">
+            <Mono className="mb-2.5">{zone.name}</Mono>
+            <div className="grid grid-cols-[repeat(auto-fill,minmax(6rem,1fr))] gap-2.5">
               {zone.tables.map(t => (
-                <a
-                  key={t.id}
-                  href={`?t=${encodeURIComponent(t.id)}`}
-                  style={{
-                    display: 'flex',
-                    flexDirection: 'column',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: 2,
-                    padding: '16px 8px',
-                    borderRadius: 'var(--ep-r-card)',
-                    border: '1px solid var(--ep-border)',
-                    background: 'var(--ep-surface-2)',
-                    color: 'var(--ep-ink)',
-                    textDecoration: 'none'
-                  }}
-                >
-                  <span style={{ fontWeight: 680, fontSize: 20, letterSpacing: '-0.5px' }}>№{t.id}</span>
-                  <span style={{ fontSize: 11.5, color: 'var(--ep-muted)' }}>{t.seats} мест</span>
+                <a key={t.id} href={`?t=${encodeURIComponent(t.id)}`} className="btn h-auto flex-col gap-0.5 py-4">
+                  <span className="text-xl font-bold tracking-tight">№{t.id}</span>
+                  <span className="text-xs font-normal text-base-content/60">{t.seats} мест</span>
                 </a>
               ))}
             </div>
