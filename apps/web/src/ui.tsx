@@ -1,36 +1,34 @@
 import type { CSSProperties, ReactNode } from 'react'
 
+/**
+ * Общие примитивы на daisyUI.
+ *
+ * Раньше каждый из них рисовал себя инлайн-стилями поверх токенов `--ep-*`.
+ * Теперь внешний вид задают классы daisyUI, а тема (`light` / `dark`) решает,
+ * какими они окажутся. Пропс `style` сохранён: экраны, которые ещё правят
+ * отступы точечно, продолжают работать, пока их не перевели.
+ */
+
 export function PrimaryButton({
   children,
   onClick,
   style,
+  className = '',
   disabled
 }: {
   children: ReactNode
   onClick?: () => void
   style?: CSSProperties
+  className?: string
   disabled?: boolean
 }) {
+  // Главное действие экрана — единственное место, где уместен primary
   return (
     <button
       onClick={onClick}
       disabled={disabled}
-      className="ep-press"
-      style={{
-        width: '100%',
-        minHeight: 56,
-        border: 'var(--ep-btn-border)' as never,
-        borderRadius: 'var(--ep-r-pill)',
-        background: 'var(--ep-btn-bg)',
-        color: 'var(--ep-btn-fg)',
-        textTransform: 'var(--ep-btn-tt)' as never,
-        letterSpacing: 'var(--ep-btn-ls)',
-        fontWeight: 600,
-        fontSize: 16,
-        cursor: 'pointer',
-        opacity: disabled ? 0.45 : 1,
-        ...style
-      }}
+      className={`btn btn-primary btn-block btn-lg ${className}`}
+      style={style}
     >
       {children}
     </button>
@@ -40,54 +38,49 @@ export function PrimaryButton({
 export function GhostButton({
   children,
   onClick,
-  style
+  style,
+  className = ''
 }: {
   children: ReactNode
   onClick?: () => void
   style?: CSSProperties
+  className?: string
 }) {
   return (
-    <button
-      onClick={onClick}
-      className="ep-press"
-      style={{
-        width: '100%',
-        minHeight: 52,
-        border: '1px solid var(--ep-ghost-border)',
-        borderRadius: 'var(--ep-r-pill)',
-        background: 'var(--ep-ghost-bg)',
-        color: 'var(--ep-ink)',
-        textTransform: 'var(--ep-btn-tt)' as never,
-        letterSpacing: 'var(--ep-btn-ls)',
-        fontWeight: 540,
-        fontSize: 15,
-        cursor: 'pointer',
-        ...style
-      }}
-    >
+    <button onClick={onClick} className={`btn btn-block ${className}`} style={style}>
       {children}
     </button>
   )
 }
 
-export function Card({ children, style }: { children: ReactNode; style?: CSSProperties }) {
+export function Card({
+  children,
+  style,
+  className = ''
+}: {
+  children: ReactNode
+  style?: CSSProperties
+  className?: string
+}) {
   return (
-    <div style={{ background: 'var(--ep-surface)', border: '1px solid var(--ep-border)', borderRadius: 'var(--ep-r-card)', ...style }}>{children}</div>
+    <div className={`card card-border bg-base-100 ${className}`} style={style}>
+      {children}
+    </div>
   )
 }
 
-export function Mono({ children, style }: { children: ReactNode; style?: CSSProperties }) {
+/** Надпись-метка над блоком: капсом, разрядкой и приглушённым цветом. */
+export function Mono({
+  children,
+  style,
+  className = ''
+}: {
+  children: ReactNode
+  style?: CSSProperties
+  className?: string
+}) {
   return (
-    <div
-      style={{
-        fontFamily: 'ui-monospace, SFMono-Regular, monospace',
-        fontSize: 10.5,
-        letterSpacing: '0.6px',
-        textTransform: 'uppercase',
-        color: 'var(--ep-muted)',
-        ...style
-      }}
-    >
+    <div className={`font-mono text-xs uppercase tracking-widest text-base-content/60 ${className}`} style={style}>
       {children}
     </div>
   )
@@ -95,79 +88,35 @@ export function Mono({ children, style }: { children: ReactNode; style?: CSSProp
 
 export function WarnBanner({ children }: { children: ReactNode }) {
   return (
-    <div
-      style={{
-        display: 'flex',
-        alignItems: 'center',
-        gap: 10,
-        background: '#FFF6E6',
-        border: '1px solid #F4E2BD',
-        borderRadius: 'var(--ep-r-sm)',
-        padding: '12px 14px'
-      }}
-    >
+    <div role="alert" className="alert alert-warning alert-soft">
       {children}
     </div>
   )
 }
 
 export function BottomSheet({ children, onClose }: { children: ReactNode; onClose: () => void }) {
-  // На десктопе шит не растягивается на весь экран, а держит ширину гостевой колонки
+  // modal-bottom прижимает лист к низу экрана, а на широком экране daisyUI сам
+  // держит его в разумной ширине — раньше это делал отдельный класс ep-sheet-panel
   return (
-    <div style={{ position: 'fixed', inset: 0, zIndex: 40, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-end' }}>
-      <div onClick={onClose} style={{ position: 'absolute', inset: 0, background: 'rgba(11,11,18,.45)' }} />
-      <div
-        className="ep-fade-in ep-sheet-panel"
-        style={{
-          position: 'relative',
-          background: 'var(--ep-opaque)',
-          borderRadius: 'var(--ep-r-lg) var(--ep-r-lg) 0 0',
-          maxHeight: '90%',
-          display: 'flex',
-          flexDirection: 'column',
-          paddingBottom: 'env(safe-area-inset-bottom)'
-        }}
-      >
-        <div style={{ display: 'flex', justifyContent: 'center', padding: 10 }}>
-          <div style={{ width: 40, height: 4, borderRadius: 4, background: 'var(--ep-border)' }} />
+    <div className="modal modal-open modal-bottom" role="dialog">
+      <div className="modal-box max-h-[90%] p-0 pb-[env(safe-area-inset-bottom)]">
+        <div className="flex justify-center p-2.5">
+          <div className="h-1 w-10 rounded-full bg-base-300" />
         </div>
         {children}
       </div>
+      <form method="dialog" className="modal-backdrop" onClick={onClose}>
+        <button type="button">Закрыть</button>
+      </form>
     </div>
   )
 }
 
 export function Toast({ msg }: { msg: string }) {
-  // Центрирование — контейнером, а не transform: анимация ep-fade сама
-  // управляет transform и перезаписала бы translateX(-50%)
   return (
-    <div
-      style={{
-        position: 'fixed',
-        left: 0,
-        right: 0,
-        top: 'calc(14px + env(safe-area-inset-top))',
-        zIndex: 60,
-        display: 'flex',
-        justifyContent: 'center',
-        pointerEvents: 'none'
-      }}
-    >
-      <div
-        className="ep-fade-in"
-        style={{
-          width: 'min(calc(100% - 40px), 440px)',
-          background: 'var(--ep-ink)',
-          color: 'var(--ep-on-ink)',
-          borderRadius: 'var(--ep-r-card)',
-          padding: '13px 18px',
-          fontSize: 14,
-          fontWeight: 540,
-          textAlign: 'center',
-          boxShadow: '0 10px 30px rgba(20,18,45,.35)'
-        }}
-      >
-        {msg}
+    <div className="toast toast-top toast-center z-60 w-[min(calc(100%-2.5rem),27.5rem)]">
+      <div className="alert alert-neutral justify-center text-center">
+        <span>{msg}</span>
       </div>
     </div>
   )
@@ -175,17 +124,7 @@ export function Toast({ msg }: { msg: string }) {
 
 export function StickyFooter({ children }: { children: ReactNode }) {
   return (
-    <div
-      style={{
-        padding: '12px 20px',
-        paddingBottom: 'calc(20px + env(safe-area-inset-bottom))',
-        background: 'var(--ep-opaque)',
-        borderTop: '1px solid var(--ep-border)',
-        display: 'flex',
-        flexDirection: 'column',
-        gap: 9
-      }}
-    >
+    <div className="flex flex-col gap-2.5 border-t border-base-300 bg-base-100 px-5 pt-3 pb-[calc(1.25rem+env(safe-area-inset-bottom))]">
       {children}
     </div>
   )

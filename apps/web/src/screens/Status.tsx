@@ -1,15 +1,15 @@
-import { NAVY, findDish, optionsLabel } from '../data'
+import { findDish, optionsLabel } from '../data'
 import { Avatar, SharedIcon } from '../avatars'
 import { Card, GhostButton, PrimaryButton, StickyFooter, WarnBanner } from '../ui'
 import { useStore } from '../store'
 import { sharersOf } from '@easypay/domain/money'
 import { OrderProgress } from './OrderProgress'
-import { lineStage, stageLabel, STAGE_TINT } from '../lineStage'
+import { lineStage, stageLabel, STAGE_BADGE } from '../lineStage'
 
 const STEP_LABELS = ['Принят', 'Готовится', 'Подано']
 
 export function Status() {
-  const { patch, me, snap, callWaiter, cancelMine } = useStore()
+  const { patch, me, snap, cancelMine } = useStore()
   if (!me || !snap) return null
 
   const sentOwn = snap.lines.filter(l => l.sent && !l.shared)
@@ -27,7 +27,6 @@ export function Status() {
   )
   const mineServed = mineSent.length > 0 && mineSent.every(l => l.served || l.cancelled)
   const tableStillCooking = allSent.filter(l => !l.served && !l.cancelled)
-  const allServed = allSent.length > 0 && allSent.every(l => l.served || l.cancelled)
 
   // Кухня взялась хотя бы за одно моё блюдо — только тогда «готовится».
   // Раньше кастрюля кипела на экране, пока заказ стоял в очереди нетронутым.
@@ -45,12 +44,12 @@ export function Status() {
 
   return (
     <div className="ep-screen">
-      <div className="ep-scroll" style={{ padding: '26px 22px 18px' }}>
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', marginBottom: 22 }}>
-          <div className="ep-pop" style={{ width: 78, height: 78, borderRadius: '50%', background: '#DCEEB1', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 16, fontSize: 34, color: '#3A6B12' }}>
+      <div className="ep-scroll px-5 pt-6 pb-4">
+        <div className="mb-5 flex flex-col items-center text-center">
+          <div className="ep-pop mb-4 flex size-20 items-center justify-center rounded-full bg-success/20 text-4xl text-success">
             ✓
           </div>
-          <div style={{ fontWeight: 300, fontSize: 28, lineHeight: 1.12, letterSpacing: '-0.9px' }}>
+          <div className="text-3xl leading-tight font-light tracking-tight">
             {mineServed ? 'Всё подано.' : mineCooking ? 'Уже готовим.' : 'Заказ принят.'}
             <br />
             Приятного аппетита!
@@ -60,84 +59,79 @@ export function Status() {
         <OrderProgress steps={steps} />
 
         {mineServed && tableStillCooking.length > 0 && (
-          <div style={{ textAlign: 'center', fontSize: 13, color: 'var(--ep-muted)', marginTop: -8, marginBottom: 18 }}>
+          <div className="mb-4 text-center text-sm text-base-content/60">
             Вам подали всё. За столом ещё готовится:{' '}
-            {tableStillCooking
-              .map(l => `${findDish(l.dishId)?.name ?? '?'} (${nameOf(l.personaId)})`)
-              .join(', ')}
+            {tableStillCooking.map(l => `${findDish(l.dishId)?.name ?? '?'} (${nameOf(l.personaId)})`).join(', ')}
           </div>
         )}
 
-        <Card style={{ padding: '6px 16px', marginBottom: 14 }}>
-          {sentOwn.map(l => {
-            const d = findDish(l.dishId)
-            if (!d) return null
-            const mine = l.personaId === me.id
-            return (
-              <div key={l.uid} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '13px 0', borderBottom: '1px solid var(--ep-soft)' }}>
-                <Avatar animal={animalOf(l.personaId)} size={32} label={nameOf(l.personaId)} />
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontWeight: 540, fontSize: 14.5 }}>
-                    {d.name}
-                    {l.qty > 1 ? ` ×${l.qty}` : ''}
+        <Card className="mb-3.5">
+          <div className="card-body gap-0 px-4 py-1.5">
+            {sentOwn.map(l => {
+              const d = findDish(l.dishId)
+              if (!d) return null
+              const mine = l.personaId === me.id
+              return (
+                <div key={l.uid} className="flex items-center gap-3 border-b border-base-200 py-3">
+                  <Avatar animal={animalOf(l.personaId)} size={32} label={nameOf(l.personaId)} />
+                  <div className="min-w-0 flex-1">
+                    <div className="text-sm font-medium">
+                      {d.name}
+                      {l.qty > 1 ? ` ×${l.qty}` : ''}
+                    </div>
+                    <div className="text-xs text-base-content/60">
+                      {nameOf(l.personaId)}
+                      {mine ? ' · своё' : ''}
+                      {optionsLabel(l.options) ? ` · ${optionsLabel(l.options)}` : ''}
+                    </div>
                   </div>
-                  <div style={{ fontSize: 12, color: 'var(--ep-muted)' }}>
-                    {nameOf(l.personaId)}
-                    {mine ? ' · своё' : ''}
-                    {optionsLabel(l.options) ? ` · ${optionsLabel(l.options)}` : ''}
+                  <div className="flex flex-col items-end gap-1">
+                    <span className={`badge badge-sm ${STAGE_BADGE[lineStage(l)]}`}>{stageLabel(l)}</span>
+                    {/* Пока кухня не взялась, гость может передумать сам: раньше он
+                        платил за капучино, который начали делать через восемь минут */}
+                    {mine && !l.served && !l.cancelled && !l.startedAt && (
+                      <button className="btn btn-ghost btn-xs" onClick={() => void cancelMine(l.uid)}>
+                        отменить
+                      </button>
+                    )}
                   </div>
                 </div>
-                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 5 }}>
-                  <span style={{ fontFamily: 'ui-monospace, monospace', fontSize: 10.5, textTransform: 'uppercase', padding: '4px 9px', borderRadius: 'var(--ep-r-pill)', background: STAGE_TINT[lineStage(l)].bg, color: STAGE_TINT[lineStage(l)].fg }}>
-                    {stageLabel(l)}
-                  </span>
-                  {/* Пока кухня не взялась, гость может передумать сам: раньше он
-                      платил за капучино, который начали делать через восемь минут */}
-                  {mine && !l.served && !l.cancelled && !l.startedAt && (
-                    <button
-                      onClick={() => void cancelMine(l.uid)}
-                      style={{ border: 'none', background: 'transparent', color: 'var(--ep-muted)', fontSize: 12, cursor: 'pointer', padding: 0 }}
-                    >
-                      отменить
-                    </button>
-                  )}
+              )
+            })}
+            {sentShared.length > 0 && (
+              <div className="flex items-center gap-3 py-3">
+                <SharedIcon size={32} />
+                <div className="min-w-0 flex-1">
+                  <div className="text-sm font-medium">Общие блюда</div>
+                  <div className="truncate text-xs text-base-content/60">
+                    {sentShared.map(l => `${findDish(l.dishId)?.name ?? '?'}${l.served ? ' ✓' : ''}`).join(', ')}
+                  </div>
                 </div>
+                {(() => {
+                  // Общие блюда показывали вечное «Принято» независимо от кухни:
+                  // гость видел «готовится» там, где официант уже отчитался о подаче
+                  const servedAll = sentShared.every(l => l.served)
+                  const servedSome = sentShared.some(l => l.served)
+                  const label = servedAll ? 'Подано' : servedSome ? 'Частично' : 'Готовится'
+                  return (
+                    <span className={`badge badge-sm ${servedAll ? STAGE_BADGE.served : STAGE_BADGE.cooking}`}>
+                      {label}
+                    </span>
+                  )
+                })()}
               </div>
-            )
-          })}
-          {sentShared.length > 0 && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '13px 0' }}>
-              <SharedIcon size={32} />
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontWeight: 540, fontSize: 14.5 }}>Общие блюда</div>
-                <div style={{ fontSize: 12, color: 'var(--ep-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  {sentShared.map(l => `${findDish(l.dishId)?.name ?? '?'}${l.served ? ' ✓' : ''}`).join(', ')}
-                </div>
-              </div>
-              {(() => {
-                // Общие блюда показывали вечное «Принято» независимо от кухни:
-                // гость видел «готовится» там, где официант уже отчитался о подаче
-                const servedAll = sentShared.every(l => l.served)
-                const servedSome = sentShared.some(l => l.served)
-                const label = servedAll ? 'Подано' : servedSome ? 'Частично' : 'Готовится'
-                return (
-                  <span style={{ fontFamily: 'ui-monospace, monospace', fontSize: 10.5, textTransform: 'uppercase', padding: '4px 9px', borderRadius: 'var(--ep-r-pill)', background: servedAll ? STAGE_TINT.served.bg : STAGE_TINT.cooking.bg, color: servedAll ? STAGE_TINT.served.fg : STAGE_TINT.cooking.fg }}>
-                    {label}
-                  </span>
-                )
-              })()}
-            </div>
-          )}
-          {sentOwn.length === 0 && sentShared.length === 0 && (
-            <div style={{ padding: '16px 0', fontSize: 14, color: 'var(--ep-muted)' }}>На кухню пока ничего не отправлено</div>
-          )}
+            )}
+            {sentOwn.length === 0 && sentShared.length === 0 && (
+              <div className="py-4 text-sm text-base-content/60">На кухню пока ничего не отправлено</div>
+            )}
+          </div>
         </Card>
 
         {stillChoosing.length > 0 && (
           <WarnBanner>
             <Avatar animal={stillChoosing[0].animal} size={26} label={stillChoosing[0].name} />
-            <span style={{ fontSize: 13, color: '#7A5A12' }}>
-              <b style={{ fontWeight: 620 }}>{stillChoosing.map(p => p.name).join(', ')}</b> ещё{' '}
+            <span className="text-sm">
+              <b>{stillChoosing.map(p => p.name).join(', ')}</b> ещё{' '}
               {stillChoosing.length === 1 ? 'выбирает' : 'выбирают'} блюда
             </span>
           </WarnBanner>
@@ -145,12 +139,12 @@ export function Status() {
       </div>
 
       <StickyFooter>
-        <div style={{ display: 'flex', gap: 10 }}>
-          <GhostButton style={{ flex: 1 }} onClick={() => patch({ screen: 'menu' })}>
+        <div className="flex gap-2.5">
+          <GhostButton className="flex-1" onClick={() => patch({ screen: 'menu' })}>
             Дозаказать
           </GhostButton>
           <GhostButton
-            style={{ flex: 1, opacity: snap.call ? 0.6 : 1 }}
+            className={snap.call ? 'flex-1 btn-disabled' : 'flex-1'}
             onClick={() => !snap.call && patch({ sheet: 'call' })}
           >
             {snap.call ? 'Официант идёт ✓' : 'Позвать официанта'}

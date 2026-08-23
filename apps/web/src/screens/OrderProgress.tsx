@@ -84,28 +84,22 @@ function PlateIcon({ state }: { state: StepState }) {
 const ICONS = [ReceiptIcon, PotIcon, PlateIcon]
 
 export function OrderProgress({ steps }: { steps: { label: string; st: StepState }[] }) {
+  // Раскладку держит `steps` из daisyUI, а в `step-icon` живут наши рисунки:
+  // квитанция с прочерчивающейся галочкой, кипящая кастрюля и поданная тарелка.
+  // Готовый и текущий шаг подсвечены (`step-primary`), будущие — нет.
   return (
-    <div className="ep-p" role="group" aria-label="Статус заказа">
+    <ul className="steps mb-4 w-full" role="group" aria-label="Статус заказа">
       {steps.map((step, i) => {
         const Icon = ICONS[i] ?? ReceiptIcon
-        const prev = steps[i - 1]
         return (
-          <div key={step.label} className="ep-p-step" data-state={step.st}>
-            {i > 0 && (
-              <div className="ep-p-track">
-                <div
-                  className="ep-p-fill"
-                  style={{ transform: `scaleX(${prev.st === 'done' ? 1 : 0})` }}
-                />
-              </div>
-            )}
-            <div className="ep-p-badge">
+          <li key={step.label} className={step.st === 'todo' ? 'step' : 'step step-primary'}>
+            <span className="step-icon">
               <Icon state={step.st} />
-            </div>
-            <div className="ep-p-label">{step.label}</div>
-          </div>
+            </span>
+            <span className={step.st === 'active' ? 'font-semibold' : 'text-base-content/60'}>{step.label}</span>
+          </li>
         )
       })}
-    </div>
+    </ul>
   )
 }

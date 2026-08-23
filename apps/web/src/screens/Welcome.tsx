@@ -10,107 +10,81 @@ export function Welcome() {
   const personas = snap?.status === 'open' ? snap.personas : []
 
   return (
-    <div className="ep-screen" style={{ background: 'var(--ep-surface)' }}>
-      <div className="ep-scroll" style={{ padding: '18px 24px 24px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 26 }}>
-          <div style={{ fontWeight: 700, fontSize: 19, letterSpacing: '-0.4px' }}>{RESTAURANT}</div>
-          <div style={{ display: 'flex', gap: 2, background: 'var(--ep-soft)', borderRadius: 'var(--ep-r-pill)', padding: 3 }}>
-            <span style={{ fontSize: 12, fontWeight: 600, padding: '5px 11px', borderRadius: 'var(--ep-r-pill)', background: 'var(--ep-ink)', color: 'var(--ep-on-ink)' }}>RU</span>
-            <span style={{ fontSize: 12, fontWeight: 500, padding: '5px 11px', color: 'var(--ep-muted)' }}>EN</span>
+    <div className="ep-screen bg-base-100">
+      <div className="ep-scroll px-6 pt-4 pb-6">
+        <div className="mb-6 flex items-center justify-between">
+          <div className="text-xl font-bold tracking-tight">{RESTAURANT}</div>
+          <div role="tablist" className="tabs tabs-box tabs-sm">
+            <button role="tab" className="tab tab-active">
+              RU
+            </button>
+            <button role="tab" className="tab">
+              EN
+            </button>
           </div>
         </div>
 
-        <Mono style={{ marginBottom: 6 }}>Ваш стол</Mono>
-        <div style={{ fontWeight: 300, fontSize: 46, lineHeight: 1, letterSpacing: '-1.8px', marginBottom: 18 }}>
+        <Mono className="mb-1.5">Ваш стол</Mono>
+        <div className="mb-4 text-5xl leading-none font-light tracking-tighter">
           Стол №{tableId}
           <br />
-          <span style={{ fontSize: 30, color: 'var(--ep-muted)' }}>{HALL_LABEL}</span>
+          <span className="text-3xl text-base-content/60">{HALL_LABEL}</span>
         </div>
 
         {personas.length > 0 && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 18 }}>
-            <div style={{ display: 'flex' }}>
-              {personas.slice(0, 5).map((p, i) => (
-                <div key={p.id} style={{ marginLeft: i === 0 ? 0 : -8 }}>
+          <div className="mb-4 flex items-center gap-2">
+            <div className="avatar-group -space-x-2">
+              {personas.slice(0, 5).map(p => (
+                <div key={p.id} className="avatar">
                   <Avatar animal={p.animal} size={28} label={p.name} />
                 </div>
               ))}
             </div>
-            <span style={{ fontSize: 13.5, color: 'var(--ep-muted)' }}>
+            <span className="text-sm text-base-content/60">
               За столом: {personas.map(p => p.name).join(', ')}
             </span>
           </div>
         )}
 
-        <div
-          style={{
-            width: '100%',
-            height: 190,
-            borderRadius: 'var(--ep-r-lg)',
-            marginBottom: 22,
-            background: 'linear-gradient(135deg, var(--ep-ink) 0%, var(--ep-text-2) 55%, var(--ep-accent) 130%)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            color: 'rgba(255,255,255,0.85)',
-            fontSize: 15
-          }}
-        >
+        {/* Место под фотографию зала: в демо её нет, поэтому skeleton честно
+            говорит «здесь будет картинка», а не притворяется дизайном */}
+        <div className="mb-5 flex h-48 items-center justify-center rounded-box bg-base-200 text-sm text-base-content/60">
           Фото зала · {HALL_LABEL}
         </div>
 
         {me ? (
-          <div style={{ marginBottom: 8 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <div className="mb-2">
+            <div className="flex items-center gap-3">
               <Avatar animal={me.animal} size={44} label={me.name} />
-              <div style={{ fontWeight: 540, fontSize: 24, letterSpacing: '-0.7px' }}>С возвращением, {me.name}!</div>
+              <div className="text-2xl font-medium tracking-tight">С возвращением, {me.name}!</div>
             </div>
-            <div
-              onClick={forgetMe}
-              style={{ fontSize: 13, color: 'var(--ep-accent)', marginTop: 6, cursor: 'pointer', textDecoration: 'underline' }}
-            >
+            <button className="link link-hover mt-1.5 text-sm text-base-content/60" onClick={forgetMe}>
               Я другой гость — начать со своим именем
-            </div>
+            </button>
           </div>
         ) : (
-          <div style={{ fontWeight: 540, fontSize: 24, letterSpacing: '-0.7px', marginBottom: 8 }}>Добро пожаловать!</div>
+          <div className="mb-2 text-2xl font-medium tracking-tight">Добро пожаловать!</div>
         )}
 
-        <div style={{ fontWeight: 330, fontSize: 15.5, lineHeight: 1.5, color: 'var(--ep-text-2)', marginBottom: 18 }}>
+        <p className="mb-4 text-base leading-relaxed text-base-content/70">
           Закажите и оплатите прямо со своего телефона — быстро и без очереди.
-        </div>
+        </p>
 
-        <div style={{ display: 'flex', gap: 11, background: 'var(--ep-accent-bg)', borderRadius: 'var(--ep-r-card)', padding: '15px 16px' }}>
-          <div
-            style={{
-              width: 30,
-              height: 30,
-              borderRadius: 'var(--ep-r-xs)',
-              background: 'var(--ep-accent-bg2)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              flexShrink: 0,
-              color: 'var(--ep-accent)',
-              fontWeight: 700
-            }}
-          >
-            i
-          </div>
-          <div style={{ fontSize: 13.5, lineHeight: 1.5, color: 'var(--ep-text-2)' }}>
+        <div role="alert" className="alert alert-info alert-soft text-sm">
+          <span>
             Можно заказать за весь стол отсюда. А если каждый хочет заказать сам — пусть отсканирует этот же QR со
             своего телефона.
-          </div>
+          </span>
         </div>
       </div>
 
-      <div style={{ padding: '14px 22px', paddingBottom: 'calc(24px + env(safe-area-inset-bottom))', borderTop: '1px solid var(--ep-border)' }}>
-        <PrimaryButton onClick={() => patch({ screen: 'menu' })} style={{ fontSize: 17 }}>
+      <div className="border-t border-base-300 px-5 pt-3.5 pb-[calc(1.5rem+env(safe-area-inset-bottom))]">
+        <PrimaryButton onClick={() => patch({ screen: 'menu' })}>
           {me ? 'Продолжить заказ' : 'Открыть меню'}
         </PrimaryButton>
-        <div style={{ textAlign: 'center', fontSize: 11.5, color: 'var(--ep-muted)', marginTop: 11, lineHeight: 1.45 }}>
-          Продолжая, вы соглашаетесь на обработку данных по <span style={{ textDecoration: 'underline' }}>152-ФЗ</span>
-        </div>
+        <p className="mt-3 text-center text-xs leading-snug text-base-content/60">
+          Продолжая, вы соглашаетесь на обработку данных по <span className="link">152-ФЗ</span>
+        </p>
       </div>
     </div>
   )

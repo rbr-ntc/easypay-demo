@@ -1,10 +1,11 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
+import tailwind from '@tailwindcss/vite'
 
 // base './' — относительные пути: работает и за нашим Node-сервером, и на любом хостинге
 export default defineConfig({
   base: './',
-  plugins: [react()],
+  plugins: [react(), tailwind()],
   server: {
     proxy: {
       '/api': {

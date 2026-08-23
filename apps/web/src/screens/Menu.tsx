@@ -1,4 +1,4 @@
-import { CATEGORIES, MENU, NAVY, HALL_LABEL, dishEmoji, dishMark, possibleAllergens } from '../data'
+import { CATEGORIES, MENU, HALL_LABEL, dishEmoji, dishMark, possibleAllergens } from '../data'
 import { tableId } from '../api'
 import { Avatar } from '../avatars'
 import { PrimaryButton } from '../ui'
@@ -10,14 +10,13 @@ function DishPhoto({
   name,
   hasPhoto,
   size,
-  radius,
   emoji = '🍽'
 }: {
   id: string
   name: string
   hasPhoto?: boolean
   size: number
-  radius: number
+  radius?: number
   emoji?: string
 }) {
   // Реальное фото из public/dishes; для блюд без фото — градиент-заглушка
@@ -29,21 +28,18 @@ function DishPhoto({
         src={`./dishes/${id}.jpg`}
         alt={name}
         loading="lazy"
-        style={{ width: size, height: size, flexShrink: 0, borderRadius: radius, objectFit: 'cover', background: 'var(--ep-soft)' }}
+        className="shrink-0 rounded-box bg-base-200 object-cover"
+        style={{ width: size, height: size }}
       />
     )
   }
   return (
     <div
+      className="flex shrink-0 items-center justify-center rounded-box"
       style={{
         width: size,
         height: size,
-        flexShrink: 0,
-        borderRadius: radius,
         background: `linear-gradient(135deg, hsl(${hash} 55% 86%), hsl(${(hash + 40) % 360} 60% 70%))`,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
         fontSize: size * 0.38
       }}
     >
@@ -67,87 +63,46 @@ export function Menu() {
 
   return (
     <div className="ep-screen">
-      <div style={{ flexShrink: 0, background: 'var(--ep-opaque)', borderBottom: '1px solid var(--ep-border)', padding: '12px 20px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+      <div className="shrink-0 border-b border-base-300 bg-base-100 px-5 py-3">
+        <div className="mb-3 flex items-center justify-between">
           {me ? (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
+            <div className="flex items-center gap-2.5">
               <Avatar animal={me.animal} size={32} label={me.name} />
               <div>
-                <div style={{ fontSize: 11, color: 'var(--ep-muted)' }}>
+                <div className="text-xs text-base-content/60">
                   Стол №{tableId} · {HALL_LABEL}
                 </div>
-                <div style={{ fontWeight: 600, fontSize: 14.5, lineHeight: 1.1 }}>{me.name}</div>
+                <div className="text-sm leading-tight font-semibold">{me.name}</div>
               </div>
             </div>
           ) : (
             <div>
-              <div style={{ fontWeight: 700, fontSize: 17, letterSpacing: '-0.3px' }}>Меню</div>
-              <div style={{ fontSize: 12, color: 'var(--ep-muted)' }}>
+              <div className="text-lg font-bold tracking-tight">Меню</div>
+              <div className="text-xs text-base-content/60">
                 Стол №{tableId} · {HALL_LABEL}
               </div>
             </div>
           )}
-          <button
-            aria-label={cartCount > 0 ? `Заказ, позиций: ${cartCount}` : 'Заказ пуст'}
-            onClick={() => hasCart && patch({ screen: 'cart' })}
-            style={{
-              position: 'relative',
-              width: 44,
-              height: 44,
-              borderRadius: '50%',
-              border: 'none',
-              background: 'var(--ep-soft)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              cursor: hasCart ? 'pointer' : 'default',
-              opacity: hasCart ? 1 : 0.55,
-              fontSize: 18
-            }}
-          >
-            🛒
-            {/* Без счётчика полная корзина выглядела ровно как пустая */}
-            {cartCount > 0 && (
-              <span
-                style={{
-                  position: 'absolute',
-                  top: -2,
-                  right: -2,
-                  minWidth: 19,
-                  height: 19,
-                  padding: '0 5px',
-                  borderRadius: 'var(--ep-r-pill)',
-                  background: NAVY,
-                  color: 'var(--ep-surface)',
-                  fontSize: 11.5,
-                  fontWeight: 700,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  boxSizing: 'border-box'
-                }}
-              >
-                {cartCount}
-              </span>
-            )}
-          </button>
+          {/* Счётчик — indicator: без него полная корзина выглядела как пустая */}
+          <div className="indicator">
+            {cartCount > 0 && <span className="indicator-item badge badge-sm badge-primary">{cartCount}</span>}
+            <button
+              aria-label={cartCount > 0 ? `Заказ, позиций: ${cartCount}` : 'Заказ пуст'}
+              className="btn btn-circle size-11"
+              disabled={!hasCart}
+              onClick={() => patch({ screen: 'cart' })}
+            >
+              🛒
+            </button>
+          </div>
         </div>
-        <div style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 2 }}>
+        <div role="tablist" className="tabs tabs-box tabs-sm w-full min-w-0 flex-nowrap overflow-x-auto">
           {CATEGORIES.map(c => (
             <button
               key={c}
+              role="tab"
+              className={c === cat ? 'tab tab-active whitespace-nowrap' : 'tab whitespace-nowrap'}
               onClick={() => patch({ menuCat: c })}
-              style={{
-                fontSize: 14,
-                fontWeight: c === cat ? 600 : 440,
-                padding: '8px 15px',
-                borderRadius: 'var(--ep-r-pill)',
-                cursor: 'pointer',
-                whiteSpace: 'nowrap',
-                border: 'none',
-                background: c === cat ? NAVY : 'var(--ep-soft)',
-                color: c === cat ? 'var(--ep-on-ink)' : 'var(--ep-text-2)'
-              }}
             >
               {c}
             </button>
@@ -155,100 +110,62 @@ export function Menu() {
         </div>
       </div>
 
-      <div className="ep-scroll" style={{ padding: '14px 20px 22px' }}>
+      <div className="ep-scroll px-5 pt-3.5 pb-5">
         <div className="ep-menu-grid">
-        {items.length === 0 && (
-          <div style={{ textAlign: 'center', padding: '64px 20px', color: 'var(--ep-muted)' }}>
-            <div style={{ fontWeight: 540, fontSize: 15, color: 'var(--ep-text-2)' }}>В этой категории пока пусто</div>
-            <div style={{ fontSize: 13, marginTop: 4 }}>Загляните в другие разделы меню</div>
-          </div>
-        )}
-        {items.map(it => (
-          <div
-            key={it.id}
-            style={{
-              display: 'flex',
-              gap: 13,
-              padding: 12,
-              borderRadius: 'var(--ep-r-card)',
-              background: 'var(--ep-surface)',
-              border: '1px solid var(--ep-border)',
-              opacity: it.stop ? 0.55 : 1
-            }}
-          >
-            <DishPhoto id={it.id} name={it.name} hasPhoto={it.photo} size={74} radius={14} emoji={dishEmoji(it)} />
-            <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap' }}>
-                <span style={{ fontWeight: 600, fontSize: 15 }}>
-                  {it.name}
-                  {dishMark(it)}
-                </span>
-                {it.stop && (
-                  <span
-                    style={{
-                      fontFamily: 'ui-monospace, monospace',
-                      fontSize: 9.5,
-                      letterSpacing: '0.4px',
-                      textTransform: 'uppercase',
-                      background: 'var(--ep-soft)',
-                      color: 'var(--ep-muted)',
-                      padding: '3px 7px',
-                      borderRadius: 'var(--ep-r-pill)'
-                    }}
-                  >
-                    Нет в наличии
-                  </span>
-                )}
-              </div>
-              <div style={{ fontSize: 12.5, color: 'var(--ep-muted)', lineHeight: 1.4, margin: '3px 0 4px' }}>{it.desc}</div>
-              {(it.serving || it.kcal) && (
-                <div style={{ fontSize: 11.5, color: 'var(--ep-muted)', marginBottom: 4 }}>
-                  {[it.serving, it.kcal ? `${it.kcal} ккал` : null].filter(Boolean).join(' · ')}
+          {items.length === 0 && (
+            <div className="px-5 py-16 text-center">
+              <div className="font-medium">В этой категории пока пусто</div>
+              <div className="mt-1 text-sm text-base-content/60">Загляните в другие разделы меню</div>
+            </div>
+          )}
+          {items.map(it => (
+            <div key={it.id} className={`card card-border min-w-0 bg-base-100 ${it.stop ? 'opacity-55' : ''}`}>
+              <div className="card-body min-w-0 flex-row gap-3 p-3">
+                <DishPhoto id={it.id} name={it.name} hasPhoto={it.photo} size={74} emoji={dishEmoji(it)} />
+                <div className="flex min-w-0 flex-1 flex-col">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="font-semibold">
+                      {it.name}
+                      {dishMark(it)}
+                    </span>
+                    {it.stop && <span className="badge badge-sm">Нет в наличии</span>}
+                  </div>
+                  <div className="mt-1 text-xs leading-snug text-base-content/60">{it.desc}</div>
+                  {(it.serving || it.kcal) && (
+                    <div className="mt-1 text-xs text-base-content/60">
+                      {[it.serving, it.kcal ? `${it.kcal} ккал` : null].filter(Boolean).join(' · ')}
+                    </div>
+                  )}
+                  {/* Строка аллергенов — не мелкий шрифт: это здоровье гостя */}
+                  {possibleAllergens(it).length > 0 && (
+                    <div className="mt-1 text-sm font-medium text-warning">
+                      аллергены: {possibleAllergens(it).join(' · ')}
+                    </div>
+                  )}
+                  <div className="mt-auto flex items-end justify-between pt-2">
+                    <span className="font-semibold">{fmt(it.price)}</span>
+                    {/* size-11 — это 44 px: у daisyUI кнопка по умолчанию 40,
+                        а по этой кнопке гость промахивается чаще всего */}
+                    <button
+                      className="btn btn-circle btn-primary size-11 text-xl"
+                      disabled={it.stop}
+                      aria-label={`Добавить ${it.name}`}
+                      onClick={() => patch({ sheet: 'dish', currentDishId: it.id })}
+                    >
+                      +
+                    </button>
+                  </div>
                 </div>
-              )}
-              {/* Строка аллергенов — не мелкий шрифт: это здоровье гостя */}
-              {possibleAllergens(it).length > 0 && (
-                <div style={{ fontSize: 12.5, fontWeight: 560, color: 'var(--ep-warn)', marginBottom: 8 }}>
-                  аллергены: {possibleAllergens(it).join(' · ')}
-                </div>
-              )}
-              <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', marginTop: 'auto' }}>
-                <span style={{ fontWeight: 620, fontSize: 15 }}>{fmt(it.price)}</span>
-                <button
-                  onClick={() => !it.stop && patch({ sheet: 'dish', currentDishId: it.id })}
-                  aria-label={`Добавить ${it.name}`}
-                  style={{
-                    // 44×44 — минимальная цель для пальца. Было 34: гость
-                    // промахивался по самой частой кнопке в приложении
-                    width: 44,
-                    height: 44,
-                    borderRadius: '50%',
-                    border: 'none',
-                    cursor: it.stop ? 'not-allowed' : 'pointer',
-                    background: it.stop ? 'var(--ep-soft)' : NAVY,
-                    color: it.stop ? 'var(--ep-muted)' : 'var(--ep-surface)',
-                    fontSize: 20,
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    lineHeight: 1
-                  }}
-                >
-                  +
-                </button>
               </div>
             </div>
-          </div>
-        ))}
+          ))}
         </div>
       </div>
 
       {hasCart && (
-        <div style={{ padding: '12px 20px', paddingBottom: 'calc(20px + env(safe-area-inset-bottom))' }}>
+        <div className="px-5 pt-3 pb-[calc(1.25rem+env(safe-area-inset-bottom))]">
           <PrimaryButton onClick={() => patch({ screen: 'cart' })}>
-            <span style={{ background: 'rgba(255,255,255,.2)', padding: '3px 10px', borderRadius: 'var(--ep-r-pill)', fontSize: 14, marginRight: 10 }}>
-              Корзина
-            </span>
+            <span className="badge badge-sm">Корзина</span>
             {fmt(totals.myTotal + totals.myDraft)} →
           </PrimaryButton>
         </div>

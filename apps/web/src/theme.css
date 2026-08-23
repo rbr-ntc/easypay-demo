@@ -1,0 +1,12 @@
+@import 'tailwindcss';
+
+/**
+ * Стоковые темы daisyUI: `light` по умолчанию, `dark` — по системной настройке.
+ *
+ * Переключатель тем у нас уже был устроен через `document.documentElement.dataset.theme`
+ * (инлайн-скрипт в index.html) — ровно тот механизм, которым темы включает и сам
+ * daisyUI, так что менять его не пришлось.
+ */
+@plugin 'daisyui' {
+  themes: light --default, dark --prefersdark;
+}

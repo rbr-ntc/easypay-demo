@@ -5,7 +5,7 @@ import { Avatar, SharedIcon } from '../avatars'
 import { Card, GhostButton, PrimaryButton, StickyFooter } from '../ui'
 import { useStore } from '../store'
 import { fmt } from '../format'
-import { lineStage, stageLabel, STAGE_TINT } from '../lineStage'
+import { lineStage, stageLabel, STAGE_BADGE } from '../lineStage'
 
 /**
  * Бейдж называет ровно то состояние, в котором блюдо находится. Раньше здесь
@@ -13,16 +13,11 @@ import { lineStage, stageLabel, STAGE_TINT } from '../lineStage'
  * статуса, где та же позиция называлась «В очереди».
  */
 function SentBadge({ line }: { line: Parameters<typeof stageLabel>[0] }) {
-  const tint = STAGE_TINT[lineStage(line)]
-  return (
-    <span style={{ fontFamily: 'ui-monospace, monospace', fontSize: 10.5, textTransform: 'uppercase', padding: '4px 9px', borderRadius: 'var(--ep-r-pill)', background: tint.bg, color: tint.fg, flexShrink: 0 }}>
-      {stageLabel(line)}
-    </span>
-  )
+  return <span className={`badge badge-sm shrink-0 ${STAGE_BADGE[lineStage(line)]}`}>{stageLabel(line)}</span>
 }
 
 export function Cart() {
-  const { patch, me, snap, totals, removeLine, toast } = useStore()
+  const { patch, me, snap, totals, removeLine } = useStore()
   const [tableOpen, setTableOpen] = useState(false)
   if (!me || !snap) return null
 
@@ -36,142 +31,135 @@ export function Cart() {
 
   return (
     <div className="ep-screen">
-      <div style={{ flexShrink: 0, padding: '14px 20px', background: 'var(--ep-opaque)', borderBottom: '1px solid var(--ep-border)' }}>
-        <div style={{ fontWeight: 700, fontSize: 20, letterSpacing: '-0.5px' }}>Заказ · Стол №{tableId}</div>
+      <div className="shrink-0 border-b border-base-300 bg-base-100 px-5 py-3.5">
+        <div className="text-xl font-bold tracking-tight">Заказ · Стол №{tableId}</div>
       </div>
 
-      <div className="ep-scroll" style={{ padding: '14px 20px 20px', display: 'flex', flexDirection: 'column', gap: 13 }}>
+      <div className="ep-scroll flex flex-col gap-3 px-5 pt-3.5 pb-5">
         {/* Мой заказ */}
-        <Card style={{ borderRadius: 'var(--ep-r-card)', padding: 16 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 11, marginBottom: myLines.length ? 14 : 0 }}>
-            <Avatar animal={me.animal} size={40} label={me.name} />
-            <div>
-              <div style={{ fontWeight: 620, fontSize: 16 }}>{me.name}</div>
-              <div style={{ fontSize: 12, color: 'var(--ep-muted)' }}>мой заказ</div>
+        <Card>
+          <div className="card-body gap-0 p-4">
+            <div className={`flex items-center gap-3 ${myLines.length ? 'mb-3.5' : ''}`}>
+              <Avatar animal={me.animal} size={40} label={me.name} />
+              <div>
+                <div className="font-semibold">{me.name}</div>
+                <div className="text-xs text-base-content/60">мой заказ</div>
+              </div>
+              <span className="ml-auto text-lg font-bold">{fmt(totals.myOwn + totals.myDraft)}</span>
             </div>
-            <span style={{ marginLeft: 'auto', fontWeight: 700, fontSize: 18 }}>{fmt(totals.myOwn + totals.myDraft)}</span>
-          </div>
-          {myLines.length === 0 && (
-            <div style={{ fontSize: 13.5, color: 'var(--ep-muted)', padding: '4px 0 2px' }}>Пока пусто — добавьте блюда из меню</div>
-          )}
-          {myLines.map(l => {
-            const d = findDish(l.dishId)
-            if (!d) return null
-            return (
-              <div key={l.uid} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: 13, background: 'var(--ep-surface-2)', borderRadius: 'var(--ep-r-sm)', marginBottom: 8 }}>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontWeight: 520, fontSize: 15 }}>
-                    {d.name}
-                    {l.qty > 1 ? ` ×${l.qty}` : ''}
+            {myLines.length === 0 && (
+              <div className="py-1 text-sm text-base-content/60">Пока пусто — добавьте блюда из меню</div>
+            )}
+            {myLines.map(l => {
+              const d = findDish(l.dishId)
+              if (!d) return null
+              return (
+                <div key={l.uid} className="mb-2 flex items-center gap-3 rounded-field bg-base-200 p-3">
+                  <div className="min-w-0 flex-1">
+                    <div className="font-medium">
+                      {d.name}
+                      {l.qty > 1 ? ` ×${l.qty}` : ''}
+                    </div>
+                    {optionsLabel(l.options) && (
+                      <div className="mt-0.5 text-xs text-base-content/60">{optionsLabel(l.options)}</div>
+                    )}
                   </div>
-                  {optionsLabel(l.options) && (
-                    <div style={{ fontSize: 12, color: 'var(--ep-muted)', marginTop: 2 }}>{optionsLabel(l.options)}</div>
+                  <span className="text-sm">{fmt((l.price ?? d.price) * l.qty)}</span>
+                  {l.sent ? (
+                    <SentBadge line={l} />
+                  ) : (
+                    // Раньше это был span 10×15 px — пальцем на телефоне не попасть
+                    <button
+                      className="btn btn-ghost btn-circle size-11"
+                      aria-label={`Убрать ${d.name}`}
+                      onClick={() => void removeLine(l.uid)}
+                    >
+                      ✕
+                    </button>
                   )}
                 </div>
-                <span style={{ fontSize: 14.5, color: 'var(--ep-text-2)' }}>{fmt((l.price ?? d.price) * l.qty)}</span>
-                {l.sent ? (
-                  <SentBadge line={l} />
-                ) : (
-                  <button
-                    aria-label={`Убрать ${d.name}`}
-                    onClick={() => void removeLine(l.uid)}
-                    style={{
-                      // Раньше это был span 10×15 px — пальцем на телефоне не попасть
-                      width: 44,
-                      height: 44,
-                      flexShrink: 0,
-                      border: 'none',
-                      background: 'transparent',
-                      cursor: 'pointer',
-                      fontSize: 15,
-                      color: 'var(--ep-muted)'
-                    }}
-                  >
-                    ✕
-                  </button>
-                )}
-              </div>
-            )
-          })}
+              )
+            })}
+          </div>
         </Card>
 
         {/* Весь стол (реальные гости) */}
         {others.length > 0 && (
-          <Card style={{ overflow: 'hidden' }}>
-            <div onClick={() => setTableOpen(!tableOpen)} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '14px 16px', cursor: 'pointer' }}>
-              <div style={{ display: 'flex' }}>
-                {others.slice(0, 4).map((p, i) => (
-                  <div key={p.id} style={{ marginLeft: i === 0 ? 0 : -7 }}>
+          <div className={`collapse-arrow collapse card-border bg-base-100 ${tableOpen ? 'collapse-open' : ''}`}>
+            <div className="collapse-title flex items-center gap-2.5" onClick={() => setTableOpen(!tableOpen)}>
+              <div className="avatar-group -space-x-2">
+                {others.slice(0, 4).map(p => (
+                  <div key={p.id} className="avatar">
                     <Avatar animal={p.animal} size={26} label={p.name} />
                   </div>
                 ))}
               </div>
-              <span style={{ fontWeight: 600, fontSize: 14.5 }}>Весь стол</span>
-              <span style={{ fontSize: 13, color: 'var(--ep-muted)' }}>
+              <span className="font-semibold">Весь стол</span>
+              <span className="text-sm text-base-content/60">
                 · ещё {others.length} {others.length === 1 ? 'гость' : others.length < 5 ? 'гостя' : 'гостей'}
               </span>
-              <span style={{ marginLeft: 'auto', fontSize: 13, color: 'var(--ep-muted)', transform: tableOpen ? 'rotate(180deg)' : 'none', transition: 'transform 160ms' }}>▾</span>
             </div>
-            {tableOpen && (
-              <div style={{ padding: '0 16px 8px' }}>
-                {others.map(p => {
-                  const pl = lines.filter(l => !l.shared && l.personaId === p.id)
-                  const sum = totals.personaOwn(p.id)
-                  return (
-                    <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 11, padding: '11px 0', borderTop: '1px solid var(--ep-soft)' }}>
-                      <Avatar animal={p.animal} size={30} label={p.name} />
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ fontWeight: 520, fontSize: 14 }}>{p.name}</div>
-                        <div style={{ fontSize: 12, color: 'var(--ep-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                          {pl.length ? pl.map(l => findDish(l.dishId)?.name ?? '?').join(', ') : 'ещё выбирает'}
-                        </div>
+            <div className="collapse-content">
+              {others.map(p => {
+                const pl = lines.filter(l => !l.shared && l.personaId === p.id)
+                return (
+                  <div key={p.id} className="flex items-center gap-3 border-t border-base-200 py-2.5">
+                    <Avatar animal={p.animal} size={30} label={p.name} />
+                    <div className="min-w-0 flex-1">
+                      <div className="text-sm font-medium">{p.name}</div>
+                      <div className="truncate text-xs text-base-content/60">
+                        {pl.length ? pl.map(l => findDish(l.dishId)?.name ?? '?').join(', ') : 'ещё выбирает'}
                       </div>
-                      <span style={{ fontSize: 14, color: 'var(--ep-text-2)' }}>{fmt(sum)}</span>
                     </div>
-                  )
-                })}
-                <div style={{ display: 'flex', justifyContent: 'space-between', padding: '11px 0', borderTop: '1px solid var(--ep-soft)', fontSize: 13.5, color: 'var(--ep-muted)' }}>
-                  <span>Итого по столу (с общими)</span>
-                  <span style={{ fontWeight: 620, color: 'var(--ep-ink)' }}>{fmt(totals.tableTotal)}</span>
-                </div>
+                    <span className="text-sm">{fmt(totals.personaOwn(p.id))}</span>
+                  </div>
+                )
+              })}
+              <div className="flex justify-between border-t border-base-200 py-2.5 text-sm text-base-content/60">
+                <span>Итого по столу (с общими)</span>
+                <span className="font-semibold text-base-content">{fmt(totals.tableTotal)}</span>
               </div>
-            )}
-          </Card>
+            </div>
+          </div>
         )}
 
         {/* Общие блюда — только реально добавленные */}
         {sharedLines.length > 0 && (
-          <div style={{ background: 'var(--ep-surface)', border: '1px dashed var(--ep-accent)', borderRadius: 'var(--ep-r-card)', overflow: 'hidden' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '12px 14px', background: 'var(--ep-accent-bg)' }}>
+          <div className="card card-dash overflow-hidden border-accent bg-base-100">
+            <div className="flex items-center gap-2.5 bg-accent/10 px-3.5 py-3">
               <SharedIcon size={30} />
-              <span style={{ fontWeight: 600, fontSize: 14.5 }}>Общие блюда</span>
-              <span style={{ marginLeft: 'auto', fontWeight: 620, fontSize: 15 }}>{fmt(totals.sharedTotal)}</span>
+              <span className="font-semibold">Общие блюда</span>
+              <span className="ml-auto font-semibold">{fmt(totals.sharedTotal)}</span>
             </div>
-            <div style={{ padding: '6px 14px' }}>
+            <div className="px-3.5 py-1.5">
               {sharedLines.map(l => {
                 const d = findDish(l.dishId)
                 if (!d) return null
                 const mineAdded = l.personaId === me.id
                 return (
-                  <div key={l.uid} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 0', borderBottom: '1px solid var(--ep-soft)' }}>
-                    <span style={{ flex: 1, fontSize: 14 }}>
+                  <div key={l.uid} className="flex items-center gap-2.5 border-b border-base-200 py-2">
+                    <span className="flex-1 text-sm">
                       {d.name}
                       {l.qty > 1 ? ` ×${l.qty}` : ''}
-                      <span style={{ color: 'var(--ep-accent)', fontSize: 12 }}> · добавил(а) {nameOf(l.personaId)}</span>
+                      <span className="text-xs text-accent"> · добавил(а) {nameOf(l.personaId)}</span>
                     </span>
-                    <span style={{ fontSize: 14, color: 'var(--ep-text-2)' }}>{fmt((l.price ?? d.price) * l.qty)}</span>
+                    <span className="text-sm">{fmt((l.price ?? d.price) * l.qty)}</span>
                     {l.sent ? (
                       <SentBadge line={l} />
                     ) : mineAdded ? (
-                      <span style={{ cursor: 'pointer', fontSize: 13, color: 'var(--ep-muted)' }} onClick={() => void removeLine(l.uid)}>
+                      <button
+                        className="btn btn-ghost btn-circle size-11"
+                        aria-label={`Убрать ${d.name}`}
+                        onClick={() => void removeLine(l.uid)}
+                      >
                         ✕
-                      </span>
+                      </button>
                     ) : null}
                   </div>
                 )
               })}
             </div>
-            <div style={{ padding: '4px 14px 14px', fontSize: 12.5, color: 'var(--ep-muted)' }}>
+            <div className="px-3.5 pt-1 pb-3.5 text-xs text-base-content/60">
               Делится поровну: по {fmt(totals.sharedTotal / totals.participants)} на {totals.participants}{' '}
               {totals.participants === 1 ? 'гостя' : 'гостей'}
             </div>
@@ -180,24 +168,25 @@ export function Cart() {
       </div>
 
       <StickyFooter>
-        <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', padding: '0 4px' }}>
-          <div style={{ fontSize: 13, color: 'var(--ep-muted)' }}>
+        <div className="flex items-baseline justify-between px-1">
+          <div className="text-sm text-base-content/60">
             {totals.myDraft > 0 ? (
               <>Ещё не отправлено: {fmt(totals.myDraft)}</>
             ) : (
-              <>В счёте: {fmt(totals.myOwn)} своё{totals.sharedTotal > 0 ? ` + ${fmt(totals.myShare)} доля общего` : ''}</>
+              <>
+                В счёте: {fmt(totals.myOwn)} своё
+                {totals.sharedTotal > 0 ? ` + ${fmt(totals.myShare)} доля общего` : ''}
+              </>
             )}
           </div>
-          <div style={{ fontWeight: 700, fontSize: 20, letterSpacing: '-0.5px' }}>
-            {fmt(totals.myTotal + totals.myDraft)}
-          </div>
+          <div className="text-xl font-bold tracking-tight">{fmt(totals.myTotal + totals.myDraft)}</div>
         </div>
-        <div style={{ display: 'flex', gap: 10 }}>
-          <GhostButton style={{ flex: 1 }} onClick={() => patch({ screen: 'menu' })}>
+        <div className="flex gap-2.5">
+          <GhostButton className="flex-1" onClick={() => patch({ screen: 'menu' })}>
             Дозаказать
           </GhostButton>
           <PrimaryButton
-            style={{ flex: 1.5, minHeight: 54, fontSize: 15.5 }}
+            className="flex-[1.5]"
             onClick={() => {
               if (!hasUnsentAny) {
                 patch({ screen: 'status' })
