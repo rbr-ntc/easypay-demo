@@ -96,12 +96,14 @@ export function Menu() {
             </button>
           </div>
         </div>
-        <div role="tablist" className="tabs tabs-box tabs-sm w-full min-w-0 flex-nowrap overflow-x-auto">
+        {/* h-11 на вкладке — это 44 px: у tabs-sm высота 32, а по категориям
+            гость на телефоне мажет пальцем чаще всего после «+» */}
+        <div role="tablist" className="tabs tabs-box w-full min-w-0 flex-nowrap overflow-x-auto">
           {CATEGORIES.map(c => (
             <button
               key={c}
               role="tab"
-              className={c === cat ? 'tab tab-active whitespace-nowrap' : 'tab whitespace-nowrap'}
+              className={c === cat ? 'tab tab-active h-11 whitespace-nowrap' : 'tab h-11 whitespace-nowrap'}
               onClick={() => patch({ menuCat: c })}
             >
               {c}

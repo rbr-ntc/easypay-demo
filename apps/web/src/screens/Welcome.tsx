@@ -14,11 +14,11 @@ export function Welcome() {
       <div className="ep-scroll px-6 pt-4 pb-6">
         <div className="mb-6 flex items-center justify-between">
           <div className="text-xl font-bold tracking-tight">{RESTAURANT}</div>
-          <div role="tablist" className="tabs tabs-box tabs-sm">
-            <button role="tab" className="tab tab-active">
+          <div role="tablist" className="tabs tabs-box">
+            <button role="tab" className="tab tab-active h-11">
               RU
             </button>
-            <button role="tab" className="tab">
+            <button role="tab" className="tab h-11">
               EN
             </button>
           </div>
