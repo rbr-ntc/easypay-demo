@@ -12,7 +12,6 @@ import { computeMetrics } from './waiter/tableMetrics'
 import { fmtDur } from './waiter/duration'
 import { CALL_LABEL } from '@easypay/domain/hall'
 import { ROLE_LABEL } from '@easypay/domain/roles'
-import './waiter.css'
 
 // Экран менеджера/официанта: живой снапшот стола со всех телефонов.
 // Доступ и кнопки зависят от роли вошедшего сотрудника (shared/roles.js).
@@ -71,12 +70,12 @@ function CashRequest({ table, snap, onTaken }: { table: string; snap: any; onTak
   }
 
   return (
-    <div className="ep-w-cash">
-      <div>
-        <div className="ep-w-cash-title">{name} платит наличными</div>
-        <div className="ep-w-cash-sum">{fmt(intent.amount)}</div>
+    <div role="alert" className="alert alert-warning mb-3">
+      <div className="flex-1">
+        <div className="font-semibold">{name} платит наличными</div>
+        <div className="text-xl font-bold tabular-nums">{fmt(intent.amount)}</div>
       </div>
-      <button className="ep-w-btn" disabled={busy} onClick={() => void take()}>
+      <button className="btn btn-sm" disabled={busy} onClick={() => void take()}>
         Принял деньги
       </button>
     </div>
@@ -111,16 +110,16 @@ function ConfirmDialog({ ask, onClose }: { ask: AskDialog; onClose: () => void }
   }, [onClose])
 
   return (
-    <div className="ep-w-ask-veil" role="dialog" aria-modal="true" onClick={onClose}>
-      <div className="ep-w-ask" onClick={e => e.stopPropagation()}>
-        <div className="ep-w-ask-title">{ask.title}</div>
-        <div className="ep-w-ask-body">{ask.body}</div>
-        <div className="ep-w-ask-row">
-          <button ref={cancelRef} className="ep-w-btn ep-w-btn--ghost" onClick={onClose}>
+    <div className="modal modal-open" role="dialog" aria-modal="true">
+      <div className="modal-box">
+        <h3 className="text-lg font-bold">{ask.title}</h3>
+        <p className="py-3 text-base-content/70">{ask.body}</p>
+        <div className="modal-action">
+          <button ref={cancelRef} className="btn flex-1" onClick={onClose}>
             Отмена
           </button>
           <button
-            className={ask.danger ? 'ep-w-btn ep-w-btn--danger' : 'ep-w-btn'}
+            className={`btn flex-1 ${ask.danger ? 'btn-error' : 'btn-primary'}`}
             onClick={() => {
               ask.run()
               onClose()
@@ -130,6 +129,7 @@ function ConfirmDialog({ ask, onClose }: { ask: AskDialog; onClose: () => void }
           </button>
         </div>
       </div>
+      <div className="modal-backdrop" onClick={onClose} />
     </div>
   )
 }
@@ -208,76 +208,76 @@ export function Waiter() {
   }
 
   return (
-    <div className="ep-w">
-      <div className="ep-w-top">
-        <div className="ep-w-brand">
-          <div className="ep-w-logo">e</div>
+    <div className="flex min-h-full flex-col gap-3 bg-base-200 p-3">
+      <div className="navbar min-h-0 flex-wrap gap-3 rounded-box bg-base-100 p-3">
+        <div className="flex items-center gap-3">
+          <div className="flex size-10 shrink-0 items-center justify-center rounded-field bg-primary text-lg font-bold text-primary-content">
+            e
+          </div>
           <div>
-            <div className="ep-w-title">
+            <div className="flex items-center gap-2 text-lg font-bold">
               Стол №{tableId} · {HALL_LABEL}
-              <span className={isOpen ? 'ep-w-badge ep-w-badge--open' : 'ep-w-badge'}>
+              <span className={`badge badge-sm ${isOpen ? 'badge-success' : 'badge-ghost'}`}>
                 {isOpen ? 'Открыт' : 'Закрыт'}
               </span>
             </div>
-            <div className="ep-w-sub">
+            <div className="text-xs text-base-content/60">
               официант {snap?.waiter?.name ?? WAITER_NAME} · экран ресторана {connected ? '' : '· нет связи…'}
             </div>
           </div>
         </div>
 
-        <div className="ep-w-progress">
-          <div className="ep-w-progress-row">
-            <span className="ep-w-progress-label">Оплачено по столу</span>
-            <span className="ep-w-progress-value">
+        <div className="min-w-50 flex-1">
+          <div className="mb-1 flex items-baseline justify-between text-sm">
+            <span className="text-base-content/60">Оплачено по столу</span>
+            <span className="font-semibold tabular-nums">
               {fmt(totals.paidTotal)} / {fmt(totals.tableTotal)}
             </span>
           </div>
-          <div className="ep-w-bar">
-            <div className="ep-w-bar-fill" style={{ width: `${progress}%` }} />
-          </div>
+          <progress className="progress progress-success w-full" value={progress} max={100} />
         </div>
 
-        <div className="ep-w-actions">
+        <div className="flex flex-wrap items-center gap-2">
           {isOpen && may('close') && (
-            <button className={fullyPaid ? 'ep-w-btn ep-w-btn--ok' : 'ep-w-btn'} onClick={confirmClose}>
+            <button className={`btn btn-sm ${fullyPaid ? 'btn-success' : ''}`} onClick={confirmClose}>
               Закрыть стол
             </button>
           )}
           {may('reset') && (
-            <button className="ep-w-btn ep-w-btn--quiet" onClick={confirmReset}>
+            <button className="btn btn-sm" onClick={confirmReset}>
               Сбросить демо
             </button>
           )}
-          <div className="ep-s-who">
-            <span className="ep-s-who-name">{staff?.name}</span>
-            <span className="ep-s-role">{staff ? ROLE_LABEL[staff.role] : ''}</span>
+          <div className="text-right">
+            <div className="text-sm font-semibold">{staff?.name}</div>
+            <div className="text-xs text-base-content/60">{staff ? ROLE_LABEL[staff.role] : ''}</div>
           </div>
-          <button className="ep-w-btn ep-w-btn--quiet" onClick={() => void signOutStaff()}>
+          <button className="btn btn-sm" onClick={() => void signOutStaff()}>
             Выйти
           </button>
           {may('hall') && (
-            <a className="ep-w-link" href={`${window.location.pathname}#/hall`}>
+            <a className="btn btn-ghost btn-sm" href={`${window.location.pathname}#/hall`}>
               ← в зал
             </a>
           )}
-          <a className="ep-w-link" href={`?t=${encodeURIComponent(tableId ?? '')}#/qr`}>
+          <a className="btn btn-ghost btn-sm" href={`?t=${encodeURIComponent(tableId ?? '')}#/qr`}>
             QR стола
           </a>
-          <a className="ep-w-link" href={`?t=${encodeURIComponent(tableId ?? '')}`}>
+          <a className="btn btn-ghost btn-sm" href={`?t=${encodeURIComponent(tableId ?? '')}`}>
             гостевой экран
           </a>
         </div>
       </div>
 
       {snap?.call && (
-        <div className="ep-w-call">
-          <span className="ep-w-call-dot ep-pulse" />
-          <span className="ep-w-call-text">
+        <div role="alert" className="alert alert-error">
+          <span className="status status-error ep-pulse" />
+          <span>
             <b>{snap.call.name ?? personas.find(p => p.id === snap.call?.personaId)?.name ?? 'Гость'}</b>{' '}
             {CALL_LABEL[snap.call.reason] ?? CALL_LABEL.help} · {fmtDur(now - snap.call.at)}
           </span>
           {may('ack') && (
-            <button className="ep-w-btn ep-w-btn--ok" onClick={() => void ackCall(snap.call?.id)}>
+            <button className="btn btn-sm" onClick={() => void ackCall(snap.call?.id)}>
               Принял{(snap.calls?.length ?? 0) > 1 ? ` (ещё ${snap.calls.length - 1})` : ''}
             </button>
           )}
@@ -288,13 +288,13 @@ export function Waiter() {
         <MetricsRow metrics={metrics} closed={closed} guests={personas.length} tipsTotal={tipsTotal} />
       )}
 
-      <div className="ep-w-body">
-        <div className="ep-w-side">
+      <div className="grid gap-3 lg:grid-cols-[22rem_1fr]">
+        <div>
           {/* Гость с деньгами в руке — это срочнее всего остального на экране */}
           <CashRequest table={tableId ?? ''} snap={snap} onTaken={() => {}} />
           <GuestList personas={personas} lines={lines} totals={totals} tableOpen={isOpen} />
         </div>
-        <div className="ep-w-main">
+        <div>
           <OrderFeed
             lines={lines}
             personas={personas}

@@ -1,5 +1,5 @@
 import QRCode from 'react-qr-code'
-import { HALL_LABEL, NAVY, RESTAURANT } from './data'
+import { HALL_LABEL, RESTAURANT } from './data'
 import { HALL } from './hallConfig'
 import { tableId } from './api'
 
@@ -7,32 +7,38 @@ function tableUrl(id: string): string {
   return `${window.location.origin}${window.location.pathname}?t=${encodeURIComponent(id)}`
 }
 
+// QR печатают на бумаге, а не смотрят с экрана: код обязан остаться чёрным
+// на белом в любой теме, иначе в тёмной он станет нечитаемым для камеры
+const QR_FG = '#000000'
+
 // «Тейбл-тент»: страница со стойки стола. Показываешь с ноутбука —
 // клиент сканирует настоящим телефоном и попадает в гостевой поток.
 function SingleTent({ id }: { id: string }) {
   return (
-    <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', background: NAVY, padding: 24 }}>
-      <div style={{ background: 'var(--ep-surface)', borderRadius: 32, padding: '44px 48px', textAlign: 'center', maxWidth: 420, boxShadow: '0 30px 80px rgba(0,0,0,.35)' }}>
-        <div style={{ display: 'inline-flex', alignItems: 'center', gap: 9, marginBottom: 6 }}>
-          <div style={{ width: 30, height: 30, borderRadius: 'var(--ep-r-xs)', background: NAVY, color: 'var(--ep-on-ink)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: 16 }}>
-            e
+    <div className="flex h-full items-center justify-center bg-neutral p-6">
+      <div className="card max-w-md bg-base-100 shadow-2xl">
+        <div className="card-body items-center px-12 py-11 text-center">
+          <div className="inline-flex items-center gap-2.5">
+            <div className="flex size-8 items-center justify-center rounded-field bg-primary font-bold text-primary-content">
+              e
+            </div>
+            <span className="text-lg font-bold tracking-tight">EasyPay</span>
           </div>
-          <span style={{ fontWeight: 700, fontSize: 18, letterSpacing: '-0.4px' }}>EasyPay</span>
-        </div>
-        <div style={{ fontSize: 13, color: 'var(--ep-muted)', marginBottom: 22 }}>{RESTAURANT}</div>
+          <div className="text-sm text-base-content/60">{RESTAURANT}</div>
 
-        <div style={{ background: 'var(--ep-surface)', padding: 12, display: 'inline-block', borderRadius: 'var(--ep-r-card)', border: '1px solid var(--ep-border)' }}>
-          <QRCode value={tableUrl(id)} size={220} fgColor={NAVY} />
-        </div>
+          <div className="my-3 inline-block rounded-box border border-base-300 bg-white p-3">
+            <QRCode value={tableUrl(id)} size={220} fgColor={QR_FG} />
+          </div>
 
-        <div style={{ fontWeight: 300, fontSize: 34, letterSpacing: '-1.2px', margin: '22px 0 4px' }}>Стол №{id}</div>
-        <div style={{ fontSize: 15, color: 'var(--ep-muted)', marginBottom: 18 }}>{HALL_LABEL}</div>
-        <div style={{ fontSize: 14.5, lineHeight: 1.5, color: 'var(--ep-text-2)' }}>
-          Наведите камеру телефона, чтобы посмотреть меню, заказать и оплатить — без установки приложения.
+          <div className="text-4xl font-light tracking-tight">Стол №{id}</div>
+          <div className="text-base-content/60">{HALL_LABEL}</div>
+          <p className="leading-relaxed text-base-content/70">
+            Наведите камеру телефона, чтобы посмотреть меню, заказать и оплатить — без установки приложения.
+          </p>
+          <a className="link link-hover text-xs text-base-content/60" href={`?t=${encodeURIComponent(id)}`}>
+            открыть гостевой экран здесь →
+          </a>
         </div>
-        <a href={`?t=${encodeURIComponent(id)}`} style={{ display: 'inline-block', marginTop: 18, fontSize: 12.5, color: 'var(--ep-muted)' }}>
-          открыть гостевой экран здесь →
-        </a>
       </div>
     </div>
   )
@@ -41,39 +47,46 @@ function SingleTent({ id }: { id: string }) {
 /** Лист тейбл-тентов на все столы зала: распечатать и расставить. */
 function AllTents() {
   return (
-    <div style={{ minHeight: '100%', background: 'var(--ep-page)', padding: '26px 24px 40px' }}>
-      <div style={{ fontWeight: 700, fontSize: 21, letterSpacing: '-0.5px', marginBottom: 4 }}>QR-коды столов · {RESTAURANT}</div>
-      <div style={{ fontSize: 13.5, color: 'var(--ep-muted)', marginBottom: 22 }}>
+    <div className="min-h-full bg-base-200 px-6 pt-6 pb-10">
+      <div className="text-2xl font-bold tracking-tight">QR-коды столов · {RESTAURANT}</div>
+      <p className="mb-5 text-sm text-base-content/60">
         Каждый код ведёт на свой стол. Распечатайте лист и расставьте тенты — гость сканирует свой стол и сразу
         попадает в его заказ.
-      </div>
+      </p>
 
       {HALL.zones.map(zone => (
-        <div key={zone.id} style={{ marginBottom: 26 }}>
-          <div style={{ fontFamily: 'ui-monospace, monospace', fontSize: 11, letterSpacing: '0.6px', textTransform: 'uppercase', color: 'var(--ep-muted)', marginBottom: 12 }}>
-            {zone.name}
-          </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(190px, 1fr))', gap: 14 }}>
+        <div key={zone.id} className="mb-6">
+          <div className="mb-3 font-mono text-xs uppercase tracking-widest text-base-content/60">{zone.name}</div>
+          <div className="grid grid-cols-[repeat(auto-fill,minmax(11.875rem,1fr))] gap-3.5">
             {zone.tables.map(t => (
-              <div
-                key={t.id}
-                style={{ background: 'var(--ep-surface)', border: '1px solid var(--ep-border)', borderRadius: 'var(--ep-r-card)', padding: 16, textAlign: 'center' }}
-              >
-                <QRCode value={tableUrl(t.id)} size={130} fgColor={NAVY} style={{ maxWidth: '100%', height: 'auto' }} />
-                <div style={{ fontWeight: 680, fontSize: 20, letterSpacing: '-0.5px', marginTop: 12 }}>Стол №{t.id}</div>
-                <div style={{ fontSize: 12, color: 'var(--ep-muted)' }}>
-                  {zone.name} · {t.seats} мест
+              <div key={t.id} className="card card-border bg-base-100">
+                <div className="card-body items-center p-4 text-center">
+                  <div className="rounded-field bg-white p-2">
+                    <QRCode
+                      value={tableUrl(t.id)}
+                      size={130}
+                      fgColor={QR_FG}
+                      style={{ maxWidth: '100%', height: 'auto' }}
+                    />
+                  </div>
+                  <div className="text-xl font-bold tracking-tight">Стол №{t.id}</div>
+                  <div className="text-xs text-base-content/60">
+                    {zone.name} · {t.seats} мест
+                  </div>
+                  <a
+                    className="link link-hover text-xs text-base-content/60"
+                    href={`?t=${encodeURIComponent(t.id)}#/qr`}
+                  >
+                    тент крупно →
+                  </a>
                 </div>
-                <a href={`?t=${encodeURIComponent(t.id)}#/qr`} style={{ display: 'inline-block', marginTop: 8, fontSize: 12, color: 'var(--ep-muted)' }}>
-                  тент крупно →
-                </a>
               </div>
             ))}
           </div>
         </div>
       ))}
 
-      <a href="#/hall" style={{ fontSize: 13, color: 'var(--ep-muted)' }}>
+      <a className="btn btn-ghost btn-sm" href="#/hall">
         ← в зал
       </a>
     </div>

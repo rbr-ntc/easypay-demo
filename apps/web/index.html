@@ -3,20 +3,24 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no" />
-    <meta name="theme-color" content="#1F1D3D" />
+    <meta name="theme-color" media="(prefers-color-scheme: light)" content="#ffffff" />
+    <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#1d232a" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <title>EasyPay</title>
   </head>
   <body>
     <div id="root"></div>
     <script>
-      // Тема до загрузки приложения: ?style=... имеет приоритет, иначе localStorage
+      // Тема до загрузки приложения: ?style=... имеет приоритет, иначе localStorage.
+      // Темы стоковые daisyUI. Если явного выбора нет, data-theme не ставим
+      // вовсе — тогда решает системная настройка (light по умолчанию,
+      // dark по prefers-color-scheme), как и задумано в плагине.
       ;(function () {
+        var allowed = { light: 1, dark: 1 }
         var q = new URLSearchParams(location.search).get('style')
-        var t = q || localStorage.getItem('easypay-style') || 'classic'
-        if (t !== 'seasons') t = 'classic'
-        document.documentElement.dataset.theme = t
-        if (q) localStorage.setItem('easypay-style', t)
+        if (q && allowed[q]) localStorage.setItem('easypay-style', q)
+        var t = localStorage.getItem('easypay-style')
+        if (t && allowed[t]) document.documentElement.dataset.theme = t
       })()
     </script>
     <script type="module" src="/src/main.tsx"></script>

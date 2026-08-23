@@ -27,7 +27,7 @@ function ConnBanner() {
   return (
     // Полоса не накрывает шапку, а сдвигает её: раньше она ложилась поверх
     // логотипа, и первое, что видел гость, — обрезанное название заведения
-    <div style={{ flexShrink: 0, background: '#B00020', color: 'var(--ep-on-ink)', textAlign: 'center', fontSize: 12.5, padding: '7px 12px' }}>
+    <div className="shrink-0 bg-error px-3 py-1.5 text-center text-xs text-error-content">
       Подключаемся к серверу демо…
     </div>
   )
@@ -91,13 +91,17 @@ function Guest() {
 // Экран стола без ?t=… — заходить сюда нужно из зала
 function NoTable() {
   return (
-    <div className="ep-w-login">
-      <div className="ep-w-login-card">
-        <div className="ep-w-login-title">Стол не выбран</div>
-        <div className="ep-w-login-hint">Экран стола открывается из зала — там видно, какие столы заняты.</div>
-        <a className="ep-w-btn ep-w-btn--primary" style={{ display: 'inline-block', lineHeight: '42px', textDecoration: 'none' }} href="#/hall">
-          Открыть зал
-        </a>
+    <div className="flex min-h-full items-center justify-center bg-base-200 p-5">
+      <div className="card w-full max-w-sm bg-base-100 shadow-lg">
+        <div className="card-body items-center text-center">
+          <h2 className="card-title">Стол не выбран</h2>
+          <p className="text-sm text-base-content/60">
+            Экран стола открывается из зала — там видно, какие столы заняты.
+          </p>
+          <a className="btn btn-block btn-primary mt-2" href="#/hall">
+            Открыть зал
+          </a>
+        </div>
       </div>
     </div>
   )

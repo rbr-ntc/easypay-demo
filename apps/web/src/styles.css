@@ -1,48 +1,14 @@
-/* ===== Тема «Классика» (по умолчанию) ===== */
-:root {
-  --ep-ink: #1f1d3d; /* основной текст и заливки кнопок/чипов */
-  --ep-on-ink: #ffffff; /* текст на заливке ink */
-  --ep-bg: #f7f7f9;
-  --ep-surface: #ffffff; /* карточки */
-  --ep-opaque: #ffffff; /* шиты, шапки, футеры — всегда непрозрачные */
-  --ep-surface-2: #fafafb; /* внутренние строки */
-  --ep-border: #ececef;
-  --ep-soft: #f2f2f4; /* нейтральные фоны чипов */
-  --ep-muted: #8a8a92;
-  --ep-text-2: #42424c;
-  --ep-accent: #7c5cfc; /* общие блюда и пр. */
-  --ep-accent-bg: #f4f1fe;
-  --ep-accent-bg2: #ede7fd;
-  --ep-ghost-border: #dddde2;
-  --ep-ghost-bg: #ffffff;
-  --ep-btn-bg: var(--ep-ink);
-  --ep-btn-fg: #ffffff;
-  --ep-btn-border: 0px solid transparent;
-  --ep-btn-tt: none;
-  --ep-btn-ls: 0px;
-  /* Статусные цвета: оплачено / ждём (были захардкожены по экранам) */
-  --ep-ok: #1f9d55;
-  --ep-ok-bg: #e4f6ea;
-  /* Было #b07a12: на белом это контраст ~3,8:1 — ниже AA, а этим цветом
-     написана строка аллергенов, то есть самый важный текст в меню */
-  --ep-warn: #8a5d00;
-  --ep-danger: #b00020;
-  --ep-danger-bg: #fdecef;
-  --ep-warn-bg: #fff2da;
-  --ep-warn-border: #e8c87a;
-  --ep-page: #f4f4f6; /* фон рабочего экрана ресторана */
-  --ep-r-pill: 50px;
-  --ep-r-lg: 26px;
-  --ep-r-card: 18px;
-  --ep-r-sm: 13px;
-  --ep-r-xs: 8px;
-}
-
-
-* {
-  box-sizing: border-box;
-  -webkit-tap-highlight-color: transparent;
-}
+/**
+ * Что осталось своего после перехода на daisyUI.
+ *
+ * Палитра `--ep-*` удалена целиком: цвета, скругления и типографику теперь
+ * держит активная тема daisyUI, и дублировать её вторым набором переменных
+ * значило бы завести два источника правды по одному вопросу.
+ *
+ * Здесь живёт только то, чего в библиотеке нет: раскладка «экран на всю
+ * высоту с одной прокручиваемой областью», ширина гостевой колонки и
+ * несколько анимаций.
+ */
 
 html,
 body,
@@ -52,18 +18,7 @@ body,
 }
 
 body {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-  color: var(--ep-ink);
-  background: var(--ep-bg);
   overscroll-behavior: none;
-}
-
-button {
-  font-family: inherit;
-}
-
-input {
-  font-family: inherit;
 }
 
 ::-webkit-scrollbar {
@@ -71,11 +26,62 @@ input {
   height: 0;
 }
 
-@keyframes ep-spin {
-  to {
-    transform: rotate(360deg);
+/* ===== Раскладка экрана ===== */
+
+/* Шапка и футер зафиксированы, прокручивается только середина: на телефоне
+   иначе уезжает кнопка оплаты, до которой гость и шёл. */
+.ep-screen {
+  height: 100%;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.ep-scroll {
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
+}
+
+/* Гостевой поток нарисован под телефон и на широком экране держит колонку,
+   а не растягивается на всю ширину монитора. */
+.ep-guest {
+  height: 100%;
+  width: 100%;
+  max-width: 480px;
+  /* min-width: 0 обязателен: как флекс-элемент колонка отказывалась сжиматься
+     ниже своей минимальной ширины по содержимому и растягивалась ровно до
+     max-width — 480 px при экране 375, то есть страница ехала вбок */
+  min-width: 0;
+  margin: 0 auto;
+  position: relative;
+}
+
+/* Сетка меню: на телефоне — один столбец */
+.ep-menu-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 11px;
+}
+
+@media (min-width: 700px) {
+  .ep-guest {
+    max-width: 760px;
+  }
+
+  .ep-menu-grid {
+    grid-template-columns: 1fr 1fr;
+    gap: 13px;
   }
 }
+
+@media (min-width: 1100px) {
+  .ep-menu-grid {
+    grid-template-columns: 1fr 1fr 1fr;
+  }
+}
+
+/* ===== Анимации ===== */
 
 @keyframes ep-pop {
   0% {
@@ -91,17 +97,6 @@ input {
   }
 }
 
-@keyframes ep-fade {
-  from {
-    opacity: 0;
-    transform: translateY(10px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
 @keyframes ep-pulse {
   0%,
   100% {
@@ -112,81 +107,17 @@ input {
   }
 }
 
-.ep-fade-in {
-  animation: ep-fade 0.25s ease both;
-}
-
 .ep-pop {
   animation: ep-pop 0.5s ease both;
-}
-
-.ep-spin {
-  animation: ep-spin 0.9s linear infinite;
 }
 
 .ep-pulse {
   animation: ep-pulse 1.6s ease infinite;
 }
 
-.ep-press:active {
-  transform: scale(0.985);
-}
-
-.ep-screen {
-  height: 100%;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-}
-
-.ep-scroll {
-  flex: 1;
-  overflow-y: auto;
-  min-height: 0;
-}
-
-/* ===== Адаптив: гостевой поток на планшете/десктопе ===== */
-.ep-guest {
-  height: 100%;
-  width: 100%;
-  max-width: 480px;
-  /* min-width: 0 обязателен: как флекс-элемент колонка отказывалась сжиматься
-     ниже своей минимальной ширины по содержимому и растягивалась ровно до
-     max-width — 480 px при экране 375, то есть страница ехала вбок */
-  min-width: 0;
-  margin: 0 auto;
-  position: relative;
-}
-
-.ep-sheet-panel {
-  width: 100%;
-  max-width: 480px;
-}
-
-/* Сетка меню: на телефоне — один столбец */
-.ep-menu-grid {
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: 11px;
-}
-
-@media (min-width: 700px) {
-  .ep-guest {
-    max-width: 760px;
-  }
-
-  .ep-sheet-panel {
-    max-width: 560px;
-  }
-
-  .ep-menu-grid {
-    grid-template-columns: 1fr 1fr;
-    gap: 13px;
-  }
-}
-
-@media (min-width: 1100px) {
-  .ep-menu-grid {
-    grid-template-columns: 1fr 1fr 1fr;
+@media (prefers-reduced-motion: reduce) {
+  .ep-pop,
+  .ep-pulse {
+    animation: none;
   }
 }

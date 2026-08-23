@@ -24,34 +24,44 @@ export function OrderFeed({
 
   return (
     <>
-      <div className="ep-w-mono ep-w-cap">Живая лента заказа</div>
-      <div className="ep-w-panel">
-        {lines.length === 0 && <div className="ep-w-placeholder">Пока пусто — гости ещё ничего не добавили</div>}
+      <div className="mt-4 mb-2 font-mono text-xs uppercase tracking-widest text-base-content/60">
+        Живая лента заказа
+      </div>
+      <ul className="list rounded-box bg-base-100">
+        {lines.length === 0 && (
+          <li className="list-row text-base-content/60">Пока пусто — гости ещё ничего не добавили</li>
+        )}
         {lines.map(l => {
           const d = findDish(l.dishId)
           if (!d) return null
           return (
-            <div key={l.uid} className="ep-w-row">
-              {l.shared ? <SharedIcon size={40} /> : <Avatar animal={animalOf(l.personaId)} size={40} label={nameOf(l.personaId)} />}
-              <div className="ep-w-row-body">
-                <div className="ep-w-row-title">
+            <li key={l.uid} className="list-row">
+              {l.shared ? (
+                <SharedIcon size={40} />
+              ) : (
+                <Avatar animal={animalOf(l.personaId)} size={40} label={nameOf(l.personaId)} />
+              )}
+              <div>
+                <div className="font-semibold">
                   {d.name}
                   {l.qty > 1 ? ` ×${l.qty}` : ''}
                 </div>
-                <div className="ep-w-row-sub">
+                <div className="text-xs text-base-content/60">
                   {l.shared ? `общее на стол · добавил(а) ${nameOf(l.personaId)}` : `${nameOf(l.personaId)} · своё`}
                   {optionsLabel(l.options) ? ` · ${optionsLabel(l.options)}` : ''}
                 </div>
               </div>
               {l.cancelled ? (
-                <span className="ep-w-state">ОТМЕНЕНО{l.cancelReason ? ` · ${l.cancelReason}` : ''}</span>
+                <span className="badge badge-sm badge-error">
+                  ОТМЕНЕНО{l.cancelReason ? ` · ${l.cancelReason}` : ''}
+                </span>
               ) : l.served ? (
-                <span className="ep-w-state ep-w-state--served">
+                <span className="badge badge-sm badge-info">
                   ПОДАНО{l.sentAt && l.servedAt ? ` · ${fmtDur(l.servedAt - l.sentAt)}` : ''}
                 </span>
               ) : l.sent && canServe ? (
                 <button
-                  className="ep-w-state ep-w-state--cooking"
+                  className="btn btn-sm btn-warning"
                   title={l.startedAt ? 'Отметить поданным' : 'Взять в работу'}
                   onClick={() => (l.startedAt ? onServe(l.uid) : onStart(l.uid))}
                 >
@@ -63,17 +73,17 @@ export function OrderFeed({
                   {l.startedAt ? ' → ПОДАТЬ ✓' : ' → В РАБОТУ'}
                 </button>
               ) : l.sent ? (
-                <span className="ep-w-state ep-w-state--cooking">
+                <span className="badge badge-sm badge-warning">
                   {l.startedAt ? 'ГОТОВИТСЯ' : 'В ОЧЕРЕДИ'} {l.sentAt ? fmtDur(now - l.sentAt) : ''}
                 </span>
               ) : (
-                <span className="ep-w-state">ЧЕРНОВИК</span>
+                <span className="badge badge-sm badge-ghost">ЧЕРНОВИК</span>
               )}
-              <span className="ep-w-row-sum">{fmt(d.price * l.qty)}</span>
-            </div>
+              <span className="font-semibold tabular-nums">{fmt(d.price * l.qty)}</span>
+            </li>
           )
         })}
-      </div>
+      </ul>
     </>
   )
 }

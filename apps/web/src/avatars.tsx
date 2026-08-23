@@ -109,18 +109,8 @@ export function Avatar({ animal, size, label }: { animal: Animal; size: number; 
 export function SharedIcon({ size }: { size: number }) {
   return (
     <div
-      style={{
-        width: size,
-        height: size,
-        flexShrink: 0,
-        borderRadius: '50%',
-        background: 'var(--ep-accent-bg)',
-        color: 'var(--ep-accent)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        fontSize: size * 0.5
-      }}
+      className="flex shrink-0 items-center justify-center rounded-full bg-accent/15 text-accent"
+      style={{ width: size, height: size, fontSize: size * 0.5 }}
     >
       ◍
     </div>

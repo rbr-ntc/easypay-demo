@@ -4,10 +4,10 @@ import type { TableMetrics } from './tableMetrics'
 
 function Metric({ label, value, hint, accent }: { label: string; value: string; hint?: string; accent?: boolean }) {
   return (
-    <div className="ep-w-metric">
-      <div className="ep-w-metric-label">{label}</div>
-      <div className={accent ? 'ep-w-metric-value ep-w-metric-value--accent' : 'ep-w-metric-value'}>{value}</div>
-      {hint && <div className="ep-w-metric-hint">{hint}</div>}
+    <div className="stat px-3 py-2">
+      <div className="stat-title text-xs">{label}</div>
+      <div className={`stat-value text-xl ${accent ? 'text-success' : ''}`}>{value}</div>
+      {hint && <div className="stat-desc">{hint}</div>}
     </div>
   )
 }
@@ -24,7 +24,7 @@ export function MetricsRow({
   tipsTotal: number
 }) {
   return (
-    <div className="ep-w-metrics">
+    <div className="stats stats-vertical w-full bg-base-100 sm:stats-horizontal">
       <Metric
         label={closed ? 'Стол обслужен за' : 'Стол открыт'}
         value={fmtDur(metrics.tableDur)}

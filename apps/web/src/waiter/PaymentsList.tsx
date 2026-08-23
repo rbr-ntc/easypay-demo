@@ -25,22 +25,22 @@ export function PaymentsList({ payments, personas }: { payments: ServerPayment[]
 
   return (
     <>
-      <div className="ep-w-mono ep-w-cap">Оплаты</div>
-      <div className="ep-w-panel">
+      <div className="mt-4 mb-2 font-mono text-xs uppercase tracking-widest text-base-content/60">Оплаты</div>
+      <ul className="list rounded-box bg-base-100">
         {payments.map((p, i) => (
-          <div key={`${p.personaId}-${p.at}-${i}`} className="ep-w-row">
+          <li key={`${p.personaId}-${p.at}-${i}`} className="list-row">
             <Avatar animal={animalOf(p.personaId)} size={34} />
-            <div className="ep-w-row-body">
-              <div className="ep-w-row-title">{nameOf(p.personaId)}</div>
-              <div className="ep-w-row-sub">
+            <div>
+              <div className="font-semibold">{nameOf(p.personaId)}</div>
+              <div className="text-xs text-base-content/60">
                 {SCOPE_LABEL[p.scope] ?? p.scope} · {METHOD_LABEL[p.method ?? 'sbp'] ?? 'СБП'}
                 {p.takenByName ? ` · принял ${p.takenByName}` : ''}
               </div>
             </div>
-            <span className="ep-w-row-sum ep-w-row-sum--ok">{fmt(p.amount)}</span>
-          </div>
+            <span className="font-semibold tabular-nums text-success">{fmt(p.amount)}</span>
+          </li>
         ))}
-      </div>
+      </ul>
     </>
   )
 }

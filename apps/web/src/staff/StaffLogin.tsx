@@ -40,36 +40,52 @@ export function StaffLogin() {
   }
 
   return (
-    <div className="ep-w-login">
-      <div className="ep-w-login-card">
-        <div className="ep-w-logo">e</div>
-        <div className="ep-w-login-title">Вход в смену</div>
-        <div className="ep-w-login-hint">
-          {wasSignedOut() ? 'Вы вышли из смены. Введите PIN, чтобы зайти под другим сотрудником.' : 'Введите свой PIN — экран откроется по вашей роли.'}
-        </div>
+    <div className="flex min-h-full items-center justify-center bg-base-200 p-5">
+      <div className="card w-full max-w-sm bg-base-100 shadow-lg">
+        <div className="card-body items-center text-center">
+          <div className="flex size-12 items-center justify-center rounded-field bg-primary text-xl font-bold text-primary-content">
+            e
+          </div>
+          <h2 className="card-title">Вход в смену</h2>
+          <p className="text-sm text-base-content/60">
+            {wasSignedOut()
+              ? 'Вы вышли из смены. Введите PIN, чтобы зайти под другим сотрудником.'
+              : 'Введите свой PIN — экран откроется по вашей роли.'}
+          </p>
 
-        <div className="ep-s-dots">
-          {Array.from({ length: PIN_LENGTH }).map((_, i) => (
-            <span key={i} className={i < pin.length ? 'ep-s-dot ep-s-dot--on' : 'ep-s-dot'} />
-          ))}
-        </div>
+          <div className="my-2 flex gap-3">
+            {Array.from({ length: PIN_LENGTH }).map((_, i) => (
+              <span key={i} className={`status status-lg ${i < pin.length ? 'status-primary' : ''}`} />
+            ))}
+          </div>
 
-        {error && <div className="ep-w-error">{error}</div>}
-        {busy && <div className="ep-w-login-hint">Проверяем…</div>}
-
-        <div className="ep-s-pad">
-          {KEYS.map((key, i) =>
-            key ? (
-              <button key={key} className="ep-s-key" onClick={() => press(key)} disabled={busy}>
-                {key}
-              </button>
-            ) : (
-              <span key={`gap-${i}`} />
-            )
+          {error && (
+            <div role="alert" className="alert alert-error alert-soft py-2 text-sm">
+              <span>{error}</span>
+            </div>
           )}
-        </div>
+          {busy && (
+            <div className="flex items-center gap-2 text-sm text-base-content/60">
+              <span className="loading loading-spinner loading-sm" /> Проверяем…
+            </div>
+          )}
 
-        <div className="ep-s-demo">Демо: официант 1111 · повар 4444 · менеджер 9999</div>
+          <div className="mt-2 grid w-full grid-cols-3 gap-2">
+            {KEYS.map((key, i) =>
+              key ? (
+                <button key={key} className="btn h-14 text-xl" onClick={() => press(key)} disabled={busy}>
+                  {key}
+                </button>
+              ) : (
+                <span key={`gap-${i}`} />
+              )
+            )}
+          </div>
+
+          <div className="mt-2 text-xs text-base-content/60">
+            Демо: официант 1111 · повар 4444 · менеджер 9999
+          </div>
+        </div>
       </div>
     </div>
   )

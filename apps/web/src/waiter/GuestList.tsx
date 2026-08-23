@@ -27,9 +27,9 @@ function orderLabelOf(lines: ServerLine[], personaId: string): string {
 }
 
 const PAY_CHIP: Record<PayLabel, string> = {
-  Оплачено: 'ep-w-chip ep-w-chip--ok',
-  Частично: 'ep-w-chip ep-w-chip--part',
-  Ожидает: 'ep-w-chip ep-w-chip--wait'
+  Оплачено: 'badge badge-sm badge-success',
+  Частично: 'badge badge-sm badge-warning',
+  Ожидает: 'badge badge-sm badge-ghost'
 }
 
 export function GuestList({
@@ -45,8 +45,10 @@ export function GuestList({
 }) {
   return (
     <>
-      <div className="ep-w-mono ep-w-cap">Гости стола · {personas.length}</div>
-      <div className="ep-w-guests">
+      <div className="mb-2 font-mono text-xs uppercase tracking-widest text-base-content/60">
+        Гости стола · {personas.length}
+      </div>
+      <ul className="list rounded-box bg-base-100">
         {personas.map(p => {
           // Долю общего блюда считает сервер по фактическому списку участников
           // на момент отправки. Клиент не пересчитывает деньги — он их показывает.
@@ -55,35 +57,34 @@ export function GuestList({
           const left = totals.personaRemaining(p.id)
           const payLabel = payLabelOf(paid, own, left)
           return (
-            <div key={p.id} className="ep-w-guest">
+            <li key={p.id} className="list-row">
               <Avatar animal={p.animal} size={46} label={p.name} />
-              <div className="ep-w-guest-body">
-                <div className="ep-w-guest-name">{p.name}</div>
-                <div className="ep-w-guest-sum">
+              <div>
+                <div className="font-semibold">{p.name}</div>
+                <div className="text-xs text-base-content/60">
                   {fmt(own)} с долей общих{paid > 0 ? ` · внесено ${fmt(paid)}` : ''}
                   {left === 0 && own > 0 && paid === 0 ? ' · за него заплатили' : ''}
                 </div>
               </div>
-              <div className="ep-w-tags">
-                <span className="ep-w-chip">{orderLabelOf(lines, p.id)}</span>
+              <div className="flex flex-col items-end gap-1">
+                <span className="badge badge-sm badge-ghost">{orderLabelOf(lines, p.id)}</span>
                 <span className={PAY_CHIP[payLabel]}>{payLabel}</span>
               </div>
-            </div>
+            </li>
           )
         })}
 
         {personas.length === 0 && (
-          <div className="ep-w-empty">
-            <div className="ep-w-empty-mark">+</div>
+          <li className="list-row text-base-content/60">
             <span>{tableOpen ? 'Ждём гостей…' : 'Стол свободен — гость откроет его, отсканировав QR'}</span>
-          </div>
+          </li>
         )}
-      </div>
+      </ul>
 
-      <div className="ep-w-divider" />
-      <div className="ep-w-total">
+      <div className="divider my-2" />
+      <div className="flex items-baseline justify-between px-1">
         <span>Итого по столу</span>
-        <span className="ep-w-total-sum">{fmt(totals.tableTotal)}</span>
+        <span className="text-xl font-bold tabular-nums">{fmt(totals.tableTotal)}</span>
       </div>
     </>
   )
