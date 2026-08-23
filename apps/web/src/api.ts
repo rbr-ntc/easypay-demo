@@ -81,6 +81,9 @@ export interface ServerCall {
   at: number
   personaId: string
   reason: string
+  /** Что гость написал словами. Важнее подписи причины: с ним официант знает,
+      зачем идёт, а без него — «Ольга зовёт официанта» и лишний заход. */
+  note?: string | null
   name?: string
 }
 

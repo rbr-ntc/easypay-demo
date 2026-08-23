@@ -113,7 +113,7 @@ export function Hall() {
 
   return (
     <div className="flex min-h-full flex-col gap-3 bg-base-200 p-3">
-      <div className="navbar min-h-0 flex-wrap gap-3 rounded-box bg-base-100 p-3">
+      <div className="navbar min-h-0 shrink-0 flex-wrap gap-3 rounded-box bg-base-100 p-3">
         <div className="flex size-10 shrink-0 items-center justify-center rounded-field bg-primary text-lg font-bold text-primary-content">
           e
         </div>
@@ -173,7 +173,13 @@ export function Hall() {
             </div>
             <div className="grid grid-cols-[repeat(auto-fill,minmax(13rem,1fr))] gap-2.5">
               {zoneCards.map(card => (
-                <TableCard key={card.id} card={card} now={now} onClean={clean} mine={ownsTable(staff, card.id)} />
+                <TableCard
+                  key={card.id}
+                  card={card}
+                  now={now}
+                  onClean={clean}
+                  mine={hasOwnTables && ownsTable(staff, card.id)}
+                />
               ))}
             </div>
           </div>
@@ -188,7 +194,7 @@ export function Hall() {
           </div>
           <div className="grid grid-cols-[repeat(auto-fill,minmax(13rem,1fr))] gap-2.5">
             {offPlan.map(card => (
-              <TableCard key={card.id} card={card} now={now} mine={ownsTable(staff, card.id)} />
+              <TableCard key={card.id} card={card} now={now} mine={hasOwnTables && ownsTable(staff, card.id)} />
             ))}
           </div>
         </div>

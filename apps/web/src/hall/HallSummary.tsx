@@ -27,7 +27,7 @@ function Stat({
 export function HallSummary({ summary }: { summary: Summary }) {
   const load = summary.tables ? Math.round((summary.occupied / summary.tables) * 100) : 0
   return (
-    <div className="stats stats-vertical w-full bg-base-100 sm:stats-horizontal">
+    <div className="stats stats-vertical w-full shrink-0 bg-base-100 sm:stats-horizontal">
       <Stat
         label="Занято столов"
         value={`${summary.occupied} / ${summary.tables}`}

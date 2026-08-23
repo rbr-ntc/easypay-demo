@@ -209,7 +209,7 @@ export function Waiter() {
 
   return (
     <div className="flex min-h-full flex-col gap-3 bg-base-200 p-3">
-      <div className="navbar min-h-0 flex-wrap gap-3 rounded-box bg-base-100 p-3">
+      <div className="navbar min-h-0 shrink-0 flex-wrap gap-3 rounded-box bg-base-100 p-3">
         <div className="flex items-center gap-3">
           <div className="flex size-10 shrink-0 items-center justify-center rounded-field bg-primary text-lg font-bold text-primary-content">
             e
@@ -272,9 +272,12 @@ export function Waiter() {
       {snap?.call && (
         <div role="alert" className="alert alert-error">
           <span className="status status-error ep-pulse" />
+          {/* Текст гостя важнее подписи причины — то же правило, что и в зале.
+              «Гость2 просит воды» вместо «графин без газа» отправляет официанта
+              к столу гадать, что именно принести. */}
           <span>
             <b>{snap.call.name ?? personas.find(p => p.id === snap.call?.personaId)?.name ?? 'Гость'}</b>{' '}
-            {CALL_LABEL[snap.call.reason] ?? CALL_LABEL.help} · {fmtDur(now - snap.call.at)}
+            {snap.call.note ?? CALL_LABEL[snap.call.reason] ?? CALL_LABEL.help} · {fmtDur(now - snap.call.at)}
           </span>
           {may('ack') && (
             <button className="btn btn-sm" onClick={() => void ackCall(snap.call?.id)}>

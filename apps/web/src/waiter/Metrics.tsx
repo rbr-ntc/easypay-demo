@@ -24,7 +24,7 @@ export function MetricsRow({
   tipsTotal: number
 }) {
   return (
-    <div className="stats stats-vertical w-full bg-base-100 sm:stats-horizontal">
+    <div className="stats stats-vertical w-full shrink-0 bg-base-100 sm:stats-horizontal">
       <Metric
         label={closed ? 'Стол обслужен за' : 'Стол открыт'}
         value={fmtDur(metrics.tableDur)}

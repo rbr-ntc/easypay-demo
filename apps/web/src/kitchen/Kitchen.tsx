@@ -81,7 +81,7 @@ export function Kitchen() {
 
   return (
     <div className="flex h-full flex-col gap-3 bg-base-200 p-3">
-      <div className="navbar min-h-0 gap-3 rounded-box bg-base-100 p-3">
+      <div className="navbar min-h-0 shrink-0 flex-wrap gap-3 rounded-box bg-base-100 p-3">
         <div className="flex size-10 shrink-0 items-center justify-center rounded-field bg-primary text-lg font-bold text-primary-content">
           e
         </div>
