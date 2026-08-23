@@ -11,7 +11,6 @@ import { fmtDur } from '../waiter/duration'
 import { getStaffToken } from '../staff'
 import type { HallCard } from '@easypay/domain/hall'
 import { ownsTable, ROLE_LABEL } from '@easypay/domain/roles'
-import '../hall.css'
 
 function useNow(stepMs = 1000) {
   const [now, setNow] = useState(Date.now())
@@ -35,13 +34,13 @@ function AttentionBar({ cards, now, onAck }: { cards: HallCard[]; now: number; o
   if (hot.length === 0) return null
 
   return (
-    <div className="ep-h-attention">
-      <span className="ep-h-attention-title">Требуют внимания</span>
+    <div className="flex flex-wrap items-center gap-2 rounded-box bg-error/10 p-3">
+      <span className="text-sm font-bold uppercase">Требуют внимания</span>
       {hot.map(({ card, alerts }) => (
-        <span key={card.id} className="ep-h-attention-item">
+        <span key={card.id} className="join">
           {card.call && (
             <button
-              className="ep-h-ack"
+              className="btn join-item btn-sm btn-primary"
               title="Сказать гостю «иду»"
               onClick={() => void onAck(card.id, card.call?.id)}
             >
@@ -49,18 +48,18 @@ function AttentionBar({ cards, now, onAck }: { cards: HallCard[]; now: number; o
             </button>
           )}
           <a
-            className="ep-h-attention-chip"
+            className="btn join-item btn-sm"
             href={`${window.location.pathname}?t=${encodeURIComponent(card.id)}#/waiter`}
           >
-          <b>№{card.id}</b> {alerts.map(a => a.label).join(' · ')}
-          {(card.calls ?? 0) > 1 && <span className="ep-h-attention-more">+{(card.calls ?? 1) - 1}</span>}
-          {(() => {
-            // Возраст ожидания прямо на чипе: без него все вызовы одинаковые
-            const since = Math.min(...alerts.map(a => a.since ?? now))
-            return Number.isFinite(since) && since < now ? (
-              <span className="ep-h-attention-age">{fmtDur(now - since)}</span>
-            ) : null
-          })()}
+            <b>№{card.id}</b> {alerts.map(a => a.label).join(' · ')}
+            {(card.calls ?? 0) > 1 && <span className="badge badge-xs">+{(card.calls ?? 1) - 1}</span>}
+            {(() => {
+              // Возраст ожидания прямо на чипе: без него все вызовы одинаковые
+              const since = Math.min(...alerts.map(a => a.since ?? now))
+              return Number.isFinite(since) && since < now ? (
+                <span className="font-mono tabular-nums opacity-60">{fmtDur(now - since)}</span>
+              ) : null
+            })()}
           </a>
         </span>
       ))}
@@ -113,59 +112,66 @@ export function Hall() {
   const offPlan = cards.filter(c => !zones.some(z => z.id === c.zoneId))
 
   return (
-    <div className="ep-h">
-      <div className="ep-h-top">
-        <div className="ep-w-logo">e</div>
+    <div className="flex min-h-full flex-col gap-3 bg-base-200 p-3">
+      <div className="navbar min-h-0 flex-wrap gap-3 rounded-box bg-base-100 p-3">
+        <div className="flex size-10 shrink-0 items-center justify-center rounded-field bg-primary text-lg font-bold text-primary-content">
+          e
+        </div>
         <div>
-          <div className="ep-h-title">Зал · {hall?.restaurant ?? '—'}</div>
-          <div className="ep-h-sub">
+          <div className="text-lg font-bold">Зал · {hall?.restaurant ?? '—'}</div>
+          <div className="text-xs text-base-content/60">
             смена идёт{connected ? '' : ' · нет связи…'}
             {summary.closedTables > 0 ? ` · закрыто столов: ${summary.closedTables}` : ''}
             {shiftTips > 0 ? ` · ваши чаевые: ${Math.round(shiftTips)} ₽` : ''}
           </div>
         </div>
-        <div className="ep-h-spacer" />
 
-        {hasOwnTables && (
-          <button className="ep-w-btn ep-w-btn--quiet" onClick={() => setOnlyMine(!onlyMine)}>
-            {onlyMine ? 'Показать весь зал' : 'Только мои столы'}
-          </button>
-        )}
-        {may('kitchen') && (
-          <a className="ep-w-link" href={`${window.location.pathname}#/kitchen`}>
-            Кухня{summary.kitchenPending > 0 ? ` · ${summary.kitchenPending}` : ''}
+        <div className="ml-auto flex flex-wrap items-center gap-2">
+          {hasOwnTables && (
+            <button className="btn btn-sm" onClick={() => setOnlyMine(!onlyMine)}>
+              {onlyMine ? 'Показать весь зал' : 'Только мои столы'}
+            </button>
+          )}
+          {may('kitchen') && (
+            <a className="btn btn-ghost btn-sm" href={`${window.location.pathname}#/kitchen`}>
+              Кухня{summary.kitchenPending > 0 ? ` · ${summary.kitchenPending}` : ''}
+            </a>
+          )}
+          <a className="btn btn-ghost btn-sm" href={`${window.location.pathname}#/qr`}>
+            QR-коды столов
           </a>
-        )}
-        <a className="ep-w-link" href={`${window.location.pathname}#/qr`}>
-          QR-коды столов
-        </a>
-        <div className="ep-s-who">
-          <span className="ep-s-who-name">{staff?.name}</span>
-          <span className="ep-s-role">{staff ? ROLE_LABEL[staff.role] : ''}</span>
+          <div className="text-right">
+            <div className="text-sm font-semibold">{staff?.name}</div>
+            <div className="text-xs text-base-content/60">{staff ? ROLE_LABEL[staff.role] : ''}</div>
+          </div>
+          <button className="btn btn-sm" onClick={() => void signOutStaff()}>
+            Выйти
+          </button>
         </div>
-        <button className="ep-w-btn ep-w-btn--quiet" onClick={() => void signOutStaff()}>
-          Выйти
-        </button>
       </div>
 
       <HallSummary summary={summary} />
       <AttentionBar cards={cards} now={now} onAck={ack} />
 
-      {!hall && <div className="ep-h-zone ep-h-empty">Загружаем зал…</div>}
+      {!hall && (
+        <div className="flex items-center justify-center gap-3 rounded-box bg-base-100 p-8">
+          <span className="loading loading-spinner" /> Загружаем зал…
+        </div>
+      )}
 
       {zones.map(zone => {
         const zoneCards = cards.filter(c => c.zoneId === zone.id)
         if (zoneCards.length === 0) return null
         const busy = zoneCards.filter(c => c.status === 'open').length
         return (
-          <div className="ep-h-zone" key={zone.id}>
-            <div className="ep-h-zone-title">
-              <span className="ep-h-zone-name">{zone.name}</span>
-              <span className="ep-h-sub">
+          <div className="rounded-box bg-base-100 p-3" key={zone.id}>
+            <div className="mb-2.5 flex items-baseline gap-2">
+              <span className="font-bold uppercase">{zone.name}</span>
+              <span className="text-xs text-base-content/60">
                 занято {busy} из {zoneCards.length}
               </span>
             </div>
-            <div className="ep-h-grid">
+            <div className="grid grid-cols-[repeat(auto-fill,minmax(13rem,1fr))] gap-2.5">
               {zoneCards.map(card => (
                 <TableCard key={card.id} card={card} now={now} onClean={clean} mine={ownsTable(staff, card.id)} />
               ))}
@@ -175,12 +181,12 @@ export function Hall() {
       })}
 
       {offPlan.length > 0 && (
-        <div className="ep-h-zone">
-          <div className="ep-h-zone-title">
-            <span className="ep-h-zone-name">Вне плана зала</span>
-            <span className="ep-h-sub">открыты по произвольному QR</span>
+        <div className="rounded-box bg-base-100 p-3">
+          <div className="mb-2.5 flex items-baseline gap-2">
+            <span className="font-bold uppercase">Вне плана зала</span>
+            <span className="text-xs text-base-content/60">открыты по произвольному QR</span>
           </div>
-          <div className="ep-h-grid">
+          <div className="grid grid-cols-[repeat(auto-fill,minmax(13rem,1fr))] gap-2.5">
             {offPlan.map(card => (
               <TableCard key={card.id} card={card} now={now} mine={ownsTable(staff, card.id)} />
             ))}

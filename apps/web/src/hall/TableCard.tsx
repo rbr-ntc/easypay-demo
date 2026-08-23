@@ -7,6 +7,26 @@ import type { Animal } from '../data'
 
 const MAX_AVATARS = 4
 
+/**
+ * Цвет статуса стола. Статусы считает домен (`packages/domain/hall.ts`) —
+ * одинаково на сервере и клиенте, здесь только их вид.
+ */
+const STATUS_STYLE: Record<string, { dot: string; frame: string }> = {
+  free: { dot: 'status-neutral', frame: 'border-base-300 bg-base-200/60' },
+  seated: { dot: 'status-info', frame: 'border-info' },
+  ordering: { dot: 'status-info', frame: 'border-info' },
+  cooking: { dot: 'status-warning', frame: 'border-warning' },
+  eating: { dot: 'status-success', frame: 'border-success' },
+  paying: { dot: 'status-accent', frame: 'border-accent' },
+  dirty: { dot: 'status-error', frame: 'border-error' }
+}
+
+const ALERT_BADGE: Record<string, string> = {
+  danger: 'badge-error',
+  warn: 'badge-warning',
+  info: 'badge-info'
+}
+
 /** Карточка стола в зале: клик уводит на экран этого стола. */
 export function TableCard({
   card,
@@ -24,78 +44,89 @@ export function TableCard({
   const href = `${window.location.pathname}?t=${encodeURIComponent(card.id)}#/waiter`
   const shown = card.personas.slice(0, MAX_AVATARS)
   const rest = card.personas.length - shown.length
-  const className = ['ep-h-card', free ? 'ep-h-card--free' : '', mine ? 'ep-h-card--mine' : ''].filter(Boolean).join(' ')
+  const look = STATUS_STYLE[status] ?? STATUS_STYLE.free
 
   return (
-    <a className={className} data-status={status} href={href}>
-      <div className="ep-h-card-head">
-        <span className="ep-h-card-num">№{card.id}</span>
-        {card.seats > 0 && <span className="ep-h-card-seats">{card.seats} мест</span>}
-        {since && !free && <span className="ep-h-card-timer">{fmtDur(now - since)}</span>}
-      </div>
+    <a
+      className={`card card-border bg-base-100 transition-shadow hover:shadow-md ${look.frame} ${
+        mine ? 'ring-2 ring-primary ring-offset-1' : ''
+      }`}
+      href={href}
+    >
+      <div className="card-body gap-1.5 p-3">
+        <div className="flex items-baseline gap-2">
+          <span className="text-xl font-bold">№{card.id}</span>
+          {card.seats > 0 && <span className="text-xs text-base-content/60">{card.seats} мест</span>}
+          {since && !free && (
+            <span className="ml-auto font-mono text-sm tabular-nums text-base-content/60">{fmtDur(now - since)}</span>
+          )}
+        </div>
 
-      <span className="ep-h-status">
-        <span className="ep-h-status-dot" />
-        {STATUS_LABEL[status]}
-      </span>
+        <span className="flex items-center gap-1.5 text-sm font-medium">
+          <span className={`status ${look.dot}`} />
+          {STATUS_LABEL[status]}
+        </span>
 
-      {/* Готово и ждёт, пока унесут: раньше это число приходило в данных
-          и не показывалось ни на одном экране */}
-      {(card.readyCount ?? 0) > 0 && (
-        <span className="ep-h-ready">на раздаче {card.readyCount}</span>
-      )}
+        {/* Готово и ждёт, пока унесут: раньше это число приходило в данных
+            и не показывалось ни на одном экране */}
+        {(card.readyCount ?? 0) > 0 && (
+          <span className="badge badge-sm badge-success">на раздаче {card.readyCount}</span>
+        )}
 
-      {status === 'dirty' && onClean && (
-        <button
-          className="ep-h-clean"
-          onClick={e => {
-            e.preventDefault()
-            onClean(card.id)
-          }}
-        >
-          Убрано
-        </button>
-      )}
+        {status === 'dirty' && onClean && (
+          <button
+            className="btn btn-sm btn-primary"
+            onClick={e => {
+              e.preventDefault()
+              onClean(card.id)
+            }}
+          >
+            Убрано
+          </button>
+        )}
 
-      <div className="ep-h-card-guests">
-        {/* Освободившийся стол не должен помнить прошлых гостей: официант
-            видел «Свободен · Ретест · остаток 250 ₽» и шёл искать человека,
-            который давно ушёл */}
-        {card.guests > 0 && !free ? (
-          <>
-            <div className="ep-h-card-avatars">
-              {shown.map((p, i) => (
-                <Avatar key={`${p.name}-${i}`} animal={p.animal as Animal} size={26} label={p.name} />
-              ))}
-            </div>
-            <span className="ep-h-card-names">
-              {shown.map(p => p.name).join(', ')}
-              {rest > 0 ? ` +${rest}` : ''}
+        <div className="flex items-center gap-2">
+          {/* Освободившийся стол не должен помнить прошлых гостей: официант
+              видел «Свободен · Ретест · остаток 250 ₽» и шёл искать человека,
+              который давно ушёл */}
+          {card.guests > 0 && !free ? (
+            <>
+              <div className="avatar-group -space-x-2">
+                {shown.map((p, i) => (
+                  <div key={`${p.name}-${i}`} className="avatar">
+                    <Avatar animal={p.animal as Animal} size={26} label={p.name} />
+                  </div>
+                ))}
+              </div>
+              <span className="truncate text-xs text-base-content/60">
+                {shown.map(p => p.name).join(', ')}
+                {rest > 0 ? ` +${rest}` : ''}
+              </span>
+            </>
+          ) : (
+            <span className="text-xs text-base-content/60">{free ? 'Ждёт гостей' : 'Гостей нет'}</span>
+          )}
+        </div>
+
+        {card.tableTotal > 0 && !free && (
+          <div className="flex items-baseline justify-between">
+            <span className="font-semibold tabular-nums">{fmt(card.tableTotal)}</span>
+            <span className={`text-xs ${card.remaining <= 0.01 ? 'text-success' : 'text-base-content/60'}`}>
+              {card.remaining <= 0.01 ? 'оплачен' : `остаток ${fmt(card.remaining)}`}
             </span>
-          </>
-        ) : (
-          <span className="ep-h-card-names">{free ? 'Ждёт гостей' : 'Гостей нет'}</span>
+          </div>
+        )}
+
+        {alerts.length > 0 && (
+          <div className="flex flex-wrap gap-1">
+            {alerts.map(a => (
+              <span key={a.id} className={`badge badge-sm ${ALERT_BADGE[a.severity] ?? 'badge-ghost'}`}>
+                {a.label}
+              </span>
+            ))}
+          </div>
         )}
       </div>
-
-      {card.tableTotal > 0 && !free && (
-        <div className="ep-h-card-money">
-          <span className="ep-h-card-total">{fmt(card.tableTotal)}</span>
-          <span className={card.remaining <= 0.01 ? 'ep-h-card-rest ep-h-card-rest--ok' : 'ep-h-card-rest'}>
-            {card.remaining <= 0.01 ? 'оплачен' : `остаток ${fmt(card.remaining)}`}
-          </span>
-        </div>
-      )}
-
-      {alerts.length > 0 && (
-        <div className="ep-h-card-alerts">
-          {alerts.map(a => (
-            <span key={a.id} className={`ep-h-alert ep-h-alert--${a.severity}`}>
-              {a.label}
-            </span>
-          ))}
-        </div>
-      )}
     </a>
   )
 }

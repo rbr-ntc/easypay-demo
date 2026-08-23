@@ -54,24 +54,28 @@ export function ShiftChecks() {
   const shift = data?.shift
 
   return (
-    <div className="ep-h-zone">
-      <div className="ep-h-zone-title">
-        <span className="ep-h-zone-name">Реестр чеков</span>
-        <button className="ep-w-btn ep-w-btn--quiet" onClick={() => void toggle()}>
+    <div className="rounded-box bg-base-100 p-3">
+      <div className="mb-2.5 flex items-center gap-2">
+        <span className="font-bold uppercase">Реестр чеков</span>
+        <button className="btn ml-auto btn-sm" onClick={() => void toggle()}>
           {open ? 'Свернуть' : 'Показать'}
         </button>
       </div>
 
       {open && (
-        <div className="ep-h-checks">
-          {busy && <div className="ep-h-empty">Загружаем…</div>}
+        <div className="flex flex-col gap-3">
+          {busy && (
+            <div className="flex items-center gap-2 py-4 text-base-content/60">
+              <span className="loading loading-spinner loading-sm" /> Загружаем…
+            </div>
+          )}
 
           {!busy && control && (
-            <div className={everythingMatches(control) ? 'ep-h-control ep-h-control--ok' : 'ep-h-control ep-h-control--bad'}>
+            <div role="alert" className={`alert ${everythingMatches(control) ? 'alert-success' : 'alert-error'} flex-col items-stretch`}>
               {/* «Касса сходится» при 4 510 ₽ неполученных обнадёживает сильнее,
                   чем стоит: сверка честна по своей формуле (платежи против чеков),
                   но управляющая читает заголовок, а не формулу. */}
-              <div className="ep-h-control-head">
+              <div className="font-bold">
                 {!control.matches
                   ? 'Деньги не сходятся — разберитесь до закрытия смены'
                   : control.debtMatches === false
@@ -90,92 +94,109 @@ export function ShiftChecks() {
               {control.checksTotal !== undefined &&
                 control.checksShown !== undefined &&
                 control.checksTotal > control.checksShown && (
-                  <div className="ep-h-control-note">
+                  <div className="text-sm opacity-80">
                     Сверено {control.checksTotal} чеков, показано последних {control.checksShown}
                   </div>
                 )}
-              <div className="ep-h-control-row">
-                <span>Сумма чеков</span>
-                <b>{fmt(control.checksPaid)}</b>
-              </div>
-              <div className="ep-h-control-row">
-                <span>Выручка закрытых столов</span>
-                <b>{fmt(control.closedRevenue)}</b>
-              </div>
-              {control.openPaid > 0 && (
-                <div className="ep-h-control-row">
-                  <span>Оплачено на открытых столах</span>
-                  <b>{fmt(control.openPaid)}</b>
-                </div>
-              )}
-              {shift && shift.debt > 0 && (
-                <div className={control.debtMatches === false ? 'ep-h-control-row ep-h-control-row--bad' : 'ep-h-control-row'}>
-                  <span>
-                    Ушли не заплатив
-                    {control.debtMatches === false && control.checksDebt !== undefined
-                      ? ` · по чекам ${fmt(control.checksDebt)}`
-                      : ''}
-                  </span>
-                  <b>{fmt(shift.debt)}</b>
-                </div>
-              )}
-              {shift && (shift.writtenOff ?? 0) > 0 && (
-                <div className={control.writtenOffMatches === false ? 'ep-h-control-row ep-h-control-row--bad' : 'ep-h-control-row'}>
-                  <span>
-                    Снято с кухни — еду не отдали
-                    {control.writtenOffMatches === false && control.checksWrittenOff !== undefined
-                      ? ` · по чекам ${fmt(control.checksWrittenOff)}`
-                      : ''}
-                  </span>
-                  <b>{fmt(shift.writtenOff ?? 0)}</b>
-                </div>
-              )}
-              {shift && shift.overpaid > 0 && (
-                <div className="ep-h-control-row">
-                  <span>Из них вернуть гостям</span>
-                  <b>{fmt(shift.overpaid)}</b>
-                </div>
-              )}
-              {shift && (
-                <div className="ep-h-control-row">
-                  <span>Заработано (за вычетом возвратов)</span>
-                  <b>{fmt(shift.netRevenue ?? shift.closedRevenue)}</b>
-                </div>
-              )}
+
+              <table className="table table-sm">
+                <tbody>
+                  <tr>
+                    <td>Сумма чеков</td>
+                    <td className="text-right font-bold tabular-nums">{fmt(control.checksPaid)}</td>
+                  </tr>
+                  <tr>
+                    <td>Выручка закрытых столов</td>
+                    <td className="text-right font-bold tabular-nums">{fmt(control.closedRevenue)}</td>
+                  </tr>
+                  {control.openPaid > 0 && (
+                    <tr>
+                      <td>Оплачено на открытых столах</td>
+                      <td className="text-right font-bold tabular-nums">{fmt(control.openPaid)}</td>
+                    </tr>
+                  )}
+                  {shift && shift.debt > 0 && (
+                    <tr className={control.debtMatches === false ? 'text-error' : ''}>
+                      <td>
+                        Ушли не заплатив
+                        {control.debtMatches === false && control.checksDebt !== undefined
+                          ? ` · по чекам ${fmt(control.checksDebt)}`
+                          : ''}
+                      </td>
+                      <td className="text-right font-bold tabular-nums">{fmt(shift.debt)}</td>
+                    </tr>
+                  )}
+                  {shift && (shift.writtenOff ?? 0) > 0 && (
+                    <tr className={control.writtenOffMatches === false ? 'text-error' : ''}>
+                      <td>
+                        Снято с кухни — еду не отдали
+                        {control.writtenOffMatches === false && control.checksWrittenOff !== undefined
+                          ? ` · по чекам ${fmt(control.checksWrittenOff)}`
+                          : ''}
+                      </td>
+                      <td className="text-right font-bold tabular-nums">{fmt(shift.writtenOff ?? 0)}</td>
+                    </tr>
+                  )}
+                  {shift && shift.overpaid > 0 && (
+                    <tr>
+                      <td>Из них вернуть гостям</td>
+                      <td className="text-right font-bold tabular-nums">{fmt(shift.overpaid)}</td>
+                    </tr>
+                  )}
+                  {shift && (
+                    <tr>
+                      <td>Заработано (за вычетом возвратов)</td>
+                      <td className="text-right font-bold tabular-nums">
+                        {fmt(shift.netRevenue ?? shift.closedRevenue)}
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
             </div>
           )}
 
-          {!busy && data?.checks.length === 0 && <div className="ep-h-empty">Закрытых столов пока нет</div>}
+          {!busy && data?.checks.length === 0 && (
+            <div className="py-4 text-base-content/60">Закрытых столов пока нет</div>
+          )}
 
           {data?.checks.map(check => (
-            <div className="ep-h-check" key={check.sessionId}>
-              <div className="ep-h-check-head">
-                <b>№{check.tableId}</b>
-                <span className="ep-h-check-time">
-                  {time(check.openedAt)} — {time(check.closedAt)} · гостей {check.guests}
-                  {check.waiter ? ` · ${check.waiter}` : ''}
-                </span>
-              </div>
-
-              {check.lines.map((l, i) => (
-                <div className={l.cancelled ? 'ep-h-check-row ep-h-check-row--off' : 'ep-h-check-row'} key={i}>
-                  <span>
-                    {l.name}
-                    {l.qty > 1 ? ` ×${l.qty}` : ''}
-                    {l.guest ? ` · ${l.guest}` : ''}
-                    {l.cancelled ? ` · снято: ${l.cancelReason ?? 'отменено'}` : ''}
+            <div className="card card-border bg-base-100" key={check.sessionId}>
+              <div className="card-body p-3">
+                <div className="flex flex-wrap items-baseline gap-2">
+                  <b className="text-lg">№{check.tableId}</b>
+                  <span className="text-xs text-base-content/60">
+                    {time(check.openedAt)} — {time(check.closedAt)} · гостей {check.guests}
+                    {check.waiter ? ` · ${check.waiter}` : ''}
                   </span>
-                  <span>{fmt(l.amount)}</span>
                 </div>
-              ))}
 
-              <div className="ep-h-check-total">
-                <span>Счёт {fmt(check.total)}</span>
-                <span>Оплачено {fmt(check.paid)}</span>
-                {check.debt > 0 && <span className="ep-h-check-debt">Долг {fmt(check.debt)}</span>}
-                {check.overpaid > 0 && <span className="ep-h-check-debt">Вернуть {fmt(check.overpaid)}</span>}
-                {check.cancelledTotal > 0 && <span>Снято с кухни {fmt(check.cancelledTotal)}</span>}
-                {check.tips > 0 && <span>Чаевые {fmt(check.tips)}</span>}
+                <table className="table table-xs">
+                  <tbody>
+                    {check.lines.map((l, i) => (
+                      <tr key={i} className={l.cancelled ? 'text-base-content/40 line-through' : ''}>
+                        <td>
+                          {l.name}
+                          {l.qty > 1 ? ` ×${l.qty}` : ''}
+                          {l.guest ? ` · ${l.guest}` : ''}
+                          {l.cancelled ? ` · снято: ${l.cancelReason ?? 'отменено'}` : ''}
+                        </td>
+                        <td className="text-right tabular-nums">{fmt(l.amount)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+
+                <div className="flex flex-wrap gap-2 border-t border-base-200 pt-2 text-sm">
+                  <span>Счёт {fmt(check.total)}</span>
+                  <span>Оплачено {fmt(check.paid)}</span>
+                  {check.debt > 0 && <span className="badge badge-sm badge-error">Долг {fmt(check.debt)}</span>}
+                  {check.overpaid > 0 && (
+                    <span className="badge badge-sm badge-error">Вернуть {fmt(check.overpaid)}</span>
+                  )}
+                  {check.cancelledTotal > 0 && <span>Снято с кухни {fmt(check.cancelledTotal)}</span>}
+                  {check.tips > 0 && <span>Чаевые {fmt(check.tips)}</span>}
+                </div>
               </div>
             </div>
           ))}

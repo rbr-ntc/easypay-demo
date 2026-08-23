@@ -12,12 +12,13 @@ function Stat({
   hint?: string
   tone?: 'alert' | 'money'
 }) {
-  const cls = tone ? `ep-h-stat ep-h-stat--${tone}` : 'ep-h-stat'
   return (
-    <div className={cls}>
-      <div className="ep-h-stat-label">{label}</div>
-      <div className="ep-h-stat-value">{value}</div>
-      {hint && <div className="ep-h-stat-hint">{hint}</div>}
+    <div className="stat">
+      <div className="stat-title">{label}</div>
+      <div className={`stat-value text-2xl ${tone === 'alert' ? 'text-error' : tone === 'money' ? 'text-success' : ''}`}>
+        {value}
+      </div>
+      {hint && <div className="stat-desc">{hint}</div>}
     </div>
   )
 }
@@ -26,7 +27,7 @@ function Stat({
 export function HallSummary({ summary }: { summary: Summary }) {
   const load = summary.tables ? Math.round((summary.occupied / summary.tables) * 100) : 0
   return (
-    <div className="ep-h-summary">
+    <div className="stats stats-vertical w-full bg-base-100 sm:stats-horizontal">
       <Stat
         label="Занято столов"
         value={`${summary.occupied} / ${summary.tables}`}

@@ -26,37 +26,57 @@ export function ShiftLog() {
   }
 
   return (
-    <div className="ep-h-zone">
-      <div className="ep-h-zone-title">
-        <span className="ep-h-zone-name">Журнал смены</span>
-        <button className="ep-w-btn ep-w-btn--quiet" onClick={() => void toggle()}>
+    <div className="rounded-box bg-base-100 p-3">
+      <div className="mb-2.5 flex items-center gap-2">
+        <span className="font-bold uppercase">Журнал смены</span>
+        <button className="btn ml-auto btn-sm" onClick={() => void toggle()}>
           {open ? 'Свернуть' : 'Показать'}
         </button>
       </div>
 
       {open && (
-        <div className="ep-h-log">
-          {busy && <div className="ep-h-empty">Загружаем…</div>}
-          {!busy && entries?.length === 0 && <div className="ep-h-empty">Пока пусто</div>}
-          {entries?.map((e, i) => (
-            <div className="ep-h-log-row" key={`${e.at}-${i}`}>
-              <span className="ep-h-log-time">{time(e.at)}</span>
-              <span className="ep-h-log-who">
-                {e.name}
-                {e.role ? ` · ${ROLE_LABEL[e.role as RoleName] ?? e.role}` : ''}
-              </span>
-              <span className="ep-h-log-what">
-                {e.action}
-                {e.tableId ? ` · стол №${e.tableId}` : ''}
-                {e.detail ? ` · ${e.detail}` : ''}
-              </span>
-              {/* Деньги в журнале называются суммой: без неё запись
-                  «принял наличные от Олега» ничего не доказывает */}
-              {typeof e.amount === 'number' && e.amount > 0 && (
-                <span className="ep-h-log-sum">{fmt(e.amount)}</span>
-              )}
+        <div className="overflow-x-auto">
+          {busy && (
+            <div className="flex items-center gap-2 py-4 text-base-content/60">
+              <span className="loading loading-spinner loading-sm" /> Загружаем…
             </div>
-          ))}
+          )}
+          {!busy && entries?.length === 0 && <div className="py-4 text-base-content/60">Пока пусто</div>}
+          {!busy && !!entries?.length && (
+            <table className="table-zebra table table-sm">
+              <thead>
+                <tr>
+                  <th>Время</th>
+                  <th>Кто</th>
+                  <th>Что</th>
+                  <th className="text-right">Сумма</th>
+                </tr>
+              </thead>
+              <tbody>
+                {entries.map((e, i) => (
+                  <tr key={`${e.at}-${i}`}>
+                    <td className="font-mono tabular-nums whitespace-nowrap">{time(e.at)}</td>
+                    <td className="whitespace-nowrap">
+                      {e.name}
+                      {e.role ? (
+                        <span className="text-base-content/60"> · {ROLE_LABEL[e.role as RoleName] ?? e.role}</span>
+                      ) : null}
+                    </td>
+                    <td>
+                      {e.action}
+                      {e.tableId ? ` · стол №${e.tableId}` : ''}
+                      {e.detail ? ` · ${e.detail}` : ''}
+                    </td>
+                    {/* Деньги в журнале называются суммой: без неё запись
+                        «принял наличные от Олега» ничего не доказывает */}
+                    <td className="text-right font-semibold tabular-nums whitespace-nowrap">
+                      {typeof e.amount === 'number' && e.amount > 0 ? fmt(e.amount) : ''}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
         </div>
       )}
     </div>

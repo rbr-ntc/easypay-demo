@@ -6,13 +6,12 @@ import { fmtDur } from '../waiter/duration'
 import { Ticket } from './Ticket'
 import { summarizeKitchen, ticketState } from '@easypay/domain/kitchen'
 import { ROLE_LABEL } from '@easypay/domain/roles'
-import '../kitchen.css'
 
 function Counter({ label, value, alert }: { label: string; value: string; alert?: boolean }) {
   return (
-    <div className="ep-k-counter">
-      <div className="ep-k-counter-label">{label}</div>
-      <div className={alert ? 'ep-k-counter-value ep-k-counter-value--alert' : 'ep-k-counter-value'}>{value}</div>
+    <div className="stat px-3 py-2">
+      <div className="stat-title text-xs">{label}</div>
+      <div className={`stat-value text-2xl ${alert ? 'text-error' : ''}`}>{value}</div>
     </div>
   )
 }
@@ -81,17 +80,18 @@ export function Kitchen() {
   }
 
   return (
-    <div className="ep-k">
-      <div className="ep-k-top">
-        <div className="ep-w-logo">e</div>
+    <div className="flex h-full flex-col gap-3 bg-base-200 p-3">
+      <div className="navbar min-h-0 gap-3 rounded-box bg-base-100 p-3">
+        <div className="flex size-10 shrink-0 items-center justify-center rounded-field bg-primary text-lg font-bold text-primary-content">
+          e
+        </div>
         <div>
-          <div className="ep-k-title">Кухня</div>
-          <div className="ep-k-sub">
+          <div className="text-lg font-bold">Кухня</div>
+          <div className="text-xs text-base-content/60">
             очередь по всему залу{connected ? '' : ' · нет связи…'}
           </div>
         </div>
-        <div className="ep-k-spacer" />
-        <div className="ep-k-counters">
+        <div className="stats stats-horizontal ml-auto overflow-x-auto bg-base-100">
           <Counter label="В очереди" value={String(summary.queued)} />
           <Counter label="В работе" value={String(summary.cooking)} />
           <Counter label="На раздаче" value={String(ready.length)} alert={ready.length > 2} />
@@ -106,82 +106,119 @@ export function Kitchen() {
           />
         </div>
         {may('hall') && (
-          <a className="ep-w-link" href={`${window.location.pathname}#/hall`}>
+          <a className="btn btn-ghost btn-sm" href={`${window.location.pathname}#/hall`}>
             в зал
           </a>
         )}
-        <div className="ep-s-who">
-          <span className="ep-s-who-name">{staff?.name}</span>
-          <span className="ep-s-role">{staff ? ROLE_LABEL[staff.role] : ''}</span>
+        <div className="text-right">
+          <div className="text-sm font-semibold">{staff?.name}</div>
+          <div className="text-xs text-base-content/60">{staff ? ROLE_LABEL[staff.role] : ''}</div>
         </div>
-        <button className="ep-w-btn ep-w-btn--quiet" onClick={() => void signOutStaff()}>
+        <button className="btn btn-sm" onClick={() => void signOutStaff()}>
           Выйти
         </button>
       </div>
 
-      {failed && <div className="ep-k-failed">{failed}</div>}
-
-      {cancelled.length > 0 && (
-        <div className="ep-k-cancelled">
-          <div className="ep-k-lane-title">Отменено · снять с плиты и подтвердить</div>
-          <div className="ep-k-list">
-            {cancelled.map(t => (
-              <Ticket key={`c-${t.tableId}-${t.uid}`} ticket={t} now={now} busy={busy === t.uid} onAction={() => void dismiss(t)} />
-            ))}
-          </div>
+      {failed && (
+        <div role="alert" className="alert alert-error">
+          <span>{failed}</span>
         </div>
       )}
 
-      {ready.length > 0 && (
-        <div className="ep-k-pass">
-          <div className="ep-k-lane-title">
-            На раздаче · забрать в зал <span>{ready.length}</span>
+      <div className="ep-scroll flex flex-col gap-3">
+        {cancelled.length > 0 && (
+          <div className="rounded-box border-2 border-error bg-error/5 p-3">
+            <div className="mb-2 font-bold text-error">Отменено · снять с плиты и подтвердить</div>
+            <div className="flex flex-col gap-2">
+              {cancelled.map(t => (
+                <Ticket
+                  key={`c-${t.tableId}-${t.uid}`}
+                  ticket={t}
+                  now={now}
+                  busy={busy === t.uid}
+                  onAction={() => void dismiss(t)}
+                />
+              ))}
+            </div>
           </div>
-          <div className="ep-k-list">
-            {ready.map(t => (
-              <Ticket
-                key={`r-${t.tableId}-${t.uid}`}
-                ticket={t}
-                now={now}
-                busy={busy === t.uid}
-                onAction={() => void act(t)}
-              />
-            ))}
-          </div>
-        </div>
-      )}
+        )}
 
-      <div className="ep-k-lanes">
-        <div>
-          <div className="ep-k-lane-title">
-            Очередь <span>{queued.length}</span>
+        {ready.length > 0 && (
+          // Доска при восьми тикетах выше экрана, а раздача — то, за чем повар
+          // и официант следят чаще всего: она не уезжает вверх при прокрутке
+          <div className="sticky top-0 z-10 rounded-box border-2 border-success bg-success/10 p-3">
+            <div className="mb-2 font-bold">
+              На раздаче · забрать в зал <span className="badge badge-success">{ready.length}</span>
+            </div>
+            <div className="flex flex-col gap-2">
+              {ready.map(t => (
+                <Ticket
+                  key={`r-${t.tableId}-${t.uid}`}
+                  ticket={t}
+                  now={now}
+                  busy={busy === t.uid}
+                  onAction={() => void act(t)}
+                />
+              ))}
+            </div>
           </div>
-          <div className="ep-k-list">
-            {byWave(queued).map(wave => (
-              <div key={wave.key} className={wave.items.length > 1 ? 'ep-k-wave' : undefined}>
-                {wave.items.length > 1 && (
-                  <div className="ep-k-wave-head">
-                    Стол №{wave.items[0].tableId} · {wave.items.length} поз. · отдавать вместе
-                  </div>
-                )}
-                {wave.items.map(t => (
-                  <Ticket key={`${t.tableId}-${t.uid}`} ticket={t} now={now} busy={busy === t.uid} onAction={() => void act(t)} />
-                ))}
-              </div>
-            ))}
-            {queued.length === 0 && <div className="ep-k-empty">Новых позиций нет</div>}
-          </div>
-        </div>
+        )}
 
-        <div>
-          <div className="ep-k-lane-title">
-            В работе <span>{cooking.length}</span>
+        <div className="grid gap-3 lg:grid-cols-2">
+          <div>
+            <div className="mb-2 text-base font-bold">
+              Очередь <span className="badge">{queued.length}</span>
+            </div>
+            <div className="flex flex-col gap-2">
+              {byWave(queued).map(wave => (
+                <div
+                  key={wave.key}
+                  // «Отдавать вместе» должно читаться от плиты: рамка была
+                  // светло-серой по светло-серому, контраст 1.06:1
+                  className={
+                    wave.items.length > 1
+                      ? 'flex flex-col gap-2 rounded-box border-2 border-dashed border-base-content/40 bg-base-content/5 p-2.5'
+                      : undefined
+                  }
+                >
+                  {wave.items.length > 1 && (
+                    <div className="text-sm font-bold uppercase">
+                      Стол №{wave.items[0].tableId} · {wave.items.length} поз. · отдавать вместе
+                    </div>
+                  )}
+                  {wave.items.map(t => (
+                    <Ticket
+                      key={`${t.tableId}-${t.uid}`}
+                      ticket={t}
+                      now={now}
+                      busy={busy === t.uid}
+                      onAction={() => void act(t)}
+                    />
+                  ))}
+                </div>
+              ))}
+              {queued.length === 0 && <div className="py-6 text-center text-base-content/60">Новых позиций нет</div>}
+            </div>
           </div>
-          <div className="ep-k-list">
-            {cooking.map(t => (
-              <Ticket key={`${t.tableId}-${t.uid}`} ticket={t} now={now} busy={busy === t.uid} onAction={() => void act(t)} />
-            ))}
-            {cooking.length === 0 && <div className="ep-k-empty">Ничего не готовится</div>}
+
+          <div>
+            <div className="mb-2 text-base font-bold">
+              В работе <span className="badge">{cooking.length}</span>
+            </div>
+            <div className="flex flex-col gap-2">
+              {cooking.map(t => (
+                <Ticket
+                  key={`${t.tableId}-${t.uid}`}
+                  ticket={t}
+                  now={now}
+                  busy={busy === t.uid}
+                  onAction={() => void act(t)}
+                />
+              ))}
+              {cooking.length === 0 && (
+                <div className="py-6 text-center text-base-content/60">Ничего не готовится</div>
+              )}
+            </div>
           </div>
         </div>
       </div>
