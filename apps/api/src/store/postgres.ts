@@ -84,12 +84,13 @@ export async function createPostgresStore(url?: string): Promise<Store> {
       row = last
     }
 
-    const [guests, lines, payments, tips, calls] = await Promise.all([
+    const [guests, lines, payments, tips, calls, refunds] = await Promise.all([
       tx`select * from guests where table_session_id = ${row.id} order by joined_at`,
       tx`select * from order_lines where table_session_id = ${row.id} order by seq`,
       tx`select * from payments where table_session_id = ${row.id} order by created_at`,
       tx`select * from tips where table_session_id = ${row.id} order by created_at`,
-      tx`select * from calls where table_session_id = ${row.id} and ack_at is null order by created_at`
+      tx`select * from calls where table_session_id = ${row.id} and ack_at is null order by created_at`,
+      tx`select * from refunds where table_session_id = ${row.id} order by created_at`
     ])
 
     const ms = (v: any) => (v ? new Date(v).getTime() : null)
@@ -160,6 +161,16 @@ export async function createPostgresStore(url?: string): Promise<Store> {
       })),
       seq: (lines.at(-1)?.seq ?? 0) + 1,
       overpaid: Number(row.overpaid ?? 0),
+      // Возвраты обязаны переживать перечитывание: без них сервер забывает,
+      // что деньги гостю уже отдали, и предлагает вернуть их снова
+      refunds: refunds.map((r: any) => ({
+        id: r.id,
+        personaId: r.guest_id,
+        amount: Number(r.amount),
+        method: r.method,
+        at: ms(r.created_at) ?? 0,
+        byId: staffExt(r.by_staff_id)
+      })),
       cleanedAt: ms(row.cleaned_at),
       cashIntent: row.cash_intent ?? null,
       db: { tableUuid: tid, sessionUuid: row.id }
@@ -311,6 +322,23 @@ export async function createPostgresStore(url?: string): Promise<Store> {
           closed_with_debt = ${round2(session.closedWithDebt ?? money.remaining)},
           overpaid = ${round2(session.overpaid ?? 0)}
         where id = ${sid} and closed_at is null
+      `
+    }
+
+    // Переплата живёт у ЗАКРЫТОЙ сессии, поэтому апдейт выше (он под
+    // `closed_at is null`) её больше никогда не трогает. Возврат обязан
+    // писаться отдельно — иначе он не переживает перечитывание из БД, и одну
+    // и ту же переплату можно выдать сколько угодно раз.
+    await tx`update table_sessions set overpaid = ${round2(session.overpaid ?? 0)} where id = ${sid}`
+
+    for (const refund of session.refunds ?? []) {
+      await tx`
+        insert into refunds (id, table_session_id, guest_id, amount, method, reason, status, by_staff_id, created_at)
+        values (
+          ${refund.id}, ${sid}, ${refund.personaId}, ${refund.amount}, ${refund.method},
+          'переплата', 'done', ${staffUuid(refund.byId)}, ${new Date(refund.at)}
+        )
+        on conflict (id) do nothing
       `
     }
   }

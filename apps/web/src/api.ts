@@ -236,13 +236,17 @@ export const apiPay = (
     { guest }
   )
 
-/** Вернуть переплату гостю. Только менеджеру: деньги уходят из кассы. */
-export const apiRefund = (table: string, amount: number, method: 'sbp' | 'cash', sessionId: string | null) =>
-  fetch(`/api/t/${encodeURIComponent(table)}/refund`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'x-staff-token': getStaffToken() },
-    body: JSON.stringify({ amount, method, sessionId })
-  }).then(r => r.json())
+/**
+ * Вернуть переплату гостю. Только менеджеру: деньги уходят из кассы наружу,
+ * поэтому идёт через общий клиент — с таймаутом, ApiError и ключом
+ * идемпотентности, чтобы ретрай после обрыва не отдал деньги дважды.
+ */
+export const apiRefund = (amount: number, method: 'sbp' | 'cash', sessionId: string | null, idemKey: string) =>
+  post<{ ok: true; amount: number; left: number }>(
+    'refund',
+    { amount, method, idemKey },
+    { staff: true, sessionId }
+  )
 
 /** «Заплачу наличными»: просьба к официанту, деньги не списываются. */
 export const apiCashIntent = (guest: string, scope: 'own' | 'equal' | 'full') =>

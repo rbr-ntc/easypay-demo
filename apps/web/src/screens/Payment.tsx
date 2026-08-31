@@ -91,15 +91,17 @@ export function Payment() {
 
   const doPay = async () => {
     patch({ payStage: 'processing', payError: null })
-    const paid = await pay(ui.payScope, payKey.current, ui.payMethod)
-    if (paid > 0) {
+    const res = await pay(ui.payScope, payKey.current, ui.payMethod)
+    if (res.paid > 0) {
       payKey.current = newIdemKey() // следующая оплата — новый ключ
       // Чаевые больше не отдельный экран: они на «Спасибо» вместе с чеком
       setTimeout(() => patch({ payStage: 'form', screen: 'done' }), 1400)
-    } else {
-      // Ключ НЕ меняем: повтор идёт тем же — двойного списания не будет
-      patch({ payStage: 'failed', payError: 'Банк не подтвердил оплату' })
+      return
     }
+    // Ключ НЕ меняем: повтор идёт тем же — двойного списания не будет.
+    // Причину показываем настоящую: «банк не подтвердил» и «связь оборвалась»
+    // это разные вещи, и во втором случае деньги могли уйти.
+    patch({ payStage: 'failed', payError: res.error, payUnknown: res.unknown })
   }
 
   if (ui.payStage === 'processing') {
@@ -130,20 +132,39 @@ export function Payment() {
     )
   }
 
-  // Банк отказал. Главное здесь — сказать, что деньги НЕ списаны, и что
-  // повтор пойдёт тем же ключом: иначе гость боится нажать второй раз.
+  // Оплата не прошла. Что именно сказать гостю — зависит от того, ЗНАЕМ ли мы
+  // исход: отказ банка и потерянный ответ требуют разных слов и разных действий.
   if (ui.payStage === 'failed') {
+    /**
+     * Списались деньги или нет — знает снапшот, а не мы. При обрыве связи
+     * платёж мог пройти, и утверждать «деньги не списаны» — врать про чужие
+     * деньги. Если после попытки платить уже нечего, это и был успех.
+     */
+    const settled = totals.myRemaining <= 0.01 && totals.myPaid > 0
     return (
       <div className="ep-screen">
         <div className="ep-scroll flex flex-col gap-4 px-5 pt-6 pb-5">
-          <div className="rounded-box p-5 text-center" style={{ background: '#F6E3DA' }}>
-            <div className="text-[21px] font-extrabold" style={{ color: '#7A2A12' }}>
-              {ui.payError ?? 'Банк не подтвердил оплату'}
+          {settled ? (
+            <div className="rounded-box p-5 text-center" style={{ background: '#DCEDE2' }}>
+              <div className="text-[21px] font-extrabold" style={{ color: '#0E3F2B' }}>
+                Оплата всё-таки прошла
+              </div>
+              <div className="mt-2 text-[15px] font-bold" style={{ color: '#0E3F2B' }}>
+                Ответ потерялся по дороге, но {fmt(totals.myPaid)} уже в счёте — платить ещё раз не нужно
+              </div>
             </div>
-            <div className="mt-2 text-[15px] font-bold" style={{ color: '#7A2A12' }}>
-              Деньги не списаны
+          ) : (
+            <div className="rounded-box p-5 text-center" style={{ background: '#F6E3DA' }}>
+              <div className="text-[21px] font-extrabold" style={{ color: '#7A2A12' }}>
+                {ui.payError ?? 'Оплата не прошла'}
+              </div>
+              <div className="mt-2 text-[15px] font-bold" style={{ color: '#7A2A12' }}>
+                {ui.payUnknown
+                  ? 'Мы не получили ответ. Не платите вторым способом — сначала обновите экран или спросите официанта'
+                  : 'Деньги не списаны'}
+              </div>
             </div>
-          </div>
+          )}
 
           <div className="rounded-box bg-white p-4" style={{ border: '1px solid #E3DCCB' }}>
             <div className="ep-brow mb-3">Попытка</div>
@@ -151,7 +172,7 @@ export function Payment() {
             <Row label="Способ" value={sbp ? 'СБП' : cash ? 'Наличные' : 'Карта'} />
             <Row label="Ключ платежа" value={payKey.current.slice(0, 14) + '…'} mono />
             <div className="mt-3 rounded-field p-3 text-[13px] font-semibold" style={{ background: '#DCEDE2', color: '#0E3F2B' }}>
-              У стола нет второго платежа — счёт не изменился
+              Повтор идёт тем же ключом — двойного платежа не будет
             </div>
           </div>
 
@@ -165,16 +186,28 @@ export function Payment() {
         </div>
 
         <div className="shrink-0 px-5 pt-3 pb-[calc(1.375rem+env(safe-area-inset-bottom))]">
-          <button
-            onClick={() => void doPay()}
-            className="h-15 w-full rounded-field text-[16px] font-extrabold text-white"
-            style={{ background: SBP_GRADIENT }}
-          >
-            Повторить · {fmt(amount)}
-          </button>
-          <p className="mt-2 text-center text-[12px] font-semibold text-muted-soft">
-            Та же попытка — двойного списания не будет
-          </p>
+          {settled ? (
+            <button
+              onClick={() => patch({ payStage: 'form', screen: 'done' })}
+              className="h-15 w-full rounded-field text-[16px] font-extrabold"
+              style={{ background: '#D5F94E', color: '#062119' }}
+            >
+              К чеку
+            </button>
+          ) : (
+            <>
+              <button
+                onClick={() => void doPay()}
+                className="h-15 w-full rounded-field text-[16px] font-extrabold text-white"
+                style={{ background: SBP_GRADIENT }}
+              >
+                Повторить · {fmt(amount)}
+              </button>
+              <p className="mt-2 text-center text-[12px] font-semibold text-muted-soft">
+                Та же попытка — двойного списания не будет
+              </p>
+            </>
+          )}
         </div>
       </div>
     )
@@ -205,9 +238,17 @@ export function Payment() {
             К оплате с вас
           </div>
           <div className="ep-moment ep-sum mt-1 text-[60px] leading-none">{fmt(amount)}</div>
-          {totals.myShare > 0 && (
+          {/* Разбивка честна только пока гость ничего не внёс: иначе под
+              заголовком «К оплате 0 ₽» стояло «1 200 ₽ ваше + 300 ₽ доля
+              общего» и опровергало его же */}
+          {totals.myShare > 0 && totals.myPaid <= 0.01 && (
             <div className="mt-2 text-[13px] font-semibold" style={{ color: '#8CA396' }}>
               {fmt(totals.myOwn)} ваше + {fmt(totals.myShare)} доля общего
+            </div>
+          )}
+          {totals.myPaid > 0.01 && (
+            <div className="ep-sum mt-2 text-[13px] font-semibold" style={{ color: '#8CA396' }}>
+              вы уже внесли {fmt(totals.myPaid)}
             </div>
           )}
 

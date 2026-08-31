@@ -423,7 +423,7 @@ const STAFF_ACTIONS = new Set([
 const GUEST_ACTIONS = new Set([
   'lines', 'remove', 'send', 'pay', 'tip', 'call', 'cancelMine', 'cashIntent', 'cancelCash'
 ])
-const IDEMPOTENT_ACTIONS = new Set(['join', 'lines', 'pay', 'tip'])
+const IDEMPOTENT_ACTIONS = new Set(['join', 'lines', 'pay', 'tip', 'refund'])
 const CALL_REASONS = new Set(['help', 'bill', 'water'])
 const PAY_METHODS = new Set(['sbp', 'card', 'cash'])
 // send говорит mine/all, pay — own/full. Принимаем оба словаря, чтобы разница
@@ -904,10 +904,22 @@ function staffAction(t: TableSession, tableId: string, action: string, body: any
     if (!Number.isFinite(wanted) || wanted <= 0) return fail(400, 'bad amount')
     const amount = round2(Math.min(wanted, overpaid))
 
-    const method: PayMethod = body.method === 'cash' ? 'cash' : 'sbp'
-    // Последний платёж и есть переплата — возвращаем тому, кто её внёс
-    const last = [...t.payments].sort((a, b) => b.at - a.at)[0]
-    const persona = t.personas.find(p => p.id === last?.personaId) ?? null
+    /**
+     * Кому возвращаем: тому, кто заплатил БОЛЬШЕ всех. Переплата рождается
+     * отменой блюда после оплаты, а не порядком платежей, поэтому «последний
+     * плательщик» — неверная эвристика: последним мог внести сосед сто рублей,
+     * а переплатил тот, кто закрыл весь стол.
+     */
+    const paidBy = new Map<string | null, number>()
+    for (const pay of t.payments) paidBy.set(pay.personaId, (paidBy.get(pay.personaId) ?? 0) + pay.amount)
+    const biggest = [...paidBy.entries()].sort((a, b) => b[1] - a[1])[0]
+    const persona = t.personas.find(p => p.id === biggest?.[0]) ?? null
+
+    // Способ возврата по умолчанию — тот же, которым платили: наличную
+    // переплату естественнее вернуть наличными, а не «на карту»
+    const theirMethod = [...t.payments].reverse().find(p => p.personaId === persona?.id)?.method
+    const method: PayMethod =
+      body.method === 'cash' || body.method === 'sbp' ? body.method : theirMethod === 'cash' ? 'cash' : 'sbp'
 
     t.overpaid = round2(overpaid - amount)
     t.refunds = [

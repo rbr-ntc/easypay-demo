@@ -30,7 +30,13 @@ export function SendSheet() {
 
   const send = async () => {
     setSending(true)
-    await sendWave(scope)
+    const ok = await sendWave(scope)
+    // Отправка не прошла — спиннер «Передаём на кухню…» и переход на «Стол»
+    // выглядели бы как успех, а тост об ошибке гость бы уже не связал с ними
+    if (!ok) {
+      setSending(false)
+      return
+    }
     setTimeout(() => {
       // Отправили — возвращаемся на «Стол», где у позиций уже видна стадия
       patch({ sheet: null, screen: 'table' })

@@ -7,14 +7,11 @@
     <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#041712" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <title>EasyPay</title>
-    <!-- Manrope — весь интерфейс, Instrument Serif — только «моменты»:
-         крупная сумма к оплате, выручка смены, «Спасибо», номер стола на тенте -->
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link
-      href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Instrument+Serif&display=swap"
-      rel="stylesheet"
-    />
+    <!-- Шрифты лежат у нас, а не на fonts.googleapis.com: приложение открывают
+         по QR на мобильном интернете в зале, и блокирующий запрос к чужому
+         домену задерживает первый экран. Плюс сторонний запрос с телефона
+         каждого гостя. Тем же правилом живут иконки прогресса. -->
+    <link rel="stylesheet" href="./fonts.css" />
   </head>
   <body>
     <div id="root"></div>

@@ -116,6 +116,16 @@ export function createMemoryStore(): Store {
     if (closedChecks.length > CHECKS_KEPT) closedChecks.pop()
   }
 
+  /** Свести замороженный чек с текущей переплатой сессии после возврата. */
+  function settleOverpaid(session: TableSession) {
+    const check = closedChecks.find(c => c.sessionId === session.sessionId)
+    if (!check) return
+    const left = round2(session.overpaid ?? 0)
+    if (Math.abs(check.overpaid - left) < 0.005) return
+    checkTotals.overpaid = round2(checkTotals.overpaid - (check.overpaid - left))
+    check.overpaid = left
+  }
+
   return {
     kind: 'memory',
 
@@ -133,6 +143,9 @@ export function createMemoryStore(): Store {
       if (session.personas.length > guestsBefore) guestsSeen += session.personas.length - guestsBefore
       // Сессию закрыли этим действием — фиксируем чек, пока состав ещё на руках
       if (wasOpen && session.status === 'closed') rememberCheck(tableId, session)
+      // Переплату вернули: чек и итоги смены заморожены в момент закрытия, и без
+      // сведения зал продолжал бы требовать отдать уже отданные деньги
+      else if (session.status === 'closed') settleOverpaid(session)
       if (session.resetRequested) {
         // Стол освобождается: отменённые позиции оставляем кухне, остальное забываем
         const cancelled = session.lines.filter(l => l.cancelled)
@@ -196,6 +209,7 @@ export function createMemoryStore(): Store {
       // Свод по ВСЕМ чекам смены, включая те, чей состав уже вытеснен из памяти
       return { ...checkTotals }
     },
+
 
     async close() {
       clearInterval(sweeper)

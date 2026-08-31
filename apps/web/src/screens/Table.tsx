@@ -61,16 +61,31 @@ export function Table({ now }: { now: number }) {
   const mineTab = totals.myTotal + totals.myDraft
   const lines = snap.lines
   const personaIds = snap.personas.map(p => p.id)
-  /** «Моё» — свои позиции и общие, в которых я участвую. */
-  const isMine = (l: ServerLine) =>
+  /**
+   * «Моё» среди ОТПРАВЛЕННОГО — свои позиции и общие, в которых я участвую.
+   * Доля общего фиксируется в момент отправки (`sharedWith`), поэтому до
+   * отправки общего «моего» не существует.
+   */
+  const isMineSent = (l: ServerLine) =>
     l.personaId === me.id || (l.shared && sharersOf(l as any, personaIds).includes(me.id))
 
   // В одиночку выбора нет: «моё» и «стол» — одно и то же
   const scope: 'mine' | 'all' = snap.personas.length > 1 ? ui.tableTab : 'mine'
-  const shown = scope === 'mine' ? lines.filter(isMine) : lines
-  const draft = shown.filter(l => !l.sent && !l.cancelled)
-  const sent = shown.filter(l => l.sent && !l.cancelled)
-  const draftSum = draft.reduce((s, l) => s + l.price * l.qty, 0)
+  const live = lines.filter(l => !l.cancelled)
+
+  /**
+   * Черновик «моё» — только собственные позиции. У неотправленной общей
+   * позиции `sharedWith` пуст, и `sharersOf` считает участниками весь стол:
+   * чужой общий стейк попадал ко мне в черновик целой ценой, а кнопка
+   * «Отправить на кухню» его не отправляла — сервер шлёт только мои строки.
+   */
+  const draft = live.filter(l => !l.sent && (scope === 'all' || l.personaId === me.id))
+  const sent = live.filter(l => l.sent && (scope === 'all' || isMineSent(l)))
+  // Сумму черновика считает сервер: клиент её только показывает
+  const draftSum = scope === 'all' ? totals.draftTotal : totals.myDraft
+
+  // Отменённое не исчезает молча: гость должен узнать, что блюдо сняли и почему
+  const dropped = lines.filter(l => l.cancelled && (scope === 'all' || l.personaId === me.id))
 
   const nameOf = (pid: string) => snap.personas.find(p => p.id === pid)?.name ?? '?'
   const openedFor = snap.openedAt ? fmtDur(now - snap.openedAt) : null
@@ -268,6 +283,29 @@ export function Table({ now }: { now: number }) {
             человеку, который ещё ждёт свой заказ, — раздражать его. */}
         {!ui.upsellShown && sent.some(l => l.served) && <Upsell />}
 
+        {dropped.length > 0 && (
+          <div className="rounded-box bg-white p-4" style={{ border: '1.5px solid #DFD6C3' }}>
+            <div className="ep-brow mb-2.5">Снято с заказа</div>
+            {dropped.map(l => {
+              const d = findDish(l.dishId)
+              return (
+                <div key={l.uid} className="flex items-baseline justify-between gap-3 py-1.5">
+                  <span className="text-[14px] font-semibold text-muted line-through">
+                    {d?.name ?? l.dishId}
+                    {l.qty > 1 ? ` ×${l.qty}` : ''}
+                  </span>
+                  <span className="text-[13px] font-semibold text-muted-soft">
+                    {l.cancelReason ?? 'отменено'}
+                  </span>
+                </div>
+              )
+            })}
+            <div className="mt-2 text-[12px] font-semibold text-muted-soft">
+              В счёт не входит — платить за это не нужно
+            </div>
+          </div>
+        )}
+
         {snap.personas.length > 1 && (
           <div className="rounded-box bg-white p-4" style={{ border: '1px solid #E3DCCB' }}>
             <div className="ep-brow mb-3">Кто что должен</div>
@@ -343,7 +381,15 @@ export function Table({ now }: { now: number }) {
         </button>
         <button
           disabled={totals.myRemaining <= 0.01 && totals.remaining <= 0.01}
-          onClick={() => patch({ screen: 'payment', payStage: 'form' })}
+          // Своё оплачено, а по столу остаток: открываем оплату сразу за стол,
+          // иначе гость упирается в неактивную кнопку «Оплатить · 0 ₽»
+          onClick={() =>
+            patch({
+              screen: 'payment',
+              payStage: 'form',
+              payScope: totals.myRemaining > 0.01 ? 'own' : 'full'
+            })
+          }
           className="h-14 flex-1 rounded-field text-[16px] font-extrabold disabled:opacity-45"
           style={{ background: '#D5F94E', color: '#062119', boxShadow: '0 12px 26px -14px rgba(6,33,25,.9)' }}
         >

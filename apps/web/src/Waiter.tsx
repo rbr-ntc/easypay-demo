@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { HALL_LABEL, WAITER_NAME } from './data'
-import { apiRefund, tableId } from './api'
-import { useStore } from './store'
+import { ApiError, apiRefund, tableId } from './api'
+import { humanError, useStore } from './store'
+import { newIdemKey } from './keys'
 import { fmt } from './format'
 import { getStaffToken } from './staff'
 import { GuestList } from './waiter/GuestList'
@@ -139,9 +140,11 @@ function ConfirmDialog({ ask, onClose }: { ask: AskDialog; onClose: () => void }
  * смены, но отдать деньги было нечем: управляющая видела «вернуть гостям
  * 640 ₽» и не могла закрыть этот долг в системе.
  */
-function RefundCard({ table, snap }: { table: string; snap: any }) {
+function RefundCard({ snap }: { snap: any }) {
   const { toast } = useStore()
   const [busy, setBusy] = useState(false)
+  // Ключ живёт до успешного возврата: ретрай после обрыва не отдаст деньги дважды
+  const refundKey = useRef(newIdemKey())
   const left = snap?.totals?.toRefund ?? 0
   if (left <= 0.01) return null
 
@@ -150,10 +153,13 @@ function RefundCard({ table, snap }: { table: string; snap: any }) {
   const give = async (method: 'sbp' | 'cash') => {
     setBusy(true)
     try {
-      const r = await apiRefund(table, left, method, snap.sessionId)
-      toast(r?.ok ? `Возвращено ${fmt(r.amount)}` : 'Не получилось вернуть — обновите экран')
-    } catch {
-      toast('Нет связи с сервером — возврат не проведён')
+      const r = await apiRefund(left, method, snap.sessionId, refundKey.current)
+      refundKey.current = newIdemKey()
+      toast(`Возвращено ${fmt(r.amount)}`)
+    } catch (err) {
+      // Причину называем: 403 роли, 409 «возвращать нечего» и обрыв связи —
+      // три разные ситуации, и «обновите экран» подходит только к одной
+      toast(err instanceof ApiError ? humanError(err) : 'Нет связи с сервером — возврат не проведён')
     }
     setBusy(false)
   }
@@ -434,7 +440,7 @@ export function Waiter() {
         <div>
           {/* Гость с деньгами в руке — это срочнее всего остального на экране */}
           <CashRequest table={tableId ?? ''} snap={snap} onTaken={() => {}} />
-          {may('refund') && <RefundCard table={tableId ?? ''} snap={snap} />}
+          {may('refund') && <RefundCard snap={snap} />}
           <GuestList personas={personas} lines={lines} totals={totals} tableOpen={isOpen} />
         </div>
         <div>

@@ -33,8 +33,13 @@ export function Done() {
   const finish = async () => {
     if (busy) return
     setBusy(true)
-    // Чаевые уходят отдельной строкой — официант видит их у себя на экране
-    if (tip > 0) await leaveTip(tip, tipKey.current)
+    // Чаевые уходят отдельной строкой — официант видит их у себя на экране.
+    // Если не дошло, гость не должен уехать с ощущением, что деньги отданы:
+    // тост об ошибке он бы уже не связал с уходом на меню.
+    if (tip > 0 && (await leaveTip(tip, tipKey.current)) <= 0) {
+      setBusy(false)
+      return
+    }
     patch({ screen: 'menu', tip: '10', tipCustom: 0 })
   }
 

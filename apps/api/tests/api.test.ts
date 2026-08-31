@@ -1084,7 +1084,9 @@ test('стол после закрытия снова можно убрать, �
 
   const hall = await (await fetch(`${base}/api/hall`, { headers: { 'x-staff-token': TOKEN } })).json()
   const card = hall.tables.find(t => t.id === table)
-  assert.equal(card.cleanedAt > closed.closedAt, true, 'метка уборки от нового цикла')
+  // Не «строго больше»: close и clean попадают в одну миллисекунду примерно
+  // раз на десять прогонов, и тест краснел на ровном месте
+  assert.equal(card.cleanedAt >= closed.closedAt, true, 'метка уборки от нового цикла')
 })
 
 test('одновременные нажатия с одним ключом дают одну позицию', async () => {

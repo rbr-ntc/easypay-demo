@@ -73,6 +73,8 @@ export interface UiState {
   payStage: PayStage
   /** Что именно ответил банк — гостю нужно объяснение, а не «попробуйте ещё». */
   payError: string | null
+  /** Ответа не было вовсе: платёж мог пройти, и говорить обратное нельзя. */
+  payUnknown: boolean
   /** Сегмент на экране «Стол»: свой заказ или весь стол. */
   tableTab: 'mine' | 'all'
   /** Апселл показывается один раз после первой подачи, а не во время ожидания. */
@@ -99,6 +101,7 @@ const initialUi: UiState = {
   payMethod: 'sbp',
   payStage: 'form',
   payError: null,
+  payUnknown: false,
   tableTab: 'mine',
   upsellShown: false,
   lastPaid: 0,
@@ -246,6 +249,16 @@ export function tipAmount(ui: UiState): number {
   return Math.round((ui.lastPaid * Number(ui.tip)) / 100)
 }
 
+/**
+ * Чем закончилась оплата. `unknown: true` — сервер не ответил: платёж мог
+ * пройти, и утверждать гостю «деньги не списаны» в этом случае нельзя.
+ */
+export interface PayResult {
+  paid: number
+  error: string | null
+  unknown: boolean
+}
+
 /** Чем закончилась попытка заказать: успехом, аллергеном или отказом сервера. */
 export interface AddResult {
   ok: boolean
@@ -284,9 +297,15 @@ interface Ctx {
   askCash: (scope: PayScope) => Promise<number>
   /** Передумал: снять просьбу, чтобы официант не шёл за деньгами зря. */
   cancelCash: () => Promise<void>
-  sendWave: (scope: 'mine' | 'all') => Promise<void>
-  /** Способ передаём серверу: иначе в платеже оседает «СБП» на любой выбор гостя. */
-  pay: (scope: PayScope, idemKey: string, method?: PayMethod) => Promise<number>
+  /** Возвращает, дошло ли до кухни: интерфейс не должен праздновать отказ. */
+  sendWave: (scope: 'mine' | 'all') => Promise<boolean>
+  /**
+   * Способ передаём серверу: иначе в платеже оседает «СБП» на любой выбор.
+   * Возвращает исход целиком: экран отказа обязан знать, ЧТО ответил сервер,
+   * — «банк не подтвердил» и «связь оборвалась» это разные вещи, и во втором
+   * случае деньги могли списаться.
+   */
+  pay: (scope: PayScope, idemKey: string, method?: PayMethod) => Promise<PayResult>
   leaveTip: (amount: number, idemKey: string) => Promise<number>
   callWaiter: (reason: 'help' | 'bill' | 'water', note?: string) => Promise<void>
   forgetMe: () => void // «Я другой гость» — телефон передали новому человеку
@@ -391,14 +410,23 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     }
   }, [snap, identity, me, streamKey])
 
-  // Стол закрыли, пока гость был в потоке — мягко возвращаем в начало
+  // Стол закрыли ИЛИ сбросили, пока гость был в потоке — мягко возвращаем в
+  // начало. Раньше смотрели только на статус, а `reset` открывает новую сессию
+  // со статусом open: гость терял личность и оставался на экране «Стол», где
+  // без личности не рендерится вообще ничего — пустой белый лист до перезагрузки.
+  const lostMyself = !!snap && snap.status === 'open' && !me && ui.screen !== 'menu'
   useEffect(() => {
+    if (lostMyself) {
+      setUi(prev => ({ ...initialUi, toast: prev.toast }))
+      toastRef.current?.('Стол начали заново — можно заказывать')
+      return
+    }
     if (snap?.status === 'closed' && ui.screen !== 'menu' && ui.screen !== 'done') {
       setUi(prev => ({ ...initialUi, toast: prev.toast }))
       toastRef.current?.('Стол закрыт. Спасибо, что были с нами!')
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [snap?.status])
+  }, [snap?.status, lostMyself])
 
   const patch = (p: Partial<UiState>) => setUi(prev => ({ ...prev, ...p }))
 
@@ -509,16 +537,24 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       }, undefined),
     sendWave: scope =>
       guard(async () => {
-        if (!guestToken()) return
+        if (!guestToken()) return false
         await apiSend(guestToken()!, scope)
-      }, undefined),
-    pay: (scope, idemKey, method) =>
-      guard(async () => {
-        if (!guestToken()) return 0
+        return true
+      }, false),
+    pay: async (scope, idemKey, method) => {
+      if (!guestToken()) return { paid: 0, error: 'guest token required', unknown: false }
+      try {
         const r = await apiPay(guestToken()!, scope, idemKey, method)
         patch({ lastPaid: r.amount, lastReceipt: r.receipt ?? null })
-        return r.amount
-      }, 0),
+        return { paid: r.amount, error: null, unknown: false }
+      } catch (err) {
+        const api = err instanceof ApiError ? err : null
+        // Таймаут и обрыв: запрос ушёл, ответа нет. Платёж мог пройти —
+        // говорить «деньги не списаны» здесь было бы враньём про чужие деньги.
+        const unknown = !api || api.status === 0 || api.status >= 500
+        return { paid: 0, error: api ? humanError(api) : 'Не получилось — проверьте связь', unknown }
+      }
+    },
     leaveTip: (amount, idemKey) =>
       guard(async () => {
         if (!guestToken() || amount <= 0) return 0

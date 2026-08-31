@@ -88,13 +88,19 @@ export function Menu() {
     ? CATEGORIES.flatMap(c => (MENU[c] ?? []).filter(d => matches(d, query, c)))
     : (MENU[cat] ?? [])
 
-  const mine = me ? snap?.lines.filter(l => l.personaId === me.id || l.shared) ?? [] : []
+  // Отменённое не считаем: иначе футер меню говорил «1 блюдо», а экран
+  // «Стол» на тот же вопрос отвечал «Пока пусто»
+  const mine = me ? (snap?.lines ?? []).filter(l => !l.cancelled && (l.personaId === me.id || l.shared)) : []
   const draftCount = mine.filter(l => !l.sent).length
   const neighbours = (snap?.personas ?? []).filter(p => p.id !== me?.id)
   const myAllergies = me?.allergies ?? []
 
   /** Блюдо, которое лично этому гостю нельзя: не «возможно», а по его списку. */
   const forbidden = (dish: Dish) => possibleAllergens(dish).filter(a => myAllergies.includes(a))
+
+  // Вызов — МОЙ, а не первый в очереди стола: чужая просьба о воде гасила
+  // кнопку у соседа, которому надо сказать про аллергию, и он молча ждал
+  const myCall = (snap?.calls ?? []).some(c => c.personaId === me?.id)
 
   return (
     <div className="ep-screen">
@@ -121,12 +127,12 @@ export function Menu() {
           </div>
           <button
             aria-label="Позвать официанта"
-            disabled={!me || !!snap?.call}
+            disabled={!me || myCall}
             onClick={() => patch({ sheet: 'call' })}
             className="h-11 shrink-0 rounded-full px-4 text-[13px] font-bold disabled:opacity-45"
             style={{ border: '1px solid rgba(213,249,78,.35)', background: 'rgba(213,249,78,.12)', color: '#D5F94E' }}
           >
-            {snap?.call ? 'Идёт ✓' : 'Официант'}
+            {myCall ? 'Идёт ✓' : 'Официант'}
           </button>
         </div>
 
