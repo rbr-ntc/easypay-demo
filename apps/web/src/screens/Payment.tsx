@@ -2,18 +2,22 @@ import { useEffect, useRef, useState } from 'react'
 import { newIdemKey } from '../keys'
 import { SBP_GRADIENT } from '../data'
 import { Avatar } from '../avatars'
-import { GhostButton, Mono, PrimaryButton, StickyFooter, WarnBanner } from '../ui'
 import { useStore } from '../store'
 import type { PayScope, PayMethod } from '../store'
 import { fmt } from '../format'
 
-const METHODS: { id: PayMethod; label: string; glyph: string }[] = [
-  { id: 'card', label: 'Банковская карта', glyph: '▭' },
-  { id: 'tpay', label: 'T-Pay', glyph: 'T' },
-  { id: 'sber', label: 'SberPay', glyph: 'S' },
-  { id: 'mir', label: 'Mir Pay', glyph: 'M' }
+const METHODS: { id: PayMethod; label: string; sub: string; glyph: string }[] = [
+  { id: 'card', label: 'Карта', sub: 'Ввод реквизитов', glyph: '▭' },
+  { id: 'cash', label: 'Наличными официанту', sub: 'Он подойдёт и подтвердит', glyph: '₽' }
 ]
 
+const SCOPE_LABEL: Record<PayScope, string> = {
+  own: 'Своё',
+  equal: 'Поровну',
+  full: 'Весь стол'
+}
+
+/** Оплата по СБП: код живёт пять минут, дальше его надо перевыпустить. */
 function QrStage({ amount, onBack, onPaid }: { amount: number; onBack: () => void; onPaid: () => void }) {
   const [ttl, setTtl] = useState(299)
   useEffect(() => {
@@ -24,42 +28,49 @@ function QrStage({ amount, onBack, onPaid }: { amount: number; onBack: () => voi
   const ss = String(ttl % 60).padStart(2, '0')
 
   return (
-    <div className="flex flex-1 flex-col px-6 pt-4 pb-[calc(1.625rem+env(safe-area-inset-bottom))]">
-      <div className="mb-2 flex items-center gap-3">
-        <button className="btn btn-circle" onClick={onBack} aria-label="Назад">
+    <div className="ep-forest flex flex-1 flex-col px-5 pt-4 pb-[calc(1.375rem+env(safe-area-inset-bottom))]">
+      <div className="flex items-center gap-3">
+        <button
+          aria-label="Назад"
+          onClick={onBack}
+          className="size-11 shrink-0 rounded-full text-lg font-extrabold"
+          style={{ border: '1px solid rgba(250,245,234,.22)' }}
+        >
           ←
         </button>
-        <div className="text-lg font-semibold">Оплата по СБП</div>
+        <div className="text-[20px] font-extrabold tracking-tight">Оплата по СБП</div>
       </div>
+
       <div className="flex flex-1 flex-col items-center justify-center text-center">
-        {/* Плашка СБП — фирменный знак платёжной системы, поэтому цвет
-            фиксированный и темой не управляется */}
-        <div
-          className="mb-4 flex h-6 w-15 items-center justify-center rounded-selector text-xs font-bold text-white"
-          style={{ background: SBP_GRADIENT }}
-        >
-          СБП
+        {/* QR всегда чёрный на белом: его сканируют камерой, в том числе с бумаги */}
+        <div className="rounded-[22px] bg-[#FAF5EA] p-4">
+          <div
+            className="size-52"
+            style={{
+              backgroundImage: 'repeating-conic-gradient(#062119 0% 25%, #fff 0% 50%)',
+              backgroundSize: '17px 17px'
+            }}
+          />
         </div>
-        <div className="card mb-4 bg-base-100 shadow-lg">
-          <div className="card-body p-4">
-            <div
-              className="size-50 rounded-field border-8 border-white"
-              style={{
-                backgroundImage: 'repeating-conic-gradient(currentColor 0% 25%, #fff 0% 50%)',
-                backgroundSize: '17px 17px'
-              }}
-            />
-          </div>
+        <div className="ep-moment ep-sum mt-5 text-[52px] leading-none">{fmt(amount)}</div>
+        <div className="mt-2 text-[14px] font-semibold" style={{ color: '#8CA396' }}>
+          Наведите камеру или откройте приложение банка
         </div>
-        <div className="mb-1.5 text-4xl font-light tracking-tight">{fmt(amount)}</div>
-        <div className="mb-1 text-sm text-base-content/60">Наведите камеру или откройте приложение банка</div>
-        <div className="font-mono text-xs text-base-content/60">
+        <div className="ep-sum mt-1 font-mono text-[13px]" style={{ color: '#8CA396' }}>
           Код действителен {mm}:{ss}
         </div>
       </div>
-      <PrimaryButton className="border-none text-white" style={{ background: SBP_GRADIENT }} onClick={onPaid}>
+
+      <button
+        onClick={onPaid}
+        className="h-15 w-full rounded-field text-[16px] font-extrabold text-white"
+        style={{ background: SBP_GRADIENT }}
+      >
         Открыть приложение банка
-      </PrimaryButton>
+      </button>
+      <button onClick={onBack} className="mt-2 h-11 text-[14px] font-bold" style={{ color: '#8CA396' }}>
+        Оплатить другим способом
+      </button>
     </div>
   )
 }
@@ -69,59 +80,43 @@ export function Payment() {
   // Ключ живёт до успешной оплаты: повтор после обрыва связи не создаёт второй платёж
   const payKey = useRef(newIdemKey())
   if (!me || !snap) return null
+
   const amount = totals.scopeAmount(ui.payScope)
   const sbp = ui.payMethod === 'sbp'
   const cash = ui.payMethod === 'cash'
-  // Просьба о наличных — это состояние стола, и гость обязан его видеть
   const myCashRequest = snap.cashIntent?.personaId === me.id ? snap.cashIntent : null
-
-  // Кто уже оплатил (реальные платежи других гостей)
+  const alone = totals.participants <= 1
+  const scopes: PayScope[] = alone ? ['own'] : ['own', 'equal', 'full']
   const otherPayments = snap.payments.filter(p => p.personaId !== me.id)
 
-  const alone = totals.participants <= 1
-  const SCOPES: { id: PayScope; label: string; sub: string; disabled?: boolean }[] = alone
-    ? [
-        {
-          id: 'own',
-          label: 'Ваш заказ',
-          sub: totals.sharedTotal > 0 ? `${fmt(totals.myOwn)} блюда + ${fmt(totals.myShare)} общие` : 'вы один за столом',
-          disabled: totals.scopeAmount('own') <= 0
-        }
-      ]
-    : [
-        {
-          id: 'own',
-          label: 'Оплатить своё',
-          sub: `${fmt(totals.myOwn)} ваше + ${fmt(totals.myShare)} доля общего`,
-          disabled: totals.scopeAmount('own') <= 0
-        },
-        {
-          id: 'equal',
-          label: 'Разделить поровну',
-          sub: `${fmt(totals.remaining)} на ${totals.participants} гостей`
-        },
-        { id: 'full', label: 'Оплатить весь стол', sub: 'весь неоплаченный остаток' }
-      ]
-
   const doPay = async () => {
-    patch({ payStage: 'processing' })
+    patch({ payStage: 'processing', payError: null })
     const paid = await pay(ui.payScope, payKey.current, ui.payMethod)
     if (paid > 0) {
       payKey.current = newIdemKey() // следующая оплата — новый ключ
       // Чаевые больше не отдельный экран: они на «Спасибо» вместе с чеком
       setTimeout(() => patch({ payStage: 'form', screen: 'done' }), 1400)
     } else {
-      patch({ payStage: 'form' })
+      // Ключ НЕ меняем: повтор идёт тем же — двойного списания не будет
+      patch({ payStage: 'failed', payError: 'Банк не подтвердил оплату' })
     }
   }
 
   if (ui.payStage === 'processing') {
     return (
-      <div className="ep-screen items-center justify-center gap-5">
-        <span className="loading loading-spinner loading-xl" />
-        <div className="text-center">
-          <div className="mb-1 text-xl font-semibold">Проводим оплату…</div>
-          <div className="text-sm text-base-content/60">Не закрывайте экран</div>
+      <div className="ep-screen ep-forest items-center justify-center gap-6 px-8 text-center">
+        <div className="relative flex size-24 items-center justify-center">
+          <span
+            className="ep-pulse absolute inset-0 rounded-full"
+            style={{ border: '2px solid rgba(213,249,78,.4)' }}
+          />
+          <span className="loading loading-spinner loading-lg" style={{ color: '#D5F94E' }} />
+        </div>
+        <div>
+          <div className="text-[21px] font-extrabold">Проводим оплату…</div>
+          <div className="mt-1.5 text-[14px] font-semibold" style={{ color: '#8CA396' }}>
+            Не закрывайте экран
+          </div>
         </div>
       </div>
     )
@@ -135,170 +130,283 @@ export function Payment() {
     )
   }
 
-  return (
-    <div className="ep-screen">
-      <div className="ep-scroll px-5 pt-3.5 pb-5">
-        <div className="mb-4 text-2xl font-bold tracking-tight">Оплата</div>
-
-        {otherPayments.length > 0 && (
-          <div className="mb-4">
-            <WarnBanner>
-              <Avatar animal={snap.personas.find(p => p.id === otherPayments[0].personaId)?.animal ?? 'fox'} size={26} />
-              <span className="text-sm leading-snug">
-                {otherPayments
-                  .map(p => `${snap.personas.find(x => x.id === p.personaId)?.name ?? '?'} — ${fmt(p.amount)}`)
-                  .join(', ')}{' '}
-                уже оплачено. Осталось <b>{fmt(totals.remaining)}</b>
-              </span>
-            </WarnBanner>
+  // Банк отказал. Главное здесь — сказать, что деньги НЕ списаны, и что
+  // повтор пойдёт тем же ключом: иначе гость боится нажать второй раз.
+  if (ui.payStage === 'failed') {
+    return (
+      <div className="ep-screen">
+        <div className="ep-scroll flex flex-col gap-4 px-5 pt-6 pb-5">
+          <div className="rounded-box p-5 text-center" style={{ background: '#F6E3DA' }}>
+            <div className="text-[21px] font-extrabold" style={{ color: '#7A2A12' }}>
+              {ui.payError ?? 'Банк не подтвердил оплату'}
+            </div>
+            <div className="mt-2 text-[15px] font-bold" style={{ color: '#7A2A12' }}>
+              Деньги не списаны
+            </div>
           </div>
-        )}
 
-        <Mono className="mb-2">Что оплачиваем</Mono>
-        {/* Радиокнопки, а не кликабельные div: выбор «за что платим» обязан
-            работать с клавиатуры и читаться скринридером — на экране, где
-            списываются деньги, это была единственная настоящая кнопка внизу */}
-        <div className="mb-5 flex flex-col gap-2.5">
-          {SCOPES.map(o => {
-            const active = o.id === ui.payScope
-            return (
-              <label
-                key={o.id}
-                className={`flex cursor-pointer items-center gap-3 rounded-box border bg-base-100 p-3.5 ${
-                  active ? 'border-primary border-2' : 'border-base-300'
-                } ${o.disabled ? 'cursor-not-allowed opacity-45' : ''}`}
-              >
-                <input
-                  type="radio"
-                  name="pay-scope"
-                  className="radio radio-primary"
-                  checked={active}
-                  disabled={o.disabled}
-                  onChange={() => patch({ payScope: o.id })}
-                />
-                <div className="min-w-0 flex-1">
-                  <div className="font-semibold">{o.label}</div>
-                  <div className="mt-0.5 text-xs text-base-content/60">{o.disabled ? 'уже оплачено' : o.sub}</div>
-                </div>
-                <span className="font-semibold">{fmt(totals.scopeAmount(o.id))}</span>
-              </label>
-            )
-          })}
+          <div className="rounded-box bg-white p-4" style={{ border: '1px solid #E3DCCB' }}>
+            <div className="ep-brow mb-3">Попытка</div>
+            <Row label="Сумма" value={fmt(amount)} />
+            <Row label="Способ" value={sbp ? 'СБП' : cash ? 'Наличные' : 'Карта'} />
+            <Row label="Ключ платежа" value={payKey.current.slice(0, 14) + '…'} mono />
+            <div className="mt-3 rounded-field p-3 text-[13px] font-semibold" style={{ background: '#DCEDE2', color: '#0E3F2B' }}>
+              У стола нет второго платежа — счёт не изменился
+            </div>
+          </div>
+
+          <button
+            onClick={() => patch({ payStage: 'form' })}
+            className="h-13 rounded-field text-[15px] font-bold"
+            style={{ border: '1px solid #DFD6C3' }}
+          >
+            Выбрать другой способ
+          </button>
         </div>
 
-        <Mono className="mb-2">Способ оплаты</Mono>
-        <div className="flex flex-col gap-2.5">
-          <label
-            className={`flex cursor-pointer items-center gap-3 rounded-box border bg-base-100 p-3.5 ${
-              sbp ? 'border-primary border-2' : 'border-base-300'
-            }`}
+        <div className="shrink-0 px-5 pt-3 pb-[calc(1.375rem+env(safe-area-inset-bottom))]">
+          <button
+            onClick={() => void doPay()}
+            className="h-15 w-full rounded-field text-[16px] font-extrabold text-white"
+            style={{ background: SBP_GRADIENT }}
           >
-            <input
-              type="radio"
-              name="pay-method"
-              className="radio radio-primary"
-              checked={sbp}
-              onChange={() => patch({ payMethod: 'sbp' })}
-            />
-            <div
-              className="flex size-11 shrink-0 items-center justify-center rounded-field text-sm font-bold text-white"
-              style={{ background: SBP_GRADIENT }}
-            >
-              СБП
-            </div>
-            <div className="min-w-0 flex-1">
-              <div className="flex items-center gap-2">
-                <span className="font-semibold">СБП</span>
-                <span className="badge badge-xs badge-secondary">Рекомендуем</span>
-              </div>
-              <div className="mt-0.5 text-xs text-base-content/60">Оплата по QR или кнопке банка</div>
-            </div>
-          </label>
+            Повторить · {fmt(amount)}
+          </button>
+          <p className="mt-2 text-center text-[12px] font-semibold text-muted-soft">
+            Та же попытка — двойного списания не будет
+          </p>
+        </div>
+      </div>
+    )
+  }
 
-          {/* Наличные телефон принять не может: их берёт человек. Но выбор
-              способа и вызов официанта — разные шаги: тап выбирает наличные,
-              а зовёт официанта только кнопка внизу. Раньше касание строки
-              мгновенно отправляло просьбу, и гость об этом даже не узнавал. */}
-          <label
-            className={`flex cursor-pointer items-center gap-3 rounded-box border bg-base-100 p-3.5 ${
-              cash ? 'border-primary border-2' : 'border-base-300'
-            }`}
-          >
-            <input
-              type="radio"
-              name="pay-method"
-              className="radio radio-primary"
-              checked={cash}
-              onChange={() => patch({ payMethod: 'cash' })}
-            />
-            <div className="flex size-9 shrink-0 items-center justify-center rounded-field bg-base-200 font-semibold">
-              ₽
-            </div>
-            <div className="flex-1">
-              <div className="font-medium">Заплачу наличными</div>
-              <div className="mt-0.5 text-xs text-base-content/60">позовём официанта — он примет деньги</div>
-            </div>
-          </label>
+  return (
+    <div className="ep-screen">
+      <div className="flex shrink-0 items-center gap-3 px-5 pt-4 pb-2">
+        <button
+          aria-label="Назад к столу"
+          onClick={() => patch({ screen: 'table' })}
+          className="size-11 shrink-0 rounded-full text-lg font-extrabold"
+          style={{ border: '1.5px solid #DFD6C3' }}
+        >
+          ←
+        </button>
+        <div className="text-[20px] font-extrabold tracking-tight">Оплата</div>
+      </div>
 
-          {myCashRequest && (
-            <div role="alert" className="alert alert-warning alert-soft flex-col items-start">
-              <div className="font-semibold">Официант идёт за наличными · {fmt(myCashRequest.amount)}</div>
-              <div className="text-sm">Приготовьте деньги. Если передумали — можно оплатить телефоном.</div>
-              <GhostButton className="btn-sm" onClick={() => void cancelCash()}>
-                Передумал, заплачу телефоном
-              </GhostButton>
+      <div className="ep-scroll px-5 pt-2 pb-5">
+        {/* Сумма, за которой гость сюда и пришёл — «момент» засечками */}
+        <div className="ep-forest relative overflow-hidden rounded-[26px] px-5 pt-6 pb-5.5 text-center">
+          <div
+            className="pointer-events-none absolute -top-17 -right-12 size-45 rounded-full"
+            style={{ background: 'rgba(213,249,78,.14)', filter: 'blur(6px)' }}
+          />
+          <div className="text-[14px] font-semibold" style={{ color: '#8CA396' }}>
+            К оплате с вас
+          </div>
+          <div className="ep-moment ep-sum mt-1 text-[60px] leading-none">{fmt(amount)}</div>
+          {totals.myShare > 0 && (
+            <div className="mt-2 text-[13px] font-semibold" style={{ color: '#8CA396' }}>
+              {fmt(totals.myOwn)} ваше + {fmt(totals.myShare)} доля общего
             </div>
           )}
 
-          {METHODS.map(m => (
-            <label
-              key={m.id}
-              className={`flex cursor-pointer items-center gap-3 rounded-box border bg-base-100 p-3.5 ${
-                ui.payMethod === m.id ? 'border-primary border-2' : 'border-base-300'
-              }`}
+          {otherPayments.length > 0 && (
+            <div
+              className="mt-4 flex items-center gap-2.5 rounded-field px-3.5 py-3 text-left"
+              style={{ background: 'rgba(250,245,234,.08)', border: '1px solid rgba(250,245,234,.14)' }}
             >
-              <input
-                type="radio"
-                name="pay-method"
-                className="radio radio-primary"
-                checked={ui.payMethod === m.id}
-                onChange={() => patch({ payMethod: m.id })}
+              <Avatar
+                animal={snap.personas.find(p => p.id === otherPayments[0].personaId)?.animal ?? 'fox'}
+                size={32}
               />
-              <div className="flex size-9 shrink-0 items-center justify-center rounded-field bg-base-200 font-semibold">
-                {m.glyph}
+              <div className="text-[13px] leading-snug font-semibold" style={{ color: '#C6D5CC' }}>
+                {otherPayments
+                  .map(p => `${snap.personas.find(x => x.id === p.personaId)?.name ?? 'Гость'} внёс ${fmt(p.amount)}`)
+                  .join(', ')}{' '}
+                · по столу осталось{' '}
+                <b className="ep-sum" style={{ color: '#D5F94E' }}>
+                  {fmt(totals.remaining)}
+                </b>
               </div>
-              <span className="flex-1 font-medium">{m.label}</span>
-            </label>
+            </div>
+          )}
+        </div>
+
+        {!alone && (
+          <>
+            <div className="ep-brow mt-5 mb-2.5">Платите за</div>
+            {/* В каждом сегменте своя сумма — это и есть списываемое: считает
+                сервер, клиент только показывает */}
+            <div className="flex gap-2 rounded-[18px] p-1.5" style={{ background: '#F1EBDD' }}>
+              {scopes.map(s => {
+                const active = s === ui.payScope
+                return (
+                  <button
+                    key={s}
+                    onClick={() => patch({ payScope: s })}
+                    className="flex h-16 flex-1 flex-col items-center justify-center gap-0.5 rounded-[14px]"
+                    style={active ? { background: '#D5F94E' } : undefined}
+                  >
+                    <span
+                      className="text-[15px] font-extrabold"
+                      style={{ color: active ? '#062119' : '#4A5B51' }}
+                    >
+                      {SCOPE_LABEL[s]}
+                    </span>
+                    <span
+                      className="ep-sum text-[13px] font-bold"
+                      style={{ color: active ? '#2C4A3C' : '#4A5B51' }}
+                    >
+                      {fmt(totals.scopeAmount(s))}
+                    </span>
+                  </button>
+                )
+              })}
+            </div>
+          </>
+        )}
+
+        <div className="ep-brow mt-5.5 mb-2.5">Чем платите</div>
+        <div className="flex flex-col gap-2.5">
+          <MethodRow
+            active={sbp}
+            onSelect={() => patch({ payMethod: 'sbp' })}
+            glyph="СБП"
+            glyphStyle={{ background: SBP_GRADIENT, color: '#fff', fontSize: 13 }}
+            label="СБП"
+            sub="Откроется приложение банка"
+            badge="быстрее всего"
+          />
+          {METHODS.map(m => (
+            <MethodRow
+              key={m.id}
+              active={ui.payMethod === m.id}
+              onSelect={() => patch({ payMethod: m.id })}
+              glyph={m.glyph}
+              glyphStyle={{ background: '#F1EBDD', color: '#26382F' }}
+              label={m.label}
+              sub={m.sub}
+            />
           ))}
         </div>
+
+        {myCashRequest && (
+          <div className="ep-forest mt-3 rounded-box p-4">
+            <div className="text-[15px] font-extrabold" style={{ color: '#D5F94E' }}>
+              Официант идёт за наличными
+            </div>
+            <div className="ep-moment ep-sum mt-1 text-[44px] leading-none">{fmt(myCashRequest.amount)}</div>
+            <ol className="mt-3 flex flex-col gap-2 text-[13px] font-semibold" style={{ color: '#C6D5CC' }}>
+              <li>1 · Вы попросили — в счёте пока ничего не изменилось</li>
+              <li>2 · Официант подтвердит, что взял деньги</li>
+            </ol>
+            <button
+              onClick={() => void cancelCash()}
+              className="mt-3.5 h-12 w-full rounded-field text-[14px] font-bold"
+              style={{ border: '1px solid rgba(250,245,234,.22)', color: '#FAF5EA' }}
+            >
+              Передумал, заплачу телефоном
+            </button>
+          </div>
+        )}
       </div>
 
-      <StickyFooter>
-        <PrimaryButton
-          // Наличные не списываются с телефона: кнопка честно зовёт человека,
-          // а не притворяется оплатой
+      <div className="shrink-0 px-5 pt-3 pb-[calc(1.375rem+env(safe-area-inset-bottom))]">
+        <button
           disabled={amount <= 0 || (cash && !!myCashRequest)}
-          className={sbp ? 'border-none text-white' : ''}
-          style={sbp ? { background: SBP_GRADIENT } : undefined}
           onClick={() =>
             cash
-              ? // Тот же scope, что на кнопке: «разделить поровну» схлопывалось
-                // в «своё», и официант шёл за другой суммой, чем видел гость
-                void askCash(ui.payScope)
+              ? void askCash(ui.payScope)
               : sbp
                 ? patch({ payStage: 'qr' })
                 : void doPay()
+          }
+          className="h-15 w-full rounded-field text-[16px] font-extrabold disabled:opacity-45"
+          style={
+            sbp
+              ? { background: SBP_GRADIENT, color: '#fff' }
+              : { background: '#D5F94E', color: '#062119', boxShadow: '0 12px 26px -14px rgba(6,33,25,.9)' }
           }
         >
           {cash
             ? myCashRequest
               ? 'Официант уже идёт'
               : `Позвать официанта · ${fmt(amount)}`
-            : sbp
-              ? `Оплатить по СБП · ${fmt(amount)}`
-              : `Оплатить ${fmt(amount)}`}
-        </PrimaryButton>
-      </StickyFooter>
+            : `Оплатить ${sbp ? 'по СБП · ' : ''}${fmt(amount)}`}
+        </button>
+        <p className="mt-2 text-center text-[12px] font-semibold text-muted-soft">
+          Спишется ровно эта сумма
+        </p>
+      </div>
+    </div>
+  )
+}
+
+function MethodRow({
+  active,
+  onSelect,
+  glyph,
+  glyphStyle,
+  label,
+  sub,
+  badge
+}: {
+  active: boolean
+  onSelect: () => void
+  glyph: string
+  glyphStyle: React.CSSProperties
+  label: string
+  sub: string
+  badge?: string
+}) {
+  return (
+    <label
+      className="flex cursor-pointer items-center gap-3.5 rounded-[20px] p-4"
+      style={
+        active
+          ? { border: '2px solid #062119', background: '#FFFFFF' }
+          : { border: '1.5px solid #E3DCCB', background: '#FFFCF8' }
+      }
+    >
+      <input type="radio" name="pay-method" className="sr-only" checked={active} onChange={onSelect} />
+      <div
+        className="flex size-11.5 shrink-0 items-center justify-center rounded-field text-lg font-extrabold"
+        style={glyphStyle}
+      >
+        {glyph}
+      </div>
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-2">
+          <span className="text-[16px] font-extrabold">{label}</span>
+          {badge && (
+            <span
+              className="inline-flex h-6 items-center rounded-full px-2.5 text-[11px] font-bold"
+              style={{ background: '#D5F94E', color: '#062119' }}
+            >
+              {badge}
+            </span>
+          )}
+        </div>
+        <div className="mt-0.5 text-[13px] font-semibold text-muted">{sub}</div>
+      </div>
+      {active && (
+        <span
+          className="flex size-6 shrink-0 items-center justify-center rounded-full text-[13px] font-extrabold"
+          style={{ background: '#062119', color: '#D5F94E' }}
+        >
+          ✓
+        </span>
+      )}
+    </label>
+  )
+}
+
+function Row({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
+  return (
+    <div className="flex justify-between gap-3 py-1.5 text-[14px]">
+      <span className="font-semibold text-muted">{label}</span>
+      <span className={`font-bold ${mono ? 'font-mono text-[13px]' : 'ep-sum'}`}>{value}</span>
     </div>
   )
 }
