@@ -24,12 +24,12 @@ export function OrderFeed({
 
   return (
     <>
-      <div className="mt-4 mb-2 font-mono text-xs uppercase tracking-widest text-base-content/60">
+      <div className="ep-brow mt-4 mb-2.5" style={{ color: '#9FB5A8' }}>
         Живая лента заказа
       </div>
-      <ul className="list rounded-box bg-base-100">
+      <ul className="list rounded-[20px]" style={{ background: '#0C2C21' }}>
         {lines.length === 0 && (
-          <li className="list-row text-base-content/60">Пока пусто — гости ещё ничего не добавили</li>
+          <li className="list-row" style={{ color: '#9FB5A8' }}>Пока пусто — гости ещё ничего не добавили</li>
         )}
         {lines.map(l => {
           const d = findDish(l.dishId)
@@ -46,7 +46,7 @@ export function OrderFeed({
                   {d.name}
                   {l.qty > 1 ? ` ×${l.qty}` : ''}
                 </div>
-                <div className="text-xs text-base-content/60">
+                <div className="text-xs" style={{ color: '#9FB5A8' }}>
                   {l.shared ? `общее на стол · добавил(а) ${nameOf(l.personaId)}` : `${nameOf(l.personaId)} · своё`}
                   {optionsLabel(l.options) ? ` · ${optionsLabel(l.options)}` : ''}
                 </div>

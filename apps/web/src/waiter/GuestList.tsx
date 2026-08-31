@@ -45,10 +45,10 @@ export function GuestList({
 }) {
   return (
     <>
-      <div className="mb-2 font-mono text-xs uppercase tracking-widest text-base-content/60">
+      <div className="ep-brow mb-2.5" style={{ color: '#9FB5A8' }}>
         Гости стола · {personas.length}
       </div>
-      <ul className="list rounded-box bg-base-100">
+      <ul className="list rounded-[20px]" style={{ background: '#0C2C21' }}>
         {personas.map(p => {
           // Долю общего блюда считает сервер по фактическому списку участников
           // на момент отправки. Клиент не пересчитывает деньги — он их показывает.
@@ -61,7 +61,7 @@ export function GuestList({
               <Avatar animal={p.animal} size={46} label={p.name} />
               <div>
                 <div className="font-semibold">{p.name}</div>
-                <div className="text-xs text-base-content/60">
+                <div className="text-xs" style={{ color: '#9FB5A8' }}>
                   {fmt(own)} с долей общих{paid > 0 ? ` · внесено ${fmt(paid)}` : ''}
                   {left === 0 && own > 0 && paid === 0 ? ' · за него заплатили' : ''}
                 </div>
@@ -75,13 +75,13 @@ export function GuestList({
         })}
 
         {personas.length === 0 && (
-          <li className="list-row text-base-content/60">
+          <li className="list-row text-[#9FB5A8]">
             <span>{tableOpen ? 'Ждём гостей…' : 'Стол свободен — гость откроет его, отсканировав QR'}</span>
           </li>
         )}
       </ul>
 
-      <div className="divider my-2" />
+      <div className="my-3" style={{ borderTop: '1px solid #123227' }} />
       <div className="flex items-baseline justify-between px-1">
         <span>Итого по столу</span>
         <span className="text-xl font-bold tabular-nums">{fmt(totals.tableTotal)}</span>

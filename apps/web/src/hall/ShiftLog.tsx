@@ -37,13 +37,13 @@ export function ShiftLog() {
       {open && (
         <div className="overflow-x-auto">
           {busy && (
-            <div className="flex items-center gap-2 py-4 text-base-content/60">
+            <div className="flex items-center gap-2 py-4 text-[#9FB5A8]">
               <span className="loading loading-spinner loading-sm" /> Загружаем…
             </div>
           )}
-          {!busy && entries?.length === 0 && <div className="py-4 text-base-content/60">Пока пусто</div>}
+          {!busy && entries?.length === 0 && <div className="py-4 text-[#9FB5A8]">Пока пусто</div>}
           {!busy && !!entries?.length && (
-            <table className="table-zebra table table-sm">
+            <table className="table table-sm">
               <thead>
                 <tr>
                   <th>Время</th>
@@ -59,7 +59,7 @@ export function ShiftLog() {
                     <td className="whitespace-nowrap">
                       {e.name}
                       {e.role ? (
-                        <span className="text-base-content/60"> · {ROLE_LABEL[e.role as RoleName] ?? e.role}</span>
+                        <span className="text-[#9FB5A8]"> · {ROLE_LABEL[e.role as RoleName] ?? e.role}</span>
                       ) : null}
                     </td>
                     <td>

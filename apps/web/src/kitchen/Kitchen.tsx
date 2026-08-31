@@ -9,9 +9,16 @@ import { ROLE_LABEL } from '@easypay/domain/roles'
 
 function Counter({ label, value, alert }: { label: string; value: string; alert?: boolean }) {
   return (
-    <div className="stat px-3 py-2">
-      <div className="stat-title text-xs">{label}</div>
-      <div className={`stat-value text-2xl ${alert ? 'text-error' : ''}`}>{value}</div>
+    <div className="text-center">
+      <div className="text-[11px] font-bold tracking-widest uppercase" style={{ color: '#9FB5A8' }}>
+        {label}
+      </div>
+      <div
+        className="ep-sum text-[26px] leading-tight font-extrabold"
+        style={{ color: alert ? '#FF8A63' : '#FAF5EA' }}
+      >
+        {value}
+      </div>
     </div>
   )
 }
@@ -80,23 +87,29 @@ export function Kitchen() {
   }
 
   return (
-    <div className="flex h-full flex-col gap-3 bg-base-200 p-3">
-      <div className="navbar min-h-0 shrink-0 flex-wrap gap-3 rounded-box bg-base-100 p-3">
-        <div className="flex size-10 shrink-0 items-center justify-center rounded-field bg-primary text-lg font-bold text-primary-content">
+    <div className="ep-forest flex h-full flex-col" style={{ background: '#041712' }}>
+      <div
+        className="flex shrink-0 flex-wrap items-center gap-5 px-5.5 py-4"
+        style={{ borderBottom: '1px solid #123227' }}
+      >
+        <div
+          className="flex size-10.5 shrink-0 items-center justify-center rounded-[13px] text-[19px] font-extrabold"
+          style={{ background: '#D5F94E', color: '#062119' }}
+        >
           e
         </div>
         <div>
-          <div className="text-lg font-bold">Кухня</div>
-          <div className="text-xs text-base-content/60">
+          <div className="text-[20px] font-extrabold tracking-tight">Кухня</div>
+          <div className="text-[13px] font-semibold" style={{ color: '#9FB5A8' }}>
             очередь по всему залу{connected ? '' : ' · нет связи…'}
           </div>
         </div>
-        <div className="stats stats-horizontal ml-auto overflow-x-auto bg-base-100">
+
+        <div className="ml-auto flex flex-wrap items-center gap-6">
           <Counter label="В очереди" value={String(summary.queued)} />
           <Counter label="В работе" value={String(summary.cooking)} />
           <Counter label="На раздаче" value={String(ready.length)} alert={ready.length > 2} />
           <Counter label="Столов" value={String(summary.tables)} />
-          <Counter label="Бар" value={String(tickets.filter(t => t.station === 'bar').length)} />
           {/* Жёлтые считались только красными: к моменту сигнала кофе уже нельзя пить */}
           <Counter label="Подгорает" value={String(warn)} alert={warn > 0} />
           <Counter
@@ -104,124 +117,136 @@ export function Kitchen() {
             value={summary.oldestWaitMs === null ? '—' : fmtDur(summary.oldestWaitMs)}
             alert={summary.overdue > 0}
           />
+          {may('hall') && (
+            <a
+              href={`${window.location.pathname}#/hall`}
+              className="inline-flex h-11 items-center rounded-[14px] px-4.5 text-[14px] font-bold"
+              style={{ border: '1px solid rgba(250,245,234,.22)', color: '#FAF5EA' }}
+            >
+              в зал
+            </a>
+          )}
+          <div className="text-right">
+            <div className="text-[14px] font-bold">{staff?.name}</div>
+            <div className="text-[12px] font-semibold" style={{ color: '#9FB5A8' }}>
+              {staff ? ROLE_LABEL[staff.role] : ''}
+            </div>
+          </div>
+          <button
+            onClick={() => void signOutStaff()}
+            className="h-11 rounded-[14px] px-4 text-[14px] font-bold"
+            style={{ border: '1px solid rgba(250,245,234,.22)', color: '#FAF5EA' }}
+          >
+            Выйти
+          </button>
         </div>
-        {may('hall') && (
-          <a className="btn btn-ghost btn-sm" href={`${window.location.pathname}#/hall`}>
-            в зал
-          </a>
-        )}
-        <div className="text-right">
-          <div className="text-sm font-semibold">{staff?.name}</div>
-          <div className="text-xs text-base-content/60">{staff ? ROLE_LABEL[staff.role] : ''}</div>
-        </div>
-        <button className="btn btn-sm" onClick={() => void signOutStaff()}>
-          Выйти
-        </button>
       </div>
 
       {failed && (
-        <div role="alert" className="alert alert-error">
-          <span>{failed}</span>
+        <div
+          className="mx-5.5 mt-4 rounded-field px-4 py-3 text-[14px] font-bold"
+          style={{ background: '#2A1410', color: '#FFC9B6', border: '1.5px solid #C4451F' }}
+        >
+          {failed}
         </div>
       )}
 
-      <div className="ep-scroll flex flex-col gap-3">
-        {cancelled.length > 0 && (
-          <div className="rounded-box border-2 border-error bg-error/5 p-3">
-            <div className="mb-2 font-bold text-error">Отменено · снять с плиты и подтвердить</div>
-            <div className="flex flex-col gap-2">
-              {cancelled.map(t => (
-                <Ticket
-                  key={`c-${t.tableId}-${t.uid}`}
-                  ticket={t}
-                  now={now}
-                  busy={busy === t.uid}
-                  onAction={() => void dismiss(t)}
-                />
-              ))}
-            </div>
-          </div>
-        )}
-
-        {ready.length > 0 && (
-          // Доска при восьми тикетах выше экрана, а раздача — то, за чем повар
-          // и официант следят чаще всего: она не уезжает вверх при прокрутке
-          <div className="sticky top-0 z-10 rounded-box border-2 border-success bg-success/10 p-3">
-            <div className="mb-2 font-bold">
-              На раздаче · забрать в зал <span className="badge badge-success">{ready.length}</span>
-            </div>
-            <div className="flex flex-col gap-2">
-              {ready.map(t => (
-                <Ticket
-                  key={`r-${t.tableId}-${t.uid}`}
-                  ticket={t}
-                  now={now}
-                  busy={busy === t.uid}
-                  onAction={() => void act(t)}
-                />
-              ))}
-            </div>
-          </div>
-        )}
-
-        <div className="grid gap-3 lg:grid-cols-2">
-          <div>
-            <div className="mb-2 text-base font-bold">
-              Очередь <span className="badge">{queued.length}</span>
-            </div>
-            <div className="flex flex-col gap-2">
-              {byWave(queued).map(wave => (
-                <div
-                  key={wave.key}
-                  // «Отдавать вместе» должно читаться от плиты: рамка была
-                  // светло-серой по светло-серому, контраст 1.06:1
-                  className={
-                    wave.items.length > 1
-                      ? 'flex flex-col gap-2 rounded-box border-2 border-dashed border-base-content/40 bg-base-content/5 p-2.5'
-                      : undefined
-                  }
-                >
-                  {wave.items.length > 1 && (
-                    <div className="text-sm font-bold uppercase">
-                      Стол №{wave.items[0].tableId} · {wave.items.length} поз. · отдавать вместе
-                    </div>
-                  )}
-                  {wave.items.map(t => (
-                    <Ticket
-                      key={`${t.tableId}-${t.uid}`}
-                      ticket={t}
-                      now={now}
-                      busy={busy === t.uid}
-                      onAction={() => void act(t)}
-                    />
-                  ))}
+      <div className="ep-scroll grid gap-4 px-5.5 py-4.5 lg:grid-cols-3">
+        <div>
+          <LaneTitle>Очередь · {queued.length}</LaneTitle>
+          <div className="flex flex-col gap-3">
+            {cancelled.length > 0 && (
+              <div
+                className="flex flex-col gap-2.5 rounded-[20px] p-3"
+                style={{ border: '2px solid #C4451F', background: 'rgba(196,69,31,.08)' }}
+              >
+                <div className="text-[12px] font-extrabold tracking-widest uppercase" style={{ color: '#FF8A63' }}>
+                  снять с плиты · подтвердить
                 </div>
-              ))}
-              {queued.length === 0 && <div className="py-6 text-center text-base-content/60">Новых позиций нет</div>}
-            </div>
-          </div>
+                {cancelled.map(t => (
+                  <Ticket
+                    key={`c-${t.tableId}-${t.uid}`}
+                    ticket={t}
+                    now={now}
+                    busy={busy === t.uid}
+                    onAction={() => void dismiss(t)}
+                  />
+                ))}
+              </div>
+            )}
 
-          <div>
-            <div className="mb-2 text-base font-bold">
-              В работе <span className="badge">{cooking.length}</span>
-            </div>
-            <div className="flex flex-col gap-2">
-              {cooking.map(t => (
-                <Ticket
-                  key={`${t.tableId}-${t.uid}`}
-                  ticket={t}
-                  now={now}
-                  busy={busy === t.uid}
-                  onAction={() => void act(t)}
-                />
-              ))}
-              {cooking.length === 0 && (
-                <div className="py-6 text-center text-base-content/60">Ничего не готовится</div>
-              )}
-            </div>
+            {byWave(queued).map(wave => (
+              <div
+                key={wave.key}
+                // «Отдавать вместе»: подать тар-тар, пока лазанья ещё двадцать
+                // минут в печи, — испортить стол
+                className={
+                  wave.items.length > 1 ? 'flex flex-col gap-2.5 rounded-[20px] p-3' : 'flex flex-col gap-2.5'
+                }
+                style={wave.items.length > 1 ? { border: '1.5px dashed #2A4C3D' } : undefined}
+              >
+                {wave.items.length > 1 && (
+                  <div className="text-[12px] font-extrabold tracking-widest uppercase" style={{ color: '#D5F94E' }}>
+                    стол {wave.items[0].tableId} · отдавать вместе
+                  </div>
+                )}
+                {wave.items.map(t => (
+                  <Ticket
+                    key={`${t.tableId}-${t.uid}`}
+                    ticket={t}
+                    now={now}
+                    busy={busy === t.uid}
+                    onAction={() => void act(t)}
+                  />
+                ))}
+              </div>
+            ))}
+            {queued.length === 0 && cancelled.length === 0 && <Empty>Новых позиций нет</Empty>}
+          </div>
+        </div>
+
+        <div>
+          <LaneTitle>В работе · {cooking.length}</LaneTitle>
+          <div className="flex flex-col gap-3">
+            {cooking.map(t => (
+              <Ticket key={`${t.tableId}-${t.uid}`} ticket={t} now={now} busy={busy === t.uid} onAction={() => void act(t)} />
+            ))}
+            {cooking.length === 0 && <Empty>Ничего не готовится</Empty>}
+          </div>
+        </div>
+
+        <div>
+          <LaneTitle>На раздаче · {ready.length}</LaneTitle>
+          <div className="flex flex-col gap-3">
+            {ready.map(t => (
+              <Ticket
+                key={`r-${t.tableId}-${t.uid}`}
+                ticket={t}
+                now={now}
+                busy={busy === t.uid}
+                onAction={() => void act(t)}
+              />
+            ))}
+            {ready.length === 0 && <Empty>Раздача пуста</Empty>}
           </div>
         </div>
       </div>
+    </div>
+  )
+}
+
+function LaneTitle({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="mb-3 text-[14px] font-extrabold tracking-wider uppercase" style={{ color: '#FAF5EA' }}>
+      {children}
+    </div>
+  )
+}
+
+function Empty({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="rounded-[20px] py-10 text-center text-[14px] font-semibold" style={{ background: '#0C2C21', color: '#9FB5A8' }}>
+      {children}
     </div>
   )
 }

@@ -65,7 +65,7 @@ export function ShiftChecks() {
       {open && (
         <div className="flex flex-col gap-3">
           {busy && (
-            <div className="flex items-center gap-2 py-4 text-base-content/60">
+            <div className="flex items-center gap-2 py-4 text-[#9FB5A8]">
               <span className="loading loading-spinner loading-sm" /> Загружаем…
             </div>
           )}
@@ -157,15 +157,15 @@ export function ShiftChecks() {
           )}
 
           {!busy && data?.checks.length === 0 && (
-            <div className="py-4 text-base-content/60">Закрытых столов пока нет</div>
+            <div className="py-4 text-[#9FB5A8]">Закрытых столов пока нет</div>
           )}
 
           {data?.checks.map(check => (
-            <div className="card card-border bg-base-100" key={check.sessionId}>
+            <div className="card rounded-[16px]" style={{ background: '#123227' }} key={check.sessionId}>
               <div className="card-body p-3">
                 <div className="flex flex-wrap items-baseline gap-2">
                   <b className="text-lg">№{check.tableId}</b>
-                  <span className="text-xs text-base-content/60">
+                  <span className="text-xs text-[#9FB5A8]">
                     {time(check.openedAt)} — {time(check.closedAt)} · гостей {check.guests}
                     {check.waiter ? ` · ${check.waiter}` : ''}
                   </span>
@@ -187,7 +187,7 @@ export function ShiftChecks() {
                   </tbody>
                 </table>
 
-                <div className="flex flex-wrap gap-2 border-t border-base-200 pt-2 text-sm">
+                <div className="flex flex-wrap gap-2 border-t border-[#123227] pt-2 text-sm">
                   <span>Счёт {fmt(check.total)}</span>
                   <span>Оплачено {fmt(check.paid)}</span>
                   {check.debt > 0 && <span className="badge badge-sm badge-error">Долг {fmt(check.debt)}</span>}

@@ -208,90 +208,130 @@ export function Waiter() {
   }
 
   return (
-    <div className="flex min-h-full flex-col gap-3 bg-base-200 p-3">
-      <div className="navbar min-h-0 shrink-0 flex-wrap gap-3 rounded-box bg-base-100 p-3">
-        <div className="flex items-center gap-3">
-          <div className="flex size-10 shrink-0 items-center justify-center rounded-field bg-primary text-lg font-bold text-primary-content">
-            e
+    <div className="ep-forest min-h-full">
+      <div
+        className="flex flex-wrap items-center gap-4.5 px-5.5 py-4.5"
+        style={{ borderBottom: '1px solid #123227' }}
+      >
+        <div
+          className="flex size-10.5 shrink-0 items-center justify-center rounded-[13px] text-[19px] font-extrabold"
+          style={{ background: '#D5F94E', color: '#062119' }}
+        >
+          e
+        </div>
+        <div>
+          <div className="flex items-center gap-2.5 text-[20px] font-extrabold tracking-tight">
+            Стол {tableId} · {HALL_LABEL}
+            <span
+              className="inline-flex h-6 items-center rounded-full px-2.5 text-[12px] font-bold"
+              style={
+                isOpen
+                  ? { background: 'rgba(213,249,78,.16)', color: '#D5F94E' }
+                  : { background: 'rgba(250,245,234,.1)', color: '#9FB5A8' }
+              }
+            >
+              {isOpen ? 'Открыт' : 'Закрыт'}
+            </span>
           </div>
-          <div>
-            <div className="flex items-center gap-2 text-lg font-bold">
-              Стол №{tableId} · {HALL_LABEL}
-              <span className={`badge badge-sm ${isOpen ? 'badge-success' : 'badge-ghost'}`}>
-                {isOpen ? 'Открыт' : 'Закрыт'}
-              </span>
-            </div>
-            <div className="text-xs text-base-content/60">
-              официант {snap?.waiter?.name ?? WAITER_NAME} · экран ресторана {connected ? '' : '· нет связи…'}
-            </div>
+          <div className="text-[13px] font-semibold" style={{ color: '#9FB5A8' }}>
+            официант {snap?.waiter?.name ?? WAITER_NAME}
+            {connected ? '' : ' · нет связи…'}
           </div>
         </div>
 
-        <div className="min-w-50 flex-1">
-          <div className="mb-1 flex items-baseline justify-between text-sm">
-            <span className="text-base-content/60">Оплачено по столу</span>
-            <span className="font-semibold tabular-nums">
+        <div className="min-w-60 flex-1">
+          <div className="mb-1.5 flex items-baseline justify-between text-[13px]">
+            <span style={{ color: '#9FB5A8' }}>Оплачено по столу</span>
+            <span className="ep-sum font-bold">
               {fmt(totals.paidTotal)} / {fmt(totals.tableTotal)}
             </span>
           </div>
-          <progress className="progress progress-success w-full" value={progress} max={100} />
+          <div className="h-2 overflow-hidden rounded-full" style={{ background: 'rgba(250,245,234,.12)' }}>
+            <div
+              className="h-full rounded-full transition-[width] duration-300"
+              style={{ width: `${progress}%`, background: '#D5F94E' }}
+            />
+          </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2.5">
           {isOpen && may('close') && (
-            <button className={`btn btn-sm ${fullyPaid ? 'btn-success' : ''}`} onClick={confirmClose}>
+            <button
+              onClick={confirmClose}
+              className="h-11 rounded-[14px] px-4.5 text-[14px] font-extrabold"
+              style={
+                fullyPaid
+                  ? { background: '#D5F94E', color: '#062119' }
+                  : { border: '1px solid rgba(250,245,234,.22)', color: '#FAF5EA' }
+              }
+            >
               Закрыть стол
             </button>
           )}
           {may('reset') && (
-            <button className="btn btn-sm" onClick={confirmReset}>
+            <button
+              onClick={confirmReset}
+              className="h-11 rounded-[14px] px-4 text-[14px] font-bold"
+              style={{ border: '1px solid rgba(250,245,234,.22)', color: '#FAF5EA' }}
+            >
               Сбросить демо
             </button>
           )}
-          <div className="text-right">
-            <div className="text-sm font-semibold">{staff?.name}</div>
-            <div className="text-xs text-base-content/60">{staff ? ROLE_LABEL[staff.role] : ''}</div>
-          </div>
-          <button className="btn btn-sm" onClick={() => void signOutStaff()}>
-            Выйти
-          </button>
           {may('hall') && (
-            <a className="btn btn-ghost btn-sm" href={`${window.location.pathname}#/hall`}>
+            <a
+              href={`${window.location.pathname}#/hall`}
+              className="inline-flex h-11 items-center rounded-[14px] px-4 text-[14px] font-bold"
+              style={{ border: '1px solid rgba(250,245,234,.22)', color: '#FAF5EA' }}
+            >
               ← в зал
             </a>
           )}
-          <a className="btn btn-ghost btn-sm" href={`?t=${encodeURIComponent(tableId ?? '')}#/qr`}>
-            QR стола
-          </a>
-          <a className="btn btn-ghost btn-sm" href={`?t=${encodeURIComponent(tableId ?? '')}`}>
-            гостевой экран
-          </a>
+          <div className="text-right">
+            <div className="text-[14px] font-bold">{staff?.name}</div>
+            <div className="text-[12px] font-semibold" style={{ color: '#9FB5A8' }}>
+              {staff ? ROLE_LABEL[staff.role] : ''}
+            </div>
+          </div>
+          <button
+            onClick={() => void signOutStaff()}
+            className="h-11 rounded-[14px] px-4 text-[14px] font-bold"
+            style={{ border: '1px solid rgba(250,245,234,.22)', color: '#FAF5EA' }}
+          >
+            Выйти
+          </button>
         </div>
       </div>
 
-      {snap?.call && (
-        <div role="alert" className="alert alert-error">
-          <span className="status status-error ep-pulse" />
-          {/* Текст гостя важнее подписи причины — то же правило, что и в зале.
-              «Гость2 просит воды» вместо «графин без газа» отправляет официанта
-              к столу гадать, что именно принести. */}
-          <span>
-            <b>{snap.call.name ?? personas.find(p => p.id === snap.call?.personaId)?.name ?? 'Гость'}</b>{' '}
-            {snap.call.note ?? CALL_LABEL[snap.call.reason] ?? CALL_LABEL.help} · {fmtDur(now - snap.call.at)}
-          </span>
-          {may('ack') && (
-            <button className="btn btn-sm" onClick={() => void ackCall(snap.call?.id)}>
-              Принял{(snap.calls?.length ?? 0) > 1 ? ` (ещё ${snap.calls.length - 1})` : ''}
-            </button>
-          )}
-        </div>
-      )}
+      <div className="px-5.5 pt-4.5">
+        {snap?.call && (
+          <div
+            className="mb-4 flex flex-wrap items-center gap-3 rounded-[20px] px-4.5 py-4"
+            style={{ background: '#2A1410', border: '1.5px solid #C4451F' }}
+          >
+            <span className="ep-pulse size-2.5 rounded-full" style={{ background: '#FF8A63' }} />
+            <span className="flex-1 text-[15px] font-bold" style={{ color: '#FFE3D8' }}>
+              <b>{snap.call.name ?? personas.find(p => p.id === snap.call?.personaId)?.name ?? 'Гость'}</b>{' '}
+              {/* Текст гостя важнее подписи причины: официант должен знать, зачем идёт */}
+              {snap.call.note ?? CALL_LABEL[snap.call.reason] ?? CALL_LABEL.help} · {fmtDur(now - snap.call.at)}
+            </span>
+            {may('ack') && (
+              <button
+                onClick={() => void ackCall(snap.call?.id)}
+                className="h-11 rounded-[14px] px-4.5 text-[14px] font-extrabold"
+                style={{ background: '#D5F94E', color: '#062119' }}
+              >
+                Иду{(snap.calls?.length ?? 0) > 1 ? ` (ещё ${snap.calls.length - 1})` : ''}
+              </button>
+            )}
+          </div>
+        )}
 
-      {(snap?.openedAt || closed) && (
-        <MetricsRow metrics={metrics} closed={closed} guests={personas.length} tipsTotal={tipsTotal} />
-      )}
+        {(snap?.openedAt || closed) && (
+          <MetricsRow metrics={metrics} closed={closed} guests={personas.length} tipsTotal={tipsTotal} />
+        )}
+      </div>
 
-      <div className="grid gap-3 lg:grid-cols-[22rem_1fr]">
+      <div className="grid gap-4.5 px-5.5 pt-4.5 pb-5.5 xl:grid-cols-[24rem_1fr]">
         <div>
           {/* Гость с деньгами в руке — это срочнее всего остального на экране */}
           <CashRequest table={tableId ?? ''} snap={snap} onTaken={() => {}} />

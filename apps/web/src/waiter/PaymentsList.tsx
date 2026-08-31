@@ -25,19 +25,19 @@ export function PaymentsList({ payments, personas }: { payments: ServerPayment[]
 
   return (
     <>
-      <div className="mt-4 mb-2 font-mono text-xs uppercase tracking-widest text-base-content/60">Оплаты</div>
-      <ul className="list rounded-box bg-base-100">
+      <div className="ep-brow mt-4 mb-2.5" style={{ color: '#9FB5A8' }}>Оплаты</div>
+      <ul className="list rounded-[20px]" style={{ background: '#0C2C21' }}>
         {payments.map((p, i) => (
           <li key={`${p.personaId}-${p.at}-${i}`} className="list-row">
             <Avatar animal={animalOf(p.personaId)} size={34} />
             <div>
               <div className="font-semibold">{nameOf(p.personaId)}</div>
-              <div className="text-xs text-base-content/60">
+              <div className="text-xs" style={{ color: '#9FB5A8' }}>
                 {SCOPE_LABEL[p.scope] ?? p.scope} · {METHOD_LABEL[p.method ?? 'sbp'] ?? 'СБП'}
                 {p.takenByName ? ` · принял ${p.takenByName}` : ''}
               </div>
             </div>
-            <span className="font-semibold tabular-nums text-success">{fmt(p.amount)}</span>
+            <span className="ep-sum font-semibold" style={{ color: '#7FE3A8' }}>{fmt(p.amount)}</span>
           </li>
         ))}
       </ul>

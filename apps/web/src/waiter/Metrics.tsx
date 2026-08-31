@@ -5,9 +5,9 @@ import type { TableMetrics } from './tableMetrics'
 function Metric({ label, value, hint, accent }: { label: string; value: string; hint?: string; accent?: boolean }) {
   return (
     <div className="stat px-3 py-2">
-      <div className="stat-title text-xs">{label}</div>
-      <div className={`stat-value text-xl ${accent ? 'text-success' : ''}`}>{value}</div>
-      {hint && <div className="stat-desc">{hint}</div>}
+      <div className="stat-title text-xs" style={{ color: '#9FB5A8' }}>{label}</div>
+      <div className="ep-sum stat-value text-xl" style={{ color: accent ? '#7FE3A8' : '#FAF5EA' }}>{value}</div>
+      {hint && <div className="stat-desc" style={{ color: '#9FB5A8' }}>{hint}</div>}
     </div>
   )
 }
@@ -24,7 +24,7 @@ export function MetricsRow({
   tipsTotal: number
 }) {
   return (
-    <div className="stats stats-vertical w-full shrink-0 bg-base-100 sm:stats-horizontal">
+    <div className="stats stats-vertical w-full shrink-0 sm:stats-horizontal" style={{ background: '#0C2C21' }}>
       <Metric
         label={closed ? 'Стол обслужен за' : 'Стол открыт'}
         value={fmtDur(metrics.tableDur)}
