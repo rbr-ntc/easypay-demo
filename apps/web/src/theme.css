@@ -11,7 +11,16 @@
  */
 
 @import 'tailwindcss';
-@plugin 'daisyui';
+
+/**
+ * `scrollbar` из базовых модулей daisyUI выключен намеренно: он ставит
+ * `scrollbar-color` на :root, и браузер начинает рисовать НАСТОЯЩУЮ полосу
+ * прокрутки — в том числе под горизонтальным рядом категорий в меню, где она
+ * выглядит как случайная серая черта поперёк шапки.
+ */
+@plugin 'daisyui' {
+  exclude: scrollbar;
+}
 
 @plugin "daisyui/theme" {
   name: 'easypay';
