@@ -55,7 +55,7 @@ function stageCaption(line: ServerLine, now: number): string {
 }
 
 export function Table({ now }: { now: number }) {
-  const { ui, patch, me, snap, totals, removeLine, cancelMine } = useStore()
+  const { ui, patch, me, snap, totals, removeLine, cancelMine, forgetMe } = useStore()
   if (!me || !snap) return null
 
   const mineTab = totals.myTotal + totals.myDraft
@@ -65,7 +65,8 @@ export function Table({ now }: { now: number }) {
   const isMine = (l: ServerLine) =>
     l.personaId === me.id || (l.shared && sharersOf(l as any, personaIds).includes(me.id))
 
-  const scope = useStoreTab()
+  // В одиночку выбора нет: «моё» и «стол» — одно и то же
+  const scope: 'mine' | 'all' = snap.personas.length > 1 ? ui.tableTab : 'mine'
   const shown = scope === 'mine' ? lines.filter(isMine) : lines
   const draft = shown.filter(l => !l.sent && !l.cancelled)
   const sent = shown.filter(l => l.sent && !l.cancelled)
@@ -320,6 +321,16 @@ export function Table({ now }: { now: number }) {
             <div className="mt-1 text-sm text-muted">Добавьте что-нибудь из меню</div>
           </div>
         )}
+
+        {/* Телефон передали соседу — он должен мочь стать собой. Раньше это
+            жило на экране приветствия, а вместе с ним и пропало: новый гость
+            навсегда оставался предыдущим и заказывал на его имя. */}
+        <button
+          onClick={forgetMe}
+          className="mx-auto py-2 text-[13px] font-semibold underline text-muted-soft"
+        >
+          Я другой гость — начать со своим именем
+        </button>
       </div>
 
       <div className="flex shrink-0 gap-2.5 px-5 pt-3 pb-[calc(1.375rem+env(safe-area-inset-bottom))]">
@@ -420,9 +431,3 @@ function SegButton({
   )
 }
 
-/** Сегмент живёт в UiState — он переживает переход в меню и обратно. */
-function useStoreTab(): 'mine' | 'all' {
-  const { ui, snap } = useStore()
-  // В одиночку выбора нет: «моё» и «стол» — одно и то же
-  return (snap?.personas.length ?? 0) > 1 ? ui.tableTab : 'mine'
-}
