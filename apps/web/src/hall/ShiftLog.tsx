@@ -26,10 +26,10 @@ export function ShiftLog() {
   }
 
   return (
-    <div className="rounded-box bg-base-100 p-3">
+    <div className="rounded-[20px] p-4.5" style={{ background: '#0C2C21' }}>
       <div className="mb-2.5 flex items-center gap-2">
-        <span className="font-bold uppercase">Журнал смены</span>
-        <button className="btn ml-auto btn-sm" onClick={() => void toggle()}>
+        <span className="ep-brow" style={{ color: '#9FB5A8' }}>Журнал смены</span>
+        <button className="ml-auto h-9 rounded-field px-3.5 text-[13px] font-bold" style={{ border: '1px solid rgba(250,245,234,.22)', color: '#FAF5EA' }} onClick={() => void toggle()}>
           {open ? 'Свернуть' : 'Показать'}
         </button>
       </div>
