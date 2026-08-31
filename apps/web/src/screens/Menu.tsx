@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { CATEGORIES, MENU, HALL_LABEL, dishMark, possibleAllergens } from '../data'
 import { allergenGenitive } from '@easypay/domain/allergens'
 import type { Dish } from '../data'
@@ -72,6 +72,13 @@ function Highlight({ text, q }: { text: string; q: string }) {
 export function Menu() {
   const { ui, patch, me, snap, totals } = useStore()
   const [query, setQuery] = useState('')
+  const activeCat = useRef<HTMLButtonElement>(null)
+
+  // Выбранная категория сама подъезжает в поле зрения: иначе после «Вино и бар»
+  // гость возвращается в меню и не видит, где он находится
+  useEffect(() => {
+    activeCat.current?.scrollIntoView({ inline: 'center', block: 'nearest', behavior: 'smooth' })
+  }, [ui.menuCat])
 
   // Категория из состояния может устареть после правки меню — падаем на первую
   const cat = MENU[ui.menuCat] ? ui.menuCat : CATEGORIES[0]
@@ -144,21 +151,31 @@ export function Menu() {
         </label>
 
         {!searching && (
-          <div className="mt-3.5 flex gap-2 overflow-x-auto pb-0.5">
-            {CATEGORIES.map(c => (
-              <button
-                key={c}
-                onClick={() => patch({ menuCat: c })}
-                className="h-11 shrink-0 rounded-full px-4.5 text-[15px] font-bold whitespace-nowrap"
-                style={
-                  c === cat
-                    ? { background: '#D5F94E', color: '#062119', fontWeight: 800 }
-                    : { border: '1px solid rgba(250,245,234,.2)', color: '#C6D5CC' }
-                }
-              >
-                {c}
-              </button>
-            ))}
+          <div className="relative mt-3.5">
+            <div className="flex gap-2 overflow-x-auto pb-0.5">
+              {CATEGORIES.map(c => (
+                <button
+                  key={c}
+                  ref={c === cat ? activeCat : undefined}
+                  onClick={() => patch({ menuCat: c })}
+                  className="h-11 shrink-0 rounded-full px-4.5 text-[15px] font-bold whitespace-nowrap"
+                  style={
+                    c === cat
+                      ? { background: '#D5F94E', color: '#062119', fontWeight: 800 }
+                      : { border: '1px solid rgba(250,245,234,.2)', color: '#C6D5CC' }
+                  }
+                >
+                  {c}
+                </button>
+              ))}
+            </div>
+            {/* Ряд шире экрана: без затухания последняя категория выглядит
+                обрезанной, а не «листается дальше» */}
+            <div
+              aria-hidden
+              className="pointer-events-none absolute inset-y-0 right-0 w-5"
+              style={{ background: 'linear-gradient(90deg, rgba(6,33,25,0), rgba(6,33,25,.85))' }}
+            />
           </div>
         )}
       </div>
@@ -200,7 +217,7 @@ export function Menu() {
               return (
                 <div
                   key={it.id}
-                  className="flex items-center gap-3 rounded-box p-3"
+                  className="flex min-w-0 items-center gap-3 rounded-box p-3"
                   style={{ border: '1px dashed #DFD6C3', background: 'transparent' }}
                 >
                   <div className="relative size-18 shrink-0 overflow-hidden rounded-field grayscale">
@@ -215,10 +232,51 @@ export function Menu() {
               )
             }
 
+            if (!it.photo) {
+              return (
+                <div
+                  key={it.id}
+                  className="ep-forest flex min-w-0 items-center gap-3.5 rounded-[24px] p-3.5"
+                  style={{ boxShadow: '0 10px 26px -18px rgba(6,33,25,.7)' }}
+                >
+                  <div className="relative size-18 shrink-0 overflow-hidden rounded-[16px]">
+                    <DishPhoto dish={it} />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="text-[17px] leading-tight font-extrabold">
+                      <Highlight text={it.name} q={query} />
+                      {dishMark(it)}
+                    </div>
+                    <div className="mt-0.5 truncate text-[13px] font-semibold" style={{ color: '#8CA396' }}>
+                      {[it.serving, possibleAllergens(it).join(' · ')].filter(Boolean).join(' · ')}
+                    </div>
+                    {bad.length > 0 && (
+                      <div className="mt-1 text-[12px] font-bold" style={{ color: '#FF8A63' }}>
+                        вам нельзя: {bad.join(' · ')}
+                      </div>
+                    )}
+                    <div className="ep-sum mt-1.5 text-[18px] font-extrabold">{fmt(it.price)}</div>
+                  </div>
+                  <button
+                    aria-label={bad.length > 0 ? `Состав ${it.name}` : `Добавить ${it.name}`}
+                    onClick={() => patch({ sheet: 'dish', currentDishId: it.id })}
+                    className="flex size-13 shrink-0 items-center justify-center rounded-full text-[24px] font-extrabold"
+                    style={
+                      bad.length > 0
+                        ? { background: 'rgba(250,245,234,.14)', color: '#FFF1EC', fontSize: 13, fontWeight: 700 }
+                        : { background: '#D5F94E', color: '#062119' }
+                    }
+                  >
+                    {bad.length > 0 ? 'Состав' : '+'}
+                  </button>
+                </div>
+              )
+            }
+
             return (
               <div
                 key={it.id}
-                className="relative h-70 overflow-hidden rounded-[24px]"
+                className="relative h-70 min-w-0 overflow-hidden rounded-[24px]"
                 style={{ boxShadow: '0 10px 26px -18px rgba(6,33,25,.7)' }}
               >
                 <DishPhoto dish={it} />
@@ -241,8 +299,17 @@ export function Menu() {
                       <Highlight text={it.name} q={query} />
                       {dishMark(it)}
                     </div>
-                    <div className="mt-0.5 text-[13px] leading-snug font-semibold" style={{ color: '#D3E0D8' }}>
-                      {[it.serving, it.desc].filter(Boolean).join(' · ')}
+                    {/* Короткая строка: порция, выбор и аллергены. Полное
+                        описание живёт в карточке блюда — здесь оно раздувало
+                        плашку на три строки и закрывало собой фотографию. */}
+                    <div className="mt-0.5 truncate text-[13px] font-semibold" style={{ color: '#E4EDE7' }}>
+                      {[
+                        it.serving,
+                        (it.options ?? []).length > 0 ? `${it.options![0].name.toLowerCase()} на выбор` : null,
+                        possibleAllergens(it).length > 0 ? possibleAllergens(it).join(' · ') : null
+                      ]
+                        .filter(Boolean)
+                        .join(' · ')}
                     </div>
                     <div className="ep-sum mt-2 text-[20px] font-extrabold text-white">{fmt(it.price)}</div>
                   </div>
