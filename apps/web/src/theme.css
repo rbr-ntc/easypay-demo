@@ -1,12 +1,166 @@
+/**
+ * EasyPay 3.0 «Ель и лайм» — тема daisyUI 5 для apps/web.
+ *
+ * Заменяет текущий блок в apps/web/src/theme.css (там сейчас стоковые
+ * `light` / `dark`). Механизм переключения не меняется: тема берётся из
+ * `document.documentElement.dataset.theme` (инлайн-скрипт в index.html).
+ *
+ * Точность важна: значения подобраны так, чтобы весь мелкий текст проходил
+ * WCAG AA (4.5:1) на своей поверхности. Не осветляйте muted-тона — они
+ * уже на границе.
+ */
+
 @import 'tailwindcss';
+@plugin 'daisyui';
+
+@plugin "daisyui/theme" {
+  name: 'easypay';
+  default: true;
+  prefersdark: false;
+  color-scheme: light;
+
+  /* Поверхности: крем — бумага, песок — вложенные блоки, ель — инверсные карточки */
+  --color-base-100: #faf5ea;
+  --color-base-200: #f1ebdd;
+  --color-base-300: #e3dccb;
+  --color-base-content: #062119;
+
+  /* Действие — кислотный лайм с еловым текстом (не белым: белый на лайме 1.4:1) */
+  --color-primary: #d5f94e;
+  --color-primary-content: #062119;
+
+  /* Второе действие и инверсные шапки */
+  --color-secondary: #062119;
+  --color-secondary-content: #faf5ea;
+
+  /* Общее блюдо, «подано», деньги пришли */
+  --color-accent: #15603f;
+  --color-accent-content: #eaf6ee;
+
+  --color-neutral: #0c2c21;
+  --color-neutral-content: #faf5ea;
+
+  --color-info: #1f5c8f;
+  --color-info-content: #eaf2fa;
+  --color-success: #15603f;
+  --color-success-content: #eaf6ee;
+  --color-warning: #8a5d06;
+  --color-warning-content: #fff6e5;
+  --color-error: #9e3517;
+  --color-error-content: #fff1ec;
+
+  /* Геометрия: пилюли для чипов, 16px для полей, 22px для карточек */
+  --radius-selector: 2rem;
+  --radius-field: 1rem;
+  --radius-box: 1.375rem;
+
+  --size-selector: 0.28125rem;
+  --size-field: 0.3125rem;
+  --border: 1px;
+  --depth: 0;
+  --noise: 0;
+}
+
+@plugin "daisyui/theme" {
+  name: 'easypay-dark';
+  default: false;
+  prefersdark: true;
+  color-scheme: dark;
+
+  --color-base-100: #041712;
+  --color-base-200: #0c2c21;
+  --color-base-300: #123227;
+  --color-base-content: #faf5ea;
+
+  --color-primary: #d5f94e;
+  --color-primary-content: #062119;
+
+  --color-secondary: #faf5ea;
+  --color-secondary-content: #062119;
+
+  --color-accent: #7fe3a8;
+  --color-accent-content: #04231a;
+
+  --color-neutral: #0c2c21;
+  --color-neutral-content: #faf5ea;
+
+  --color-info: #9cd0f5;
+  --color-info-content: #062119;
+  --color-success: #7fe3a8;
+  --color-success-content: #04231a;
+  --color-warning: #e9c24f;
+  --color-warning-content: #2a1e02;
+  --color-error: #ff8a63;
+  --color-error-content: #2a1410;
+
+  --radius-selector: 2rem;
+  --radius-field: 1rem;
+  --radius-box: 1.375rem;
+
+  --size-selector: 0.28125rem;
+  --size-field: 0.3125rem;
+  --border: 1px;
+  --depth: 0;
+  --noise: 0;
+}
 
 /**
- * Стоковые темы daisyUI: `light` по умолчанию, `dark` — по системной настройке.
+ * Приглушённый текст.
  *
- * Переключатель тем у нас уже был устроен через `document.documentElement.dataset.theme`
- * (инлайн-скрипт в index.html) — ровно тот механизм, которым темы включает и сам
- * daisyUI, так что менять его не пришлось.
+ * ВАЖНО: `text-base-content/60` в этой палитре даёт 2.4–3.1:1 на креме и
+ * на песке — это провал AA на 11–15px, а такие подписи стоят на экранах
+ * списания денег. Используйте эти переменные вместо прозрачности.
  */
-@plugin 'daisyui' {
-  themes: light --default, dark --prefersdark;
+:root {
+  --ep-muted: #4a5b51; /* 6.6:1 на креме, 5.9:1 на песке */
+  --ep-muted-soft: #5a6a61; /* 5.2:1 на креме — плейсхолдеры, сноски */
+  --ep-glass-tint: rgba(255, 255, 255, 0.17);
+  --ep-glass-border: rgba(255, 255, 255, 0.3);
+}
+
+[data-theme='easypay-dark'],
+.ep-on-forest {
+  --ep-muted: #9fb5a8; /* 6.4:1 на #0C2C21 */
+  --ep-muted-soft: #8ca396; /* для #062119 */
+}
+
+@layer utilities {
+  .text-muted {
+    color: var(--ep-muted);
+  }
+  .text-muted-soft {
+    color: var(--ep-muted-soft);
+  }
+
+  /**
+   * Стекло поверх фотографии. Работает только в паре со скримом на самом
+   * фото (.ep-scrim): затемнение живёт ПОД стеклом, поэтому фото видно
+   * сквозь карточку, а текст всё равно читается. Если убрать скрим и
+   * компенсировать альфой самой карточки — стекло превращается в чёрный
+   * прямоугольник (проверено).
+   */
+  .ep-glass {
+    background: linear-gradient(
+      158deg,
+      rgba(255, 255, 255, 0.17) 0%,
+      rgba(255, 255, 255, 0.07) 55%,
+      rgba(255, 255, 255, 0.11) 100%
+    );
+    border: 1px solid var(--ep-glass-border);
+    backdrop-filter: blur(44px) saturate(1.5) brightness(0.92);
+    box-shadow:
+      inset 0 1.5px 0 rgba(255, 255, 255, 0.38),
+      inset 0 -1px 0 rgba(255, 255, 255, 0.08),
+      0 18px 42px -20px rgba(4, 18, 13, 0.8);
+  }
+
+  .ep-scrim {
+    background: linear-gradient(
+      to top,
+      rgba(6, 33, 25, 0.9) 0%,
+      rgba(6, 33, 25, 0.78) 26%,
+      rgba(6, 33, 25, 0.12) 62%,
+      rgba(6, 33, 25, 0) 82%
+    );
+  }
 }

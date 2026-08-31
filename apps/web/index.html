@@ -3,8 +3,8 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no" />
-    <meta name="theme-color" media="(prefers-color-scheme: light)" content="#ffffff" />
-    <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#1d232a" />
+    <meta name="theme-color" media="(prefers-color-scheme: light)" content="#faf5ea" />
+    <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#041712" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <title>EasyPay</title>
   </head>
@@ -12,15 +12,19 @@
     <div id="root"></div>
     <script>
       // Тема до загрузки приложения: ?style=... имеет приоритет, иначе localStorage.
-      // Темы стоковые daisyUI. Если явного выбора нет, data-theme не ставим
-      // вовсе — тогда решает системная настройка (light по умолчанию,
-      // dark по prefers-color-scheme), как и задумано в плагине.
+      // Темы фирменные: easypay («Ель и лайм») и easypay-dark. Если явного
+      // выбора нет, data-theme не ставим вовсе — тогда решает системная
+      // настройка, как и задумано в плагине daisyUI.
       ;(function () {
-        var allowed = { light: 1, dark: 1 }
+        var allowed = { easypay: 1, 'easypay-dark': 1, light: 'easypay', dark: 'easypay-dark' }
         var q = new URLSearchParams(location.search).get('style')
-        if (q && allowed[q]) localStorage.setItem('easypay-style', q)
-        var t = localStorage.getItem('easypay-style')
-        if (t && allowed[t]) document.documentElement.dataset.theme = t
+        // light/dark оставлены короткими синонимами: по ним уже ходили ссылки
+        var pick = function (v) {
+          return v && allowed[v] ? (allowed[v] === 1 ? v : allowed[v]) : null
+        }
+        if (pick(q)) localStorage.setItem('easypay-style', pick(q))
+        var t = pick(localStorage.getItem('easypay-style'))
+        if (t) document.documentElement.dataset.theme = t
       })()
     </script>
     <script type="module" src="/src/main.tsx"></script>
