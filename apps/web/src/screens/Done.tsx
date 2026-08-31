@@ -144,7 +144,7 @@ export function Done() {
                 placeholder="Введите сумму"
                 value={ui.tipCustom || ''}
                 onChange={e => patch({ tipCustom: Number(e.target.value.replace(/\D/g, '')) || 0 })}
-                className="w-full bg-transparent text-[18px] font-bold text-white outline-none placeholder:text-[#8CA396]"
+                className="min-w-0 flex-1 bg-transparent text-[18px] font-bold text-white outline-none placeholder:text-[#8CA396]"
               />
               <span className="text-[18px]" style={{ color: '#A9BCB0' }}>
                 ₽

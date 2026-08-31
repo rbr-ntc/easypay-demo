@@ -7,7 +7,7 @@ import type { Permission } from '@easypay/domain/roles'
 
 function Checking() {
   return (
-    <div className="flex min-h-full items-center justify-center gap-3 bg-base-200 p-5 text-base-content/60">
+    <div className="ep-forest flex min-h-full items-center justify-center gap-3 p-5" style={{ color: '#9FB5A8' }}>
       <span className="loading loading-spinner" /> Проверяем смену…
     </div>
   )
@@ -24,11 +24,11 @@ function NoAccess({ need }: { need: Permission }) {
   const { staff, signOutStaff } = useStore()
   const role = staff?.role
   return (
-    <div className="flex min-h-full items-center justify-center bg-base-200 p-5">
-      <div className="card w-full max-w-sm bg-base-100 shadow-lg">
+    <div className="ep-forest flex min-h-full items-center justify-center p-5">
+      <div className="w-full max-w-sm rounded-[22px] p-1" style={{ background: '#0C2C21' }}>
         <div className="card-body items-center text-center">
           <h2 className="card-title">Экран недоступен</h2>
-          <p className="text-sm text-base-content/60">
+          <p className="text-sm" style={{ color: '#9FB5A8' }}>
             {staff?.name}, роли «{role ? ROLE_LABEL[role] : '—'}» раздел «{SCREEN_LABEL[need] ?? need}» не открыт.
           </p>
           <div className="card-actions mt-2 w-full flex-col">

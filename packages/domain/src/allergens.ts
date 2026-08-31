@@ -58,6 +58,29 @@ export function allergenAccusative(a: string): string {
   return ACCUSATIVE[a] ?? a
 }
 
+/**
+ * Родительный падеж: «без глютена», а не «без глютен». Чип личной аллергии
+ * стоит в шапке меню на каждом экране — там это видно постоянно.
+ */
+const GENITIVE: Record<string, string> = {
+  глютен: 'глютена',
+  лактоза: 'лактозы',
+  яйцо: 'яйца',
+  рыба: 'рыбы',
+  морепродукты: 'морепродуктов',
+  орехи: 'орехов',
+  арахис: 'арахиса',
+  кунжут: 'кунжута',
+  соя: 'сои',
+  сельдерей: 'сельдерея',
+  горчица: 'горчицы',
+  сульфиты: 'сульфитов'
+}
+
+export function allergenGenitive(a: string): string {
+  return GENITIVE[a] ?? a
+}
+
 export function isAllergen(tag: string): boolean {
   return ALLERGEN_SET.has(tag)
 }

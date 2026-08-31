@@ -40,51 +40,70 @@ export function StaffLogin() {
   }
 
   return (
-    <div className="flex min-h-full items-center justify-center bg-base-200 p-5">
-      <div className="card w-full max-w-sm bg-base-100 shadow-lg">
-        <div className="card-body items-center text-center">
-          <div className="flex size-12 items-center justify-center rounded-field bg-primary text-xl font-bold text-primary-content">
+    <div className="ep-forest flex min-h-full flex-col justify-center p-6">
+      <div className="mx-auto w-full max-w-sm">
+        <div className="text-center">
+          <div
+            className="mx-auto flex size-13 items-center justify-center rounded-[16px] text-[22px] font-extrabold"
+            style={{ background: '#D5F94E', color: '#062119' }}
+          >
             e
           </div>
-          <h2 className="card-title">Вход в смену</h2>
-          <p className="text-sm text-base-content/60">
+          <div className="mt-4 text-[25px] font-extrabold tracking-tight">Вход в смену</div>
+          <p className="mt-2 text-[15px] leading-snug font-medium" style={{ color: '#9FB5A8' }}>
             {wasSignedOut()
               ? 'Вы вышли из смены. Введите PIN, чтобы зайти под другим сотрудником.'
               : 'Введите свой PIN — экран откроется по вашей роли.'}
           </p>
+        </div>
 
-          <div className="my-2 flex gap-3">
-            {Array.from({ length: PIN_LENGTH }).map((_, i) => (
-              <span key={i} className={`status status-lg ${i < pin.length ? 'status-primary' : ''}`} />
-            ))}
-          </div>
+        <div className="mt-6.5 flex justify-center gap-3.5">
+          {Array.from({ length: PIN_LENGTH }).map((_, i) => (
+            <span
+              key={i}
+              className="size-4 rounded-full"
+              style={{ background: i < pin.length ? '#D5F94E' : 'rgba(250,245,234,.18)' }}
+            />
+          ))}
+        </div>
+        <div className="mt-2.5 text-center text-[13px] font-semibold" style={{ color: '#9FB5A8' }}>
+          {busy ? 'Проверяем…' : 'Отправим сами, как введёте четвёртую цифру'}
+        </div>
 
-          {error && (
-            <div role="alert" className="alert alert-error alert-soft py-2 text-sm">
-              <span>{error}</span>
+        {error && (
+          <div
+            className="mt-4.5 rounded-field px-4 py-3.5 text-center"
+            style={{ background: 'rgba(158,53,23,.28)', border: '1px solid rgba(255,227,216,.4)' }}
+          >
+            <div className="text-[14px] font-extrabold" style={{ color: '#FFE3D8' }}>
+              {error}
             </div>
-          )}
-          {busy && (
-            <div className="flex items-center gap-2 text-sm text-base-content/60">
-              <span className="loading loading-spinner loading-sm" /> Проверяем…
-            </div>
-          )}
-
-          <div className="mt-2 grid w-full grid-cols-3 gap-2">
-            {KEYS.map((key, i) =>
-              key ? (
-                <button key={key} className="btn h-14 text-xl" onClick={() => press(key)} disabled={busy}>
-                  {key}
-                </button>
-              ) : (
-                <span key={`gap-${i}`} />
-              )
-            )}
           </div>
+        )}
 
-          <div className="mt-2 text-xs text-base-content/60">
-            Демо: официант 1111 · повар 4444 · менеджер 9999
-          </div>
+        <div className="mt-5 grid grid-cols-3 gap-3">
+          {KEYS.map((key, i) =>
+            key ? (
+              <button
+                key={key}
+                onClick={() => press(key)}
+                disabled={busy}
+                className="h-16 rounded-[18px] text-[24px] font-extrabold disabled:opacity-45"
+                style={{ border: '1px solid rgba(250,245,234,.18)', background: 'rgba(250,245,234,.06)', color: '#FAF5EA' }}
+              >
+                {key}
+              </button>
+            ) : (
+              <span key={`gap-${i}`} />
+            )
+          )}
+        </div>
+
+        <div className="mt-4 text-center text-[12px] font-semibold" style={{ color: '#9FB5A8' }}>
+          Демо: официант 1111 · повар 4444 · менеджер 9999
+        </div>
+        <div className="mt-1 text-center text-[12px] font-semibold" style={{ color: '#6E8579' }}>
+          Сессия живёт 12 часов
         </div>
       </div>
     </div>

@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { CATEGORIES, MENU, HALL_LABEL, dishMark, possibleAllergens } from '../data'
+import { allergenGenitive } from '@easypay/domain/allergens'
 import type { Dish } from '../data'
 import { tableId } from '../api'
 import { Avatar } from '../avatars'
@@ -39,11 +40,17 @@ function DishPhoto({ dish, className = '' }: { dish: Dish; className?: string })
 
 export { DishPhoto }
 
-/** Ищем по названию, составу и тегам — гость помнит блюдо по-разному. */
-function matches(dish: Dish, q: string): boolean {
+/**
+ * Ищем по названию, составу, тегам, РАЗДЕЛУ и аллергенам — гость помнит блюдо
+ * по-разному. Без раздела запрос «вино» не находил ничего, хотя раздел «Вино и
+ * бар» есть; без аллергенов «сельдерей» не находил стейк, в котором он указан.
+ */
+function matches(dish: Dish, q: string, category: string): boolean {
   const needle = q.trim().toLowerCase()
   if (!needle) return true
-  const hay = [dish.name, dish.desc, ...(dish.tags ?? [])].join(' ').toLowerCase()
+  const hay = [dish.name, dish.desc, category, ...(dish.tags ?? []), ...possibleAllergens(dish)]
+    .join(' ')
+    .toLowerCase()
   return hay.includes(needle)
 }
 
@@ -71,7 +78,7 @@ export function Menu() {
   const searching = query.trim().length > 0
   // При поиске категории не при чём: гость ищет по всему меню
   const items = searching
-    ? CATEGORIES.flatMap(c => MENU[c] ?? []).filter(d => matches(d, query))
+    ? CATEGORIES.flatMap(c => (MENU[c] ?? []).filter(d => matches(d, query, c)))
     : (MENU[cat] ?? [])
 
   const mine = me ? snap?.lines.filter(l => l.personaId === me.id || l.shared) ?? [] : []
@@ -127,7 +134,7 @@ export function Menu() {
             value={query}
             onChange={e => setQuery(e.target.value)}
             placeholder="Найти блюдо или напиток"
-            className="w-full bg-transparent text-[15px] font-semibold outline-none placeholder:text-[#8CA396]"
+            className="min-w-0 flex-1 bg-transparent text-[15px] font-semibold outline-none placeholder:text-[#8CA396]"
           />
           {searching && (
             <button aria-label="Очистить поиск" onClick={() => setQuery('')} style={{ color: '#8CA396' }}>
@@ -165,7 +172,7 @@ export function Menu() {
                 className="inline-flex h-7.5 items-center rounded-full px-3 text-[13px] font-bold"
                 style={{ background: '#F2E6DE', color: '#9E4225' }}
               >
-                без {a}
+                без {allergenGenitive(a)}
               </span>
             ))}
             <span className="text-[13px] font-semibold text-muted">учитываем вашу аллергию</span>
