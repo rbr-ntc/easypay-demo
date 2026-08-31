@@ -1,175 +1,289 @@
-import { CATEGORIES, MENU, HALL_LABEL, dishEmoji, dishMark, possibleAllergens } from '../data'
+import { useState } from 'react'
+import { CATEGORIES, MENU, HALL_LABEL, dishMark, possibleAllergens } from '../data'
+import type { Dish } from '../data'
 import { tableId } from '../api'
 import { Avatar } from '../avatars'
-import { PrimaryButton } from '../ui'
 import { useStore } from '../store'
 import { fmt } from '../format'
 
-function DishPhoto({
-  id,
-  name,
-  hasPhoto,
-  size,
-  emoji = '🍽'
-}: {
-  id: string
-  name: string
-  hasPhoto?: boolean
-  size: number
-  radius?: number
-  emoji?: string
-}) {
-  // Реальное фото из public/dishes; для блюд без фото — градиент-заглушка
-  let hash = 0
-  for (const ch of name) hash = (hash * 31 + ch.charCodeAt(0)) % 360
-  if (hasPhoto) {
+/**
+ * Фотография блюда. Настоящее фото лежит в public/dishes; у блюд без фото —
+ * полосатая заглушка с названием. Это временное решение под реальные фото,
+ * а не приём: заглушка честно выглядит заглушкой и не притворяется дизайном.
+ */
+function DishPhoto({ dish, className = '' }: { dish: Dish; className?: string }) {
+  if (dish.photo) {
     return (
       <img
-        src={`./dishes/${id}.jpg`}
-        alt={name}
+        src={`./dishes/${dish.id}.jpg`}
+        alt={dish.name}
         loading="lazy"
-        className="shrink-0 rounded-box bg-base-200 object-cover"
-        style={{ width: size, height: size }}
+        className={`absolute inset-0 size-full object-cover ${className}`}
       />
     )
   }
   return (
     <div
-      className="flex shrink-0 items-center justify-center rounded-box"
+      className={`absolute inset-0 flex items-end p-4 ${className}`}
       style={{
-        width: size,
-        height: size,
-        background: `linear-gradient(135deg, hsl(${hash} 55% 86%), hsl(${(hash + 40) % 360} 60% 70%))`,
-        fontSize: size * 0.38
+        background:
+          'repeating-linear-gradient(135deg, #0C2C21 0 14px, #10382A 14px 28px)'
       }}
     >
-      {emoji}
+      <span className="font-mono text-xs tracking-widest uppercase" style={{ color: '#5E7A6C' }}>
+        фото готовится
+      </span>
     </div>
   )
 }
 
 export { DishPhoto }
 
+/** Ищем по названию, составу и тегам — гость помнит блюдо по-разному. */
+function matches(dish: Dish, q: string): boolean {
+  const needle = q.trim().toLowerCase()
+  if (!needle) return true
+  const hay = [dish.name, dish.desc, ...(dish.tags ?? [])].join(' ').toLowerCase()
+  return hay.includes(needle)
+}
+
+/** Подсветка совпадения: гость должен видеть, за что зацепился поиск. */
+function Highlight({ text, q }: { text: string; q: string }) {
+  const needle = q.trim()
+  if (!needle) return <>{text}</>
+  const at = text.toLowerCase().indexOf(needle.toLowerCase())
+  if (at < 0) return <>{text}</>
+  return (
+    <>
+      {text.slice(0, at)}
+      <mark style={{ background: '#D5F94E', color: '#062119' }}>{text.slice(at, at + needle.length)}</mark>
+      {text.slice(at + needle.length)}
+    </>
+  )
+}
+
 export function Menu() {
   const { ui, patch, me, snap, totals } = useStore()
+  const [query, setQuery] = useState('')
+
   // Категория из состояния может устареть после правки меню — падаем на первую
   const cat = MENU[ui.menuCat] ? ui.menuCat : CATEGORIES[0]
-  const items = MENU[cat] ?? []
-  // Считаем и свои позиции, и общие блюда стола: и то, и другое лежит «в заказе»
-  const cartCount = me
-    ? (snap?.lines ?? []).filter(l => l.personaId === me.id || l.shared).length
-    : 0
-  const hasCart = cartCount > 0
+  const searching = query.trim().length > 0
+  // При поиске категории не при чём: гость ищет по всему меню
+  const items = searching
+    ? CATEGORIES.flatMap(c => MENU[c] ?? []).filter(d => matches(d, query))
+    : (MENU[cat] ?? [])
+
+  const mine = me ? snap?.lines.filter(l => l.personaId === me.id || l.shared) ?? [] : []
+  const draftCount = mine.filter(l => !l.sent).length
+  const neighbours = (snap?.personas ?? []).filter(p => p.id !== me?.id)
+  const myAllergies = me?.allergies ?? []
+
+  /** Блюдо, которое лично этому гостю нельзя: не «возможно», а по его списку. */
+  const forbidden = (dish: Dish) => possibleAllergens(dish).filter(a => myAllergies.includes(a))
 
   return (
     <div className="ep-screen">
-      <div className="shrink-0 border-b border-base-300 bg-base-100 px-5 py-3">
-        <div className="mb-3 flex items-center justify-between">
+      {/* Шапка на еловом: кто я, где я, с кем — и как позвать человека */}
+      <div className="ep-forest shrink-0 rounded-b-[26px] px-5 pt-4 pb-4.5">
+        <div className="flex items-center gap-3">
           {me ? (
-            <div className="flex items-center gap-2.5">
-              <Avatar animal={me.animal} size={32} label={me.name} />
-              <div>
-                <div className="text-xs text-base-content/60">
-                  Стол №{tableId} · {HALL_LABEL}
-                </div>
-                <div className="text-sm leading-tight font-semibold">{me.name}</div>
-              </div>
+            <div className="shrink-0 rounded-full" style={{ boxShadow: '0 0 0 2px #D5F94E' }}>
+              <Avatar animal={me.animal} size={44} label={me.name} />
             </div>
           ) : (
-            <div>
-              <div className="text-lg font-bold tracking-tight">Меню</div>
-              <div className="text-xs text-base-content/60">
-                Стол №{tableId} · {HALL_LABEL}
-              </div>
+            <div className="flex size-11 shrink-0 items-center justify-center rounded-full bg-primary text-xl font-extrabold text-primary-content">
+              e
             </div>
           )}
-          {/* Счётчик — indicator: без него полная корзина выглядела как пустая */}
-          <div className="indicator">
-            {cartCount > 0 && <span className="indicator-item badge badge-sm badge-primary">{cartCount}</span>}
-            <button
-              aria-label={cartCount > 0 ? `Заказ, позиций: ${cartCount}` : 'Заказ пуст'}
-              className="btn btn-circle size-11"
-              disabled={!hasCart}
-              onClick={() => patch({ screen: 'cart' })}
-            >
-              🛒
-            </button>
+          <div className="min-w-0 flex-1">
+            <div className="truncate text-[17px] leading-tight font-extrabold tracking-tight">
+              {me ? `${me.name} · стол ${tableId}` : `Стол ${tableId}`}
+            </div>
+            <div className="truncate text-[13px] font-semibold" style={{ color: '#8CA396' }}>
+              {HALL_LABEL}
+              {neighbours.length > 0 ? ` · с вами ${neighbours.map(p => p.name).join(' и ')}` : ''}
+            </div>
           </div>
+          <button
+            aria-label="Позвать официанта"
+            disabled={!me || !!snap?.call}
+            onClick={() => patch({ sheet: 'call' })}
+            className="h-11 shrink-0 rounded-full px-4 text-[13px] font-bold disabled:opacity-45"
+            style={{ border: '1px solid rgba(213,249,78,.35)', background: 'rgba(213,249,78,.12)', color: '#D5F94E' }}
+          >
+            {snap?.call ? 'Идёт ✓' : 'Официант'}
+          </button>
         </div>
-        {/* h-11 на вкладке — это 44 px: у tabs-sm высота 32, а по категориям
-            гость на телефоне мажет пальцем чаще всего после «+» */}
-        <div role="tablist" className="tabs tabs-box w-full min-w-0 flex-nowrap overflow-x-auto">
-          {CATEGORIES.map(c => (
-            <button
-              key={c}
-              role="tab"
-              className={c === cat ? 'tab tab-active h-11 whitespace-nowrap' : 'tab h-11 whitespace-nowrap'}
-              onClick={() => patch({ menuCat: c })}
-            >
-              {c}
+
+        <label
+          className="mt-3.5 flex h-12 items-center gap-2.5 rounded-field px-4"
+          style={{ background: 'rgba(250,245,234,.1)', border: '1px solid rgba(250,245,234,.14)' }}
+        >
+          <span aria-hidden style={{ color: '#8CA396' }}>
+            ⌕
+          </span>
+          <input
+            value={query}
+            onChange={e => setQuery(e.target.value)}
+            placeholder="Найти блюдо или напиток"
+            className="w-full bg-transparent text-[15px] font-semibold outline-none placeholder:text-[#8CA396]"
+          />
+          {searching && (
+            <button aria-label="Очистить поиск" onClick={() => setQuery('')} style={{ color: '#8CA396' }}>
+              ✕
             </button>
-          ))}
-        </div>
+          )}
+        </label>
+
+        {!searching && (
+          <div className="mt-3.5 flex gap-2 overflow-x-auto pb-0.5">
+            {CATEGORIES.map(c => (
+              <button
+                key={c}
+                onClick={() => patch({ menuCat: c })}
+                className="h-11 shrink-0 rounded-full px-4.5 text-[15px] font-bold whitespace-nowrap"
+                style={
+                  c === cat
+                    ? { background: '#D5F94E', color: '#062119', fontWeight: 800 }
+                    : { border: '1px solid rgba(250,245,234,.2)', color: '#C6D5CC' }
+                }
+              >
+                {c}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
-      <div className="ep-scroll px-5 pt-3.5 pb-5">
+      <div className="ep-scroll px-5 pt-4 pb-5">
+        {myAllergies.length > 0 && (
+          <div className="mb-3.5 flex flex-wrap items-center gap-2">
+            {myAllergies.map(a => (
+              <span
+                key={a}
+                className="inline-flex h-7.5 items-center rounded-full px-3 text-[13px] font-bold"
+                style={{ background: '#F2E6DE', color: '#9E4225' }}
+              >
+                без {a}
+              </span>
+            ))}
+            <span className="text-[13px] font-semibold text-muted">учитываем вашу аллергию</span>
+          </div>
+        )}
+
         <div className="ep-menu-grid">
           {items.length === 0 && (
             <div className="px-5 py-16 text-center">
-              <div className="font-medium">В этой категории пока пусто</div>
-              <div className="mt-1 text-sm text-base-content/60">Загляните в другие разделы меню</div>
-            </div>
-          )}
-          {items.map(it => (
-            <div key={it.id} className={`card card-border min-w-0 bg-base-100 ${it.stop ? 'opacity-55' : ''}`}>
-              <div className="card-body min-w-0 flex-row gap-3 p-3">
-                <DishPhoto id={it.id} name={it.name} hasPhoto={it.photo} size={74} emoji={dishEmoji(it)} />
-                <div className="flex min-w-0 flex-1 flex-col">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="font-semibold">
-                      {it.name}
-                      {dishMark(it)}
-                    </span>
-                    {it.stop && <span className="badge badge-sm">Нет в наличии</span>}
-                  </div>
-                  <div className="mt-1 text-xs leading-snug text-base-content/60">{it.desc}</div>
-                  {(it.serving || it.kcal) && (
-                    <div className="mt-1 text-xs text-base-content/60">
-                      {[it.serving, it.kcal ? `${it.kcal} ккал` : null].filter(Boolean).join(' · ')}
-                    </div>
-                  )}
-                  {/* Строка аллергенов — не мелкий шрифт: это здоровье гостя */}
-                  {possibleAllergens(it).length > 0 && (
-                    <div className="mt-1 text-sm font-medium text-warning">
-                      аллергены: {possibleAllergens(it).join(' · ')}
-                    </div>
-                  )}
-                  <div className="mt-auto flex items-end justify-between pt-2">
-                    <span className="font-semibold">{fmt(it.price)}</span>
-                    {/* size-11 — это 44 px: у daisyUI кнопка по умолчанию 40,
-                        а по этой кнопке гость промахивается чаще всего */}
-                    <button
-                      className="btn btn-circle btn-primary size-11 text-xl"
-                      disabled={it.stop}
-                      aria-label={`Добавить ${it.name}`}
-                      onClick={() => patch({ sheet: 'dish', currentDishId: it.id })}
-                    >
-                      +
-                    </button>
-                  </div>
-                </div>
+              <div className="font-bold">
+                {searching ? `По запросу «${query.trim()}» ничего нет` : 'В этой категории пока пусто'}
+              </div>
+              <div className="mt-1 text-sm text-muted">
+                {searching ? 'Спросите официанта — он подскажет' : 'Загляните в другие разделы меню'}
               </div>
             </div>
-          ))}
+          )}
+
+          {items.map(it => {
+            const bad = forbidden(it)
+
+            // Стоп-блюдо не притворяется доступным: карточка-пунктир и прямая
+            // подпись вместо кнопки, по которой всё равно ничего не выйдет
+            if (it.stop) {
+              return (
+                <div
+                  key={it.id}
+                  className="flex items-center gap-3 rounded-box p-3"
+                  style={{ border: '1px dashed #DFD6C3', background: 'transparent' }}
+                >
+                  <div className="relative size-18 shrink-0 overflow-hidden rounded-field grayscale">
+                    <DishPhoto dish={it} />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="text-[16px] font-extrabold">{it.name}</div>
+                    <div className="mt-0.5 text-[13px] font-semibold text-muted">Закончилась сегодня</div>
+                  </div>
+                  <span className="ep-sum text-[15px] font-bold text-muted-soft">{fmt(it.price)}</span>
+                </div>
+              )
+            }
+
+            return (
+              <div
+                key={it.id}
+                className="relative h-70 overflow-hidden rounded-[24px]"
+                style={{ boxShadow: '0 10px 26px -18px rgba(6,33,25,.7)' }}
+              >
+                <DishPhoto dish={it} />
+                {/* Скрим лежит на фото и попадает под backdrop-filter стекла:
+                    затемнять надо фотографию, а не саму карточку */}
+                <div className="ep-scrim absolute inset-0" />
+
+                {bad.length > 0 && (
+                  <span
+                    className="absolute top-3.5 left-3.5 inline-flex h-7.5 items-center rounded-full px-3 text-[12px] font-bold"
+                    style={{ background: '#9E3517', color: '#FFF1EC' }}
+                  >
+                    вам нельзя: {bad.join(' · ')}
+                  </span>
+                )}
+
+                <div className="ep-glass absolute right-3 bottom-3 left-3 flex items-center gap-3 rounded-[20px] py-3.5 pr-3.5 pl-4">
+                  <div className="min-w-0 flex-1">
+                    <div className="text-[19px] leading-tight font-extrabold tracking-tight text-white">
+                      <Highlight text={it.name} q={query} />
+                      {dishMark(it)}
+                    </div>
+                    <div className="mt-0.5 text-[13px] leading-snug font-semibold" style={{ color: '#D3E0D8' }}>
+                      {[it.serving, it.desc].filter(Boolean).join(' · ')}
+                    </div>
+                    <div className="ep-sum mt-2 text-[20px] font-extrabold text-white">{fmt(it.price)}</div>
+                  </div>
+                  <button
+                    aria-label={bad.length > 0 ? `Состав ${it.name}` : `Добавить ${it.name}`}
+                    onClick={() => patch({ sheet: 'dish', currentDishId: it.id })}
+                    className="flex size-14 shrink-0 items-center justify-center rounded-full text-[26px] font-extrabold"
+                    style={
+                      bad.length > 0
+                        ? { background: 'rgba(255,255,255,.16)', color: '#FFF1EC', fontSize: 13, fontWeight: 700 }
+                        : { background: '#D5F94E', color: '#062119', boxShadow: '0 8px 18px -8px rgba(6,33,25,.8)' }
+                    }
+                  >
+                    {bad.length > 0 ? 'Состав' : '+'}
+                  </button>
+                </div>
+              </div>
+            )
+          })}
         </div>
       </div>
 
-      {hasCart && (
-        <div className="px-5 pt-3 pb-[calc(1.25rem+env(safe-area-inset-bottom))]">
-          <PrimaryButton onClick={() => patch({ screen: 'cart' })}>
-            <span className="badge badge-sm">Корзина</span>
-            {fmt(totals.myTotal + totals.myDraft)} →
-          </PrimaryButton>
+      {/* Футер — единая кнопка стола: сколько блюд, сколько ещё не ушло на кухню */}
+      {me && mine.length > 0 && (
+        <div className="shrink-0 px-5 pt-3 pb-[calc(1.375rem+env(safe-area-inset-bottom))]">
+          <button
+            onClick={() => patch({ screen: 'table' })}
+            className="ep-forest flex h-15 w-full items-center gap-3 rounded-field px-3.5"
+            style={{ boxShadow: '0 12px 26px -14px rgba(6,33,25,.9)' }}
+          >
+            <Avatar animal={me.animal} size={34} label={me.name} />
+            <div className="min-w-0 flex-1 text-left">
+              <div className="text-[15px] font-extrabold">
+                Ваш стол · {mine.length} {mine.length === 1 ? 'блюдо' : mine.length < 5 ? 'блюда' : 'блюд'}
+              </div>
+              {draftCount > 0 && (
+                <div className="text-[13px] font-semibold" style={{ color: '#FFC9B6' }}>
+                  {draftCount} ещё не отправлено
+                </div>
+              )}
+            </div>
+            <span
+              className="ep-sum inline-flex h-9 items-center rounded-full px-3.5 text-[15px] font-extrabold"
+              style={{ background: '#D5F94E', color: '#062119' }}
+            >
+              {fmt(totals.myTotal + totals.myDraft)}
+            </span>
+          </button>
         </div>
       )}
     </div>

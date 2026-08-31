@@ -108,7 +108,8 @@ export function Payment() {
     const paid = await pay(ui.payScope, payKey.current, ui.payMethod)
     if (paid > 0) {
       payKey.current = newIdemKey() // следующая оплата — новый ключ
-      setTimeout(() => patch({ payStage: 'form', screen: 'tips' }), 1400)
+      // Чаевые больше не отдельный экран: они на «Спасибо» вместе с чеком
+      setTimeout(() => patch({ payStage: 'form', screen: 'done' }), 1400)
     } else {
       patch({ payStage: 'form' })
     }

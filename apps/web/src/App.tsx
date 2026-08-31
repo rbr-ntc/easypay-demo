@@ -1,11 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { StoreProvider, useStore } from './store'
-import { Welcome } from './screens/Welcome'
 import { Menu } from './screens/Menu'
-import { Cart } from './screens/Cart'
-import { Status } from './screens/Status'
+import { Table } from './screens/Table'
 import { Payment } from './screens/Payment'
-import { Tips } from './screens/Tips'
 import { Done } from './screens/Done'
 import { DishSheet } from './sheets/DishSheet'
 import { NameSheet } from './sheets/NameSheet'
@@ -49,16 +46,16 @@ function useAutoNav() {
     prevUnsent.current = hasUnsent
     prevPaid.current = fullyPaid
     if (!me) return
-    // Стол полностью оплачен (кем-то другим), а я на экране оплаты и сам не платил —
-    // уводим на статус и при переходе, и при простом заходе на этот экран
+    // Стол полностью оплачен (кем-то другим), а я на экране оплаты и сам не
+    // платил — уводить с оплаты некуда, кроме стола
     if (fullyPaid && ui.screen === 'payment' && ui.payStage !== 'processing' && ui.lastPaid === 0) {
-      patch({ screen: 'status', payStage: 'form', sheet: null })
+      patch({ screen: 'table', payStage: 'form', sheet: null })
       toast('Стол уже полностью оплачен 🎉')
       return
     }
-    // Кто-то отправил всё на кухню, пока я был в корзине
-    if (unsentJustGone && ui.screen === 'cart' && ui.sheet === null) {
-      patch({ screen: 'status' })
+    // Кто-то отправил всё на кухню, пока я смотрел меню: на «Столе» это видно
+    // сразу — черновик исчез, появилась стадия
+    if (unsentJustGone && ui.screen === 'menu' && ui.sheet === null) {
       toast('Заказ отправлен на кухню')
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -68,14 +65,17 @@ function useAutoNav() {
 function Guest() {
   const { ui } = useStore()
   useAutoNav()
+  // Секунда — общий тик для таймеров стадий на экране «Стол»
+  const [now, setNow] = useState(Date.now())
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 1000)
+    return () => clearInterval(t)
+  }, [])
   return (
     <div className="ep-guest">
-      {ui.screen === 'welcome' && <Welcome />}
       {ui.screen === 'menu' && <Menu />}
-      {ui.screen === 'cart' && <Cart />}
-      {ui.screen === 'status' && <Status />}
+      {ui.screen === 'table' && <Table now={now} />}
       {ui.screen === 'payment' && <Payment />}
-      {ui.screen === 'tips' && <Tips />}
       {ui.screen === 'done' && <Done />}
 
       {ui.sheet === 'dish' && <DishSheet />}

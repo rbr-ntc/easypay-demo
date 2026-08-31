@@ -32,7 +32,8 @@ export function SendSheet() {
     setSending(true)
     await sendWave(scope)
     setTimeout(() => {
-      patch({ sheet: null, screen: 'status' })
+      // Отправили — возвращаемся на «Стол», где у позиций уже видна стадия
+      patch({ sheet: null, screen: 'table' })
     }, 1200)
   }
 

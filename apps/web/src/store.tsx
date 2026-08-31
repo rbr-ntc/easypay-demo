@@ -32,9 +32,17 @@ import { CATEGORIES, findDish } from './data'
 import type { Animal, LineOptions } from './data'
 import { amountFor, computeTotals as computeMoney } from '@easypay/domain/money'
 
-export type Screen = 'welcome' | 'menu' | 'cart' | 'status' | 'payment' | 'tips' | 'done'
-export type Sheet = null | 'dish' | 'name' | 'send' | 'call'
-export type PayStage = 'form' | 'qr' | 'processing'
+/**
+ * Четыре экрана вместо семи.
+ *
+ * `cart` и `status` слились в `table`: гость не понимал, что уже ушло на
+ * кухню, а что ещё нет, потому что ответ был размазан по двум экранам.
+ * `welcome` убран — вход по QR ведёт сразу в меню. `tips` стали частью `done`.
+ */
+export type Screen = 'menu' | 'table' | 'payment' | 'done'
+export type Sheet = null | 'dish' | 'name' | 'send' | 'call' | 'allergen'
+/** `failed` — банк не подтвердил: деньги не списаны, повтор идёт тем же ключом. */
+export type PayStage = 'form' | 'qr' | 'processing' | 'failed'
 export type PayScope = 'own' | 'equal' | 'full'
 // «cash» — такой же выбор способа, как остальные. Раньше наличные были не
 // выбором, а мгновенным действием: гость трогал строку, чтобы посмотреть, и
@@ -63,6 +71,12 @@ export interface UiState {
   payScope: PayScope
   payMethod: PayMethod
   payStage: PayStage
+  /** Что именно ответил банк — гостю нужно объяснение, а не «попробуйте ещё». */
+  payError: string | null
+  /** Сегмент на экране «Стол»: свой заказ или весь стол. */
+  tableTab: 'mine' | 'all'
+  /** Апселл показывается один раз после первой подачи, а не во время ожидания. */
+  upsellShown: boolean
   lastPaid: number
   /** Чек последней оплаты: номер, время и состав — то, что гость может предъявить. */
   lastReceipt: import('./api').Receipt | null
@@ -75,7 +89,7 @@ export interface UiState {
 }
 
 const initialUi: UiState = {
-  screen: 'welcome',
+  screen: 'menu',
   sheet: null,
   currentDishId: null,
   pendingAdd: null,
@@ -84,6 +98,9 @@ const initialUi: UiState = {
   payScope: 'own',
   payMethod: 'sbp',
   payStage: 'form',
+  payError: null,
+  tableTab: 'mine',
+  upsellShown: false,
   lastPaid: 0,
   lastReceipt: null,
   tip: '10',
@@ -374,9 +391,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     }
   }, [snap, identity, me, streamKey])
 
-  // Стол закрыли, пока гость был в потоке — мягко возвращаем на приветствие
+  // Стол закрыли, пока гость был в потоке — мягко возвращаем в начало
   useEffect(() => {
-    if (snap?.status === 'closed' && ui.screen !== 'welcome' && ui.screen !== 'done') {
+    if (snap?.status === 'closed' && ui.screen !== 'menu' && ui.screen !== 'done') {
       setUi(prev => ({ ...initialUi, toast: prev.toast }))
       toastRef.current?.('Стол закрыт. Спасибо, что были с нами!')
     }

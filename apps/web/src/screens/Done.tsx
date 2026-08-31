@@ -114,7 +114,7 @@ export function Done() {
           <GhostButton className="flex-1" onClick={() => patch({ screen: 'menu' })}>
             Заказать ещё
           </GhostButton>
-          <PrimaryButton className="flex-1" onClick={() => patch({ screen: 'welcome' })}>
+          <PrimaryButton className="flex-1" onClick={() => patch({ screen: 'menu' })}>
             Готово
           </PrimaryButton>
         </div>

@@ -164,3 +164,52 @@
     );
   }
 }
+
+/**
+ * Типографика.
+ *
+ * Manrope — весь интерфейс. Instrument Serif — только «моменты»: сумма к
+ * оплате, выручка смены, «Спасибо», номер стола на тенте. Нигде мельче 34px,
+ * иначе засечки превращаются в грязь.
+ */
+:root {
+  --ep-font: 'Manrope', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --ep-font-moment: 'Instrument Serif', Georgia, 'Times New Roman', serif;
+}
+
+html {
+  font-family: var(--ep-font);
+}
+
+@layer utilities {
+  /* «Момент»: крупная сумма, за которой гость и пришёл на экран */
+  .ep-moment {
+    font-family: var(--ep-font-moment);
+    font-weight: 400;
+    letter-spacing: -0.01em;
+  }
+
+  /* Эйбрау — подпись-рубрика над блоком */
+  .ep-brow {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--ep-muted);
+  }
+
+  /**
+   * Суммы не переносятся. Реальный дефект из ревью: «осталось 1» на одной
+   * строке и «770 ₽» на другой — гость читает это как две разные цифры.
+   */
+  .ep-sum {
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+
+  /* Инверсная поверхность: ель под кремовым текстом */
+  .ep-forest {
+    background: #062119;
+    color: #faf5ea;
+  }
+}
