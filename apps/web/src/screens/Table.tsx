@@ -1,4 +1,4 @@
-import { findDish, optionsLabel } from '../data'
+import { findDish, MENU, optionsLabel } from '../data'
 import { tableId } from '../api'
 import type { ServerLine } from '../api'
 import { Avatar } from '../avatars'
@@ -55,7 +55,7 @@ function stageCaption(line: ServerLine, now: number): string {
 }
 
 export function Table({ now }: { now: number }) {
-  const { patch, me, snap, totals, removeLine, cancelMine } = useStore()
+  const { ui, patch, me, snap, totals, removeLine, cancelMine } = useStore()
   if (!me || !snap) return null
 
   const mineTab = totals.myTotal + totals.myDraft
@@ -263,6 +263,10 @@ export function Table({ now }: { now: number }) {
           </div>
         )}
 
+        {/* Апселл — ТОЛЬКО после первой подачи и один раз: предлагать добавку
+            человеку, который ещё ждёт свой заказ, — раздражать его. */}
+        {!ui.upsellShown && sent.some(l => l.served) && <Upsell />}
+
         {snap.personas.length > 1 && (
           <div className="rounded-box bg-white p-4" style={{ border: '1px solid #E3DCCB' }}>
             <div className="ep-brow mb-3">Кто что должен</div>
@@ -334,6 +338,59 @@ export function Table({ now }: { now: number }) {
         >
           Заплатить · {fmt(totals.myRemaining > 0.01 ? totals.myRemaining : totals.remaining)}
         </button>
+      </div>
+    </div>
+  )
+}
+
+/**
+ * «Ещё по одной» — предложение добавки после того, как еду принесли.
+ * Берём напитки и десерты: то, что заказывают вторым кругом, а не вместо ужина.
+ */
+function Upsell() {
+  const { patch, snap } = useStore()
+  const alreadyOrdered = new Set((snap?.lines ?? []).map(l => l.dishId))
+  const picks = ['Напитки', 'Десерты']
+    .flatMap(c => MENU[c] ?? [])
+    .filter(d => !d.stop && !alreadyOrdered.has(d.id))
+    .slice(0, 4)
+  if (picks.length === 0) return null
+
+  return (
+    <div className="ep-forest rounded-box p-4">
+      <div className="flex items-start gap-3">
+        <div className="min-w-0 flex-1">
+          <div className="text-[16px] font-extrabold">Ещё по одной?</div>
+          <div className="mt-0.5 text-[13px] font-semibold" style={{ color: '#8CA396' }}>
+            Пока не разошлись — добавка к столу
+          </div>
+        </div>
+        <button
+          aria-label="Скрыть предложение"
+          onClick={() => patch({ upsellShown: true })}
+          className="size-9 shrink-0 rounded-full text-[15px] font-bold"
+          style={{ border: '1px solid rgba(250,245,234,.22)', color: '#8CA396' }}
+        >
+          ✕
+        </button>
+      </div>
+      <div className="mt-3 flex gap-2.5 overflow-x-auto pb-1">
+        {picks.map(d => (
+          <button
+            key={d.id}
+            onClick={() => patch({ sheet: 'dish', currentDishId: d.id, upsellShown: true })}
+            className="w-32 shrink-0 rounded-field p-2.5 text-left"
+            style={{ background: 'rgba(250,245,234,.08)' }}
+          >
+            <div className="relative mb-2 h-16 overflow-hidden rounded-field">
+              <DishPhoto dish={d} />
+            </div>
+            <div className="truncate text-[13px] font-bold">{d.name}</div>
+            <div className="ep-sum text-[13px] font-extrabold" style={{ color: '#D5F94E' }}>
+              {fmt(d.price)}
+            </div>
+          </button>
+        ))}
       </div>
     </div>
   )

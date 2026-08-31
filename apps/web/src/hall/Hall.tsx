@@ -205,6 +205,25 @@ export function Hall() {
       </div>
 
       <div className="grid gap-4.5 px-5.5 pt-4.5 pb-5.5 xl:grid-cols-[1fr_340px]">
+      {!connected && (
+        <div
+          className="mx-5.5 mt-4 flex flex-wrap items-center gap-3 rounded-[20px] px-4.5 py-4"
+          style={{ background: '#2A1410', border: '1.5px solid #C4451F' }}
+        >
+          <span className="ep-pulse size-2.5 rounded-full" style={{ background: '#FF8A63' }} />
+          <span className="flex-1 text-[15px] font-bold" style={{ color: '#FFE3D8' }}>
+            Нет связи с рестораном — показываем последнее известное состояние. Действия сейчас могут не дойти.
+          </span>
+          <button
+            onClick={() => window.location.reload()}
+            className="h-11 rounded-[14px] px-4.5 text-[14px] font-extrabold"
+            style={{ border: '1px solid rgba(250,245,234,.3)', color: '#FAF5EA' }}
+          >
+            Обновить
+          </button>
+        </div>
+      )}
+
         <div className="flex flex-col gap-4">
           <AttentionBar cards={cards} now={now} onAck={ack} />
 

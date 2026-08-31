@@ -107,10 +107,22 @@ export interface TableSession {
   closedWithDebt?: number
   /** Переплата, зафиксированная при закрытии стола. */
   overpaid?: number
+  /** Возвраты переплаты: кому, сколько и чем отдали. Уменьшают `overpaid`. */
+  refunds?: Refund[]
   /** Сброс стола: хранилище освободит стол после того, как зафиксирует чек. */
   resetRequested?: boolean
   /** Привязка к строкам БД. В памяти не используется. */
   db?: { tableUuid: string; sessionUuid: string | null }
+}
+
+/** Возврат переплаты гостю. Деньги уходят из кассы — это отдельное событие. */
+export interface Refund {
+  id: string
+  personaId: string | null
+  amount: number
+  method: PayMethod
+  at: number
+  byId: string | null
 }
 
 /** Кто действует: сотрудник со своей сессией или мастер-токен менеджера. */

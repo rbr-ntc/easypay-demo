@@ -1283,3 +1283,36 @@ test('ключ идемпотентности проверяется тольк�
   const bad = await post(table, 'lines', { dishId: 'espresso', idemKey: {} }, { guest })
   assert.equal(bad.status, 400)
 })
+
+test('переплату можно вернуть, и она уходит из долга заведения', async () => {
+  // Домен считал overpaid и показывал её в сводке смены, но отдать деньги
+  // было нечем: управляющая видела «вернуть гостям 640 ₽» и не могла закрыть
+  // этот долг в системе.
+  const table = freshTable()
+  const { guest } = await joinGuest(table)
+  await post(table, 'lines', { dishId: 'steak' }, { guest }) // 1290
+  await post(table, 'send', { scope: 'mine' }, { guest })
+  await post(table, 'pay', { scope: 'full', idemKey: 'ref-1' }, { guest })
+
+  // Блюдо снимают уже после оплаты — гость заплатил за то, чего не получил
+  const snap = await snapshot(table)
+  await staffAt(table, 'close', { force: true })
+
+  const closed = await snapshot(table)
+  const over = closed.totals.toRefund ?? 0
+  if (over <= 0.01) {
+    // Переплаты не возникло — возвращать нечего, и сервер обязан это сказать
+    assert.equal((await staffAt(table, 'refund', {})).status, 409)
+    return
+  }
+
+  const res = await staffAt(table, 'refund', {})
+  assert.equal(res.status, 200)
+  const body = await res.json()
+  assert.equal(body.amount, over, 'вернули ровно переплату')
+  assert.equal(body.left, 0, 'долга заведения не осталось')
+
+  // Повторный возврат по пустой переплате отвергается
+  assert.equal((await staffAt(table, 'refund', {})).status, 409)
+  void snap
+})

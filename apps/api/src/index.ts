@@ -243,6 +243,10 @@ function snapshot(t: TableSession, id: string) {
       // Заплатили больше, чем осталось в счёте (например, блюдо отменили после
       // оплаты) — эти деньги надо вернуть, и видно это должно быть сразу
       overpaid: round2(Math.max(0, money.paidTotal - money.tableTotal)),
+      // Переплата, оставшаяся к возврату, и уже отданное: возврат — движение
+      // денег наружу, и он обязан быть виден там же, где виден долг
+      toRefund: round2(t.overpaid ?? 0),
+      refunded: round2((t.refunds ?? []).reduce((sum, r) => sum + r.amount, 0)),
       sharedTotal: round2(money.sharedTotal),
       draftTotal: round2(money.draftTotal),
       byPersona: (() => {
@@ -413,7 +417,9 @@ async function serveStatic(req: any, res: any, pathname: string) {
 const NAME_MAX = 30
 const ANIMALS = new Set(['fox', 'bear', 'panda', 'raccoon', 'owl', 'cat'])
 const TABLE_RE = /^[A-Za-z0-9_-]{1,24}$/
-const STAFF_ACTIONS = new Set(['serve', 'ready', 'start', 'close', 'reset', 'ack', 'dismiss', 'clean', 'cash'])
+const STAFF_ACTIONS = new Set([
+  'serve', 'ready', 'start', 'close', 'reset', 'ack', 'dismiss', 'clean', 'cash', 'refund'
+])
 const GUEST_ACTIONS = new Set([
   'lines', 'remove', 'send', 'pay', 'tip', 'call', 'cancelMine', 'cashIntent', 'cancelCash'
 ])
@@ -880,6 +886,42 @@ function staffAction(t: TableSession, tableId: string, action: string, body: any
     line.servedBy = actor.id
     audit(actor, 'подал', tableId, dishName(line.dishId))
     return ok()
+  }
+
+  if (action === 'refund') {
+    /**
+     * Возврат переплаты. Домен считал `overpaid` и показывал её в сводке смены
+     * и в реестре чеков, но отдать деньги было нечем: управляющая видела «вернуть
+     * гостям 640 ₽» и не могла закрыть этот долг в системе.
+     *
+     * Кому — последнему плательщику: он и переплатил. Сумму клампим переплатой,
+     * чтобы возврат не превратился в выдачу из кассы.
+     */
+    const overpaid = round2(t.overpaid ?? 0)
+    if (overpaid <= 0.01) return fail(409, 'nothing to refund')
+
+    const wanted = body.amount === undefined ? overpaid : Number(body.amount)
+    if (!Number.isFinite(wanted) || wanted <= 0) return fail(400, 'bad amount')
+    const amount = round2(Math.min(wanted, overpaid))
+
+    const method: PayMethod = body.method === 'cash' ? 'cash' : 'sbp'
+    // Последний платёж и есть переплата — возвращаем тому, кто её внёс
+    const last = [...t.payments].sort((a, b) => b.at - a.at)[0]
+    const persona = t.personas.find(p => p.id === last?.personaId) ?? null
+
+    t.overpaid = round2(overpaid - amount)
+    t.refunds = [
+      ...(t.refunds ?? []),
+      { id: crypto.randomUUID(), personaId: persona?.id ?? null, amount, method, at: Date.now(), byId: actor?.id ?? null }
+    ]
+    audit(
+      actor,
+      'вернул переплату',
+      tableId,
+      `${persona?.name ?? 'гостю'} · ${method === 'cash' ? 'наличными' : 'на карту'}`,
+      amount
+    )
+    return ok({ ok: true, amount, left: t.overpaid })
   }
 
   if (action === 'cash') {

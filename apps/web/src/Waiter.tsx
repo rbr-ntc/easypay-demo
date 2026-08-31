@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { HALL_LABEL, WAITER_NAME } from './data'
-import { tableId } from './api'
+import { apiRefund, tableId } from './api'
 import { useStore } from './store'
 import { fmt } from './format'
 import { getStaffToken } from './staff'
@@ -130,6 +130,63 @@ function ConfirmDialog({ ask, onClose }: { ask: AskDialog; onClose: () => void }
         </div>
       </div>
       <div className="modal-backdrop" onClick={onClose} />
+    </div>
+  )
+}
+
+/**
+ * Возврат переплаты. Домен считал её с самого начала и показывал в сводке
+ * смены, но отдать деньги было нечем: управляющая видела «вернуть гостям
+ * 640 ₽» и не могла закрыть этот долг в системе.
+ */
+function RefundCard({ table, snap }: { table: string; snap: any }) {
+  const { toast } = useStore()
+  const [busy, setBusy] = useState(false)
+  const left = snap?.totals?.toRefund ?? 0
+  if (left <= 0.01) return null
+
+  const name = snap.personas?.find((p: any) => p.id === [...(snap.payments ?? [])].sort((a: any, b: any) => b.at - a.at)[0]?.personaId)?.name
+
+  const give = async (method: 'sbp' | 'cash') => {
+    setBusy(true)
+    try {
+      const r = await apiRefund(table, left, method, snap.sessionId)
+      toast(r?.ok ? `Возвращено ${fmt(r.amount)}` : 'Не получилось вернуть — обновите экран')
+    } catch {
+      toast('Нет связи с сервером — возврат не проведён')
+    }
+    setBusy(false)
+  }
+
+  return (
+    <div className="mb-3 rounded-[20px] px-4.5 py-4" style={{ background: '#2A1410', border: '1.5px solid #C4451F' }}>
+      <div className="text-[15px] font-extrabold" style={{ color: '#FFE3D8' }}>
+        Вернуть переплату{name ? ` · ${name}` : ''}
+      </div>
+      <div className="ep-sum mt-1 text-[26px] font-extrabold" style={{ color: '#FAF5EA' }}>
+        {fmt(left)}
+      </div>
+      <div className="mt-1 text-[12px] font-semibold" style={{ color: '#FFC9B6' }}>
+        Гость заплатил больше, чем получил, — это долг заведения, а не выручка
+      </div>
+      <div className="mt-3 flex gap-2">
+        <button
+          disabled={busy}
+          onClick={() => void give('sbp')}
+          className="h-11 flex-1 rounded-field text-[14px] font-extrabold disabled:opacity-45"
+          style={{ background: '#D5F94E', color: '#062119' }}
+        >
+          На карту
+        </button>
+        <button
+          disabled={busy}
+          onClick={() => void give('cash')}
+          className="h-11 flex-1 rounded-field text-[14px] font-bold disabled:opacity-45"
+          style={{ border: '1px solid rgba(250,245,234,.3)', color: '#FAF5EA' }}
+        >
+          Наличными
+        </button>
+      </div>
     </div>
   )
 }
@@ -303,26 +360,68 @@ export function Waiter() {
       </div>
 
       <div className="px-5.5 pt-4.5">
-        {snap?.call && (
+        {!connected && (
           <div
             className="mb-4 flex flex-wrap items-center gap-3 rounded-[20px] px-4.5 py-4"
             style={{ background: '#2A1410', border: '1.5px solid #C4451F' }}
           >
             <span className="ep-pulse size-2.5 rounded-full" style={{ background: '#FF8A63' }} />
             <span className="flex-1 text-[15px] font-bold" style={{ color: '#FFE3D8' }}>
-              <b>{snap.call.name ?? personas.find(p => p.id === snap.call?.personaId)?.name ?? 'Гость'}</b>{' '}
-              {/* Текст гостя важнее подписи причины: официант должен знать, зачем идёт */}
-              {snap.call.note ?? CALL_LABEL[snap.call.reason] ?? CALL_LABEL.help} · {fmtDur(now - snap.call.at)}
+              Нет связи с рестораном — показываем последнее известное состояние.
+              Действия сейчас могут не дойти.
             </span>
-            {may('ack') && (
-              <button
-                onClick={() => void ackCall(snap.call?.id)}
-                className="h-11 rounded-[14px] px-4.5 text-[14px] font-extrabold"
-                style={{ background: '#D5F94E', color: '#062119' }}
-              >
-                Иду{(snap.calls?.length ?? 0) > 1 ? ` (ещё ${snap.calls.length - 1})` : ''}
-              </button>
-            )}
+            <button
+              onClick={() => window.location.reload()}
+              className="h-11 rounded-[14px] px-4.5 text-[14px] font-extrabold"
+              style={{ border: '1px solid rgba(250,245,234,.3)', color: '#FAF5EA' }}
+            >
+              Обновить
+            </button>
+          </div>
+        )}
+        {/* Очередь вызовов целиком. Раньше был виден только первый, а остальные
+            превращались в «(ещё 2)» на кнопке: официант снимал верхний и не знал,
+            кто под ним и сколько тот уже ждёт. */}
+        {(snap?.calls?.length ?? 0) > 0 && (
+          <div
+            className="mb-4 rounded-[20px] px-4.5 py-4"
+            style={{ background: '#2A1410', border: '1.5px solid #C4451F' }}
+          >
+            <div className="mb-3 flex items-center gap-2.5">
+              <span className="ep-pulse size-2.5 rounded-full" style={{ background: '#FF8A63' }} />
+              <span className="text-[15px] font-extrabold" style={{ color: '#FFE3D8' }}>
+                {snap!.calls.length === 1
+                  ? 'Вас зовут'
+                  : `Вас зовут · ${snap!.calls.length} ${snap!.calls.length < 5 ? 'вызова' : 'вызовов'}`}
+              </span>
+            </div>
+            <div className="flex flex-col gap-2">
+              {snap!.calls.map(c => (
+                <div
+                  key={c.id ?? c.at}
+                  className="flex flex-wrap items-center gap-3 rounded-field px-3.5 py-3"
+                  style={{ background: 'rgba(250,245,234,.08)' }}
+                >
+                  <span className="min-w-0 flex-1 text-[15px] font-bold" style={{ color: '#FAF5EA' }}>
+                    <b>{c.name ?? personas.find(p => p.id === c.personaId)?.name ?? 'Гость'}</b>{' '}
+                    {/* Текст гостя важнее подписи причины: он говорит, зачем идти */}
+                    {c.note ?? CALL_LABEL[c.reason] ?? CALL_LABEL.help}
+                  </span>
+                  <span className="ep-sum font-mono text-[14px] font-bold" style={{ color: '#FFC9B6' }}>
+                    {fmtDur(now - c.at)}
+                  </span>
+                  {may('ack') && (
+                    <button
+                      onClick={() => void ackCall(c.id)}
+                      className="h-11 rounded-[14px] px-4.5 text-[14px] font-extrabold"
+                      style={{ background: '#D5F94E', color: '#062119' }}
+                    >
+                      Иду
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
           </div>
         )}
 
@@ -335,6 +434,7 @@ export function Waiter() {
         <div>
           {/* Гость с деньгами в руке — это срочнее всего остального на экране */}
           <CashRequest table={tableId ?? ''} snap={snap} onTaken={() => {}} />
+          {may('refund') && <RefundCard table={tableId ?? ''} snap={snap} />}
           <GuestList personas={personas} lines={lines} totals={totals} tableOpen={isOpen} />
         </div>
         <div>

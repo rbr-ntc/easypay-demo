@@ -99,6 +99,9 @@ export interface PersonaTotals {
 }
 
 export interface ServerTotals {
+  /** Переплата, которую ещё надо вернуть гостю, и уже возвращённое. */
+  toRefund?: number
+  refunded?: number
   tableTotal: number
   paidTotal: number
   remaining: number
@@ -232,6 +235,14 @@ export const apiPay = (
     { scope, idemKey, method },
     { guest }
   )
+
+/** Вернуть переплату гостю. Только менеджеру: деньги уходят из кассы. */
+export const apiRefund = (table: string, amount: number, method: 'sbp' | 'cash', sessionId: string | null) =>
+  fetch(`/api/t/${encodeURIComponent(table)}/refund`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'x-staff-token': getStaffToken() },
+    body: JSON.stringify({ amount, method, sessionId })
+  }).then(r => r.json())
 
 /** «Заплачу наличными»: просьба к официанту, деньги не списываются. */
 export const apiCashIntent = (guest: string, scope: 'own' | 'equal' | 'full') =>

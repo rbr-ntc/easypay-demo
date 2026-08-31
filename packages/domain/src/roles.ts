@@ -11,6 +11,8 @@ export type Permission =
   | 'clean'
   | 'ready'
   | 'cash'
+  /** Вернуть переплату гостю — деньги уходят из кассы наружу. */
+  | 'refund'
   | 'table'
   | 'start'
   | 'serve'
@@ -48,7 +50,7 @@ export const ROLE_LABEL: Record<RoleName, string> = {
  *  log            — журнал действий смены
  */
 export const PERMISSIONS: Record<RoleName, Permission[]> = {
-  manager: ['hall', 'kitchen', 'table', 'start', 'ready', 'serve', 'dismiss', 'ack', 'close', 'clean', 'cash', 'reset', 'log'],
+  manager: ['hall', 'kitchen', 'table', 'start', 'ready', 'serve', 'dismiss', 'ack', 'close', 'clean', 'cash', 'refund', 'reset', 'log'],
   // Убрать стол — работа зала: пока это делал таймер, гостей сажали за грязный
   waiter: ['hall', 'kitchen', 'table', 'start', 'ready', 'serve', 'dismiss', 'ack', 'close', 'clean', 'cash'],
   // Повар подтверждает отмену сам: снять блюдо с плиты — его работа, не менеджерская

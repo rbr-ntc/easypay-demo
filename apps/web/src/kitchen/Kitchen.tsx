@@ -142,6 +142,25 @@ export function Kitchen() {
         </div>
       </div>
 
+{!connected && (
+        <div
+          className="mx-5.5 mt-4 flex flex-wrap items-center gap-3 rounded-[20px] px-4.5 py-4"
+          style={{ background: '#2A1410', border: '1.5px solid #C4451F' }}
+        >
+          <span className="ep-pulse size-2.5 rounded-full" style={{ background: '#FF8A63' }} />
+          <span className="flex-1 text-[15px] font-bold" style={{ color: '#FFE3D8' }}>
+            Нет связи с рестораном — показываем последнее известное состояние. Действия сейчас могут не дойти.
+          </span>
+          <button
+            onClick={() => window.location.reload()}
+            className="h-11 rounded-[14px] px-4.5 text-[14px] font-extrabold"
+            style={{ border: '1px solid rgba(250,245,234,.3)', color: '#FAF5EA' }}
+          >
+            Обновить
+          </button>
+        </div>
+      )}
+
       {failed && (
         <div
           className="mx-5.5 mt-4 rounded-field px-4 py-3 text-[14px] font-bold"
