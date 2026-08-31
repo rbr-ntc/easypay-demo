@@ -5,7 +5,7 @@ import type { Dish } from '../data'
 import { tableId } from '../api'
 import { Avatar } from '../avatars'
 import { useStore } from '../store'
-import { fmt } from '../format'
+import { fmt, listNames } from '../format'
 
 /**
  * Фотография блюда. Настоящее фото лежит в public/dishes; у блюд без фото —
@@ -122,7 +122,7 @@ export function Menu() {
             </div>
             <div className="truncate text-[13px] font-semibold" style={{ color: '#8CA396' }}>
               {HALL_LABEL}
-              {neighbours.length > 0 ? ` · с вами ${neighbours.map(p => p.name).join(' и ')}` : ''}
+              {neighbours.length > 0 ? ` · с вами ${listNames(neighbours.map(p => p.name))}` : ''}
             </div>
           </div>
           <button

@@ -12,3 +12,12 @@ export function fmt(n: number): string {
   }
   return (neg ? '−' : '') + out + ' ₽'
 }
+
+/**
+ * Перечисление имён по-русски: «Глеб и Мила», «Глеб, Мила и Ника».
+ * Простой join через « и » давал «Глеб и Глеб и Глеб» — читается как заикание.
+ */
+export function listNames(names: string[]): string {
+  if (names.length <= 1) return names[0] ?? ''
+  return `${names.slice(0, -1).join(', ')} и ${names[names.length - 1]}`
+}
