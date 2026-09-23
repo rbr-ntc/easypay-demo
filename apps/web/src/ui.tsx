@@ -95,12 +95,13 @@ export function WarnBanner({ children }: { children: ReactNode }) {
 }
 
 export function BottomSheet({ children, onClose }: { children: ReactNode; onClose: () => void }) {
-  // modal-bottom прижимает лист к низу экрана, а на широком экране daisyUI сам
-  // держит его в разумной ширине — раньше это делал отдельный класс ep-sheet-panel
+  // На телефоне — лист снизу. С 640 px — окно по центру шириной 480: у
+  // modal-bottom в daisyUI max-width: none, и на мониторе лист вытягивался
+  // на все 1440 px — фото блюда полосой, поле имени через весь экран.
   return (
-    <div className="modal modal-open modal-bottom" role="dialog">
-      <div className="modal-box max-h-[90%] p-0 pb-[env(safe-area-inset-bottom)]">
-        <div className="flex justify-center p-2.5">
+    <div className="modal modal-open modal-bottom sm:modal-middle" role="dialog">
+      <div className="modal-box max-h-[90dvh] p-0 pb-[env(safe-area-inset-bottom)] sm:w-[calc(100%-3rem)] sm:max-w-[30rem] sm:rounded-[28px] sm:pb-0">
+        <div className="flex justify-center p-2.5 sm:hidden">
           <div className="h-1 w-10 rounded-full bg-base-300" />
         </div>
         {children}

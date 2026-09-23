@@ -10,7 +10,9 @@ export function TablePicker() {
 
   return (
     <div className="ep-screen ep-forest">
-      <div className="ep-scroll px-6 pt-5 pb-7">
+      {/* На мониторе и планшете — колонкой по центру, как весь гостевой поток,
+          а не прижатым к левому краю списком с пустотой на 1000 px справа */}
+      <div className="ep-scroll mx-auto w-full max-w-[560px] px-6 pt-5 pb-7 md:pt-12">
         <div className="mb-5 text-xl font-extrabold tracking-tight">{HALL.restaurant}</div>
 
         {unknown ? (

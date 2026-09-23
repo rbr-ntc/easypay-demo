@@ -73,7 +73,7 @@ function Guest() {
     return () => clearInterval(t)
   }, [])
   return (
-    <div className="ep-guest">
+    <div className="ep-guest" data-screen={ui.screen}>
       {ui.screen === 'menu' && <Menu />}
       {ui.screen === 'table' && <Table now={now} />}
       {ui.screen === 'payment' && <Payment />}
