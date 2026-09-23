@@ -8,6 +8,7 @@ import { DishPhoto } from '../screens/Menu'
 import { useStore } from '../store'
 import { newIdemKey } from '../keys'
 import { fmt } from '../format'
+import { authorLabel, creditOf } from '../credits'
 
 const MAX_QTY = 9 // столько же принимает сервер
 
@@ -124,6 +125,7 @@ export function DishSheet() {
   }
 
   const bad = allergenTags(dish, opts).filter(a => (me?.allergies ?? []).includes(a))
+  const credit = dish.photo ? creditOf(dish.id) : null
 
   return (
     <BottomSheet onClose={close}>
@@ -134,13 +136,18 @@ export function DishSheet() {
           <DishPhoto dish={dish} />
           <div
             className="absolute inset-0"
-            style={{ background: 'linear-gradient(to top, rgba(6,33,25,.7) 0%, rgba(6,33,25,0) 50%)' }}
+            style={{
+              // Второй слой — под кнопкой «назад»: стекло одно не вытягивает
+              // стрелку 18px до AA на светлом кадре (белая тарелка, пена)
+              background:
+                'linear-gradient(to top, rgba(6,33,25,.7) 0%, rgba(6,33,25,0) 50%), radial-gradient(circle at 38px 38px, rgba(6,33,25,.55) 0, rgba(6,33,25,0) 64px)'
+            }}
           />
           <button
             aria-label="Назад"
             onClick={close}
             className="ep-glass absolute top-4 left-4 size-11 rounded-full text-lg font-extrabold"
-            style={{ color: '#FAF5EA' }}
+            style={{ color: '#FFFFFF', textShadow: '0 1px 2px rgba(0,0,0,.55)' }}
           >
             ←
           </button>
@@ -181,7 +188,20 @@ export function DishSheet() {
           </div>
         </div>
 
-        <div className="px-5 pt-5">
+        {credit && (
+          <div className="px-5 pt-2 text-right text-[12px] font-semibold text-muted-soft">
+            Фото:{' '}
+            <a className="underline" href={credit.page} target="_blank" rel="noreferrer noopener">
+              {authorLabel(credit)}
+            </a>
+            ,{' '}
+            <a className="underline" href={credit.licenseUrl} target="_blank" rel="noreferrer noopener">
+              {credit.license}
+            </a>
+          </div>
+        )}
+
+        <div className="px-5 pt-3">
           <p className="text-[15px] leading-relaxed font-medium text-muted">{dish.desc}</p>
         </div>
 

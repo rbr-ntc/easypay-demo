@@ -16,6 +16,7 @@ import { StaffGate } from './staff/StaffGate'
 import { tableId } from './api'
 import { seatsOfTable } from './hallConfig'
 import { QrTent } from './QrTent'
+import { PhotoCredits } from './screens/PhotoCredits'
 import { Toast } from './ui'
 
 function ConnBanner() {
@@ -161,6 +162,8 @@ export default function App() {
         )
       ) : route.startsWith('#/qr') ? (
         <QrTent />
+      ) : route.startsWith('#/credits') ? (
+        <PhotoCredits />
       ) : tableId && seatsOfTable(tableId) !== null ? (
         <Guest />
       ) : (

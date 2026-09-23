@@ -308,7 +308,7 @@ export function Menu() {
                     {/* Короткая строка: порция, выбор и аллергены. Полное
                         описание живёт в карточке блюда — здесь оно раздувало
                         плашку на три строки и закрывало собой фотографию. */}
-                    <div className="mt-0.5 truncate text-[13px] font-semibold" style={{ color: '#E4EDE7' }}>
+                    <div className="mt-0.5 truncate text-[13px] font-semibold text-white/95">
                       {[
                         it.serving,
                         (it.options ?? []).length > 0 ? `${it.options![0].name.toLowerCase()} на выбор` : null,
@@ -336,6 +336,11 @@ export function Menu() {
             )
           })}
         </div>
+
+        {/* CC BY требует назвать автора там, где показан снимок */}
+        <a href="#/credits" className="mt-6 block py-3 text-center text-[13px] font-semibold text-muted underline">
+          Фотографии блюд: авторы и лицензии
+        </a>
       </div>
 
       {/* Футер — единая кнопка стола: сколько блюд, сколько ещё не ушло на кухню */}
