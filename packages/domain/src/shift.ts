@@ -73,7 +73,10 @@ export function setVenueTz(tz: string) {
 
 const methodOf = (m: string): PayMethodKey => (m === 'cash' ? 'cash' : m === 'card' ? 'card' : 'sbp')
 
-export function buildShiftReport(checks: ReportCheck[]): ShiftReport {
+/**
+ * @param menu — названия блюд меню: аутсайдеры включают и не проданные ни разу.
+ */
+export function buildShiftReport(checks: ReportCheck[], menu: string[] = []): ShiftReport {
   const closed = checks.filter(c => c.closedAt !== null)
   const open = checks.filter(c => c.closedAt === null)
 
@@ -103,7 +106,6 @@ export function buildShiftReport(checks: ReportCheck[]): ShiftReport {
   const byHour = Array.from({ length: span }, (_, i) => (startHour + i) % 24)
     .map(hour => ({ hour, amount: hours.get(hour) ?? 0 }))
 
-  const withMoney = checks.filter(c => c.payments.length > 0)
 
   const tipsMap = new Map<string, number>()
   for (const c of checks)
@@ -133,7 +135,10 @@ export function buildShiftReport(checks: ReportCheck[]): ShiftReport {
     byMethod,
     checks: closed.length,
     guests: checks.reduce((a, c) => a + c.guests, 0),
-    avgCheck: withMoney.length ? round2(revenue / withMoney.length) : 0,
+    // Средний чек — по той же базе, что и «Чеков»: закрытые столы, их счёт.
+    // Раньше делилось на все столы с деньгами, включая открытые, и рядом
+    // стояло «чеков 2, средний 4 077,5» при выручке 16 310
+    avgCheck: closed.length ? round2(closed.reduce((a, c) => a + c.total, 0) / closed.length) : 0,
     tips: round2([...tipsMap.values()].reduce((a, x) => a + x, 0)),
     tipsByWaiter: [...tipsMap.entries()].map(([name, amount]) => ({ name, amount })).sort((a, b) => b.amount - a.amount),
     debt: round2(closed.reduce((a, c) => a + c.debt, 0)),
@@ -147,7 +152,11 @@ export function buildShiftReport(checks: ReportCheck[]): ShiftReport {
       .map(([name, w]) => ({ name, ...w }))
       .sort((a, b) => b.revenue - a.revenue),
     top: sold.slice(0, 5),
-    // Аутсайдеры — хуже всего продающиеся, по возрастанию
-    low: [...sold].sort((a, b) => a.qty - b.qty).slice(0, 4)
+    // Аутсайдеры — хуже всего продающиеся, по возрастанию; не проданное ни
+    // разу — первым: его раньше не было видно вовсе
+    low: [
+      ...menu.filter(name => !dishes.has(name)).map(name => ({ name, qty: 0 })),
+      ...[...sold].sort((a, b) => a.qty - b.qty)
+    ].slice(0, 4)
   }
 }

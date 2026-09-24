@@ -52,7 +52,7 @@ test('выручка по способам и по часам — из плат�
   )
 })
 
-test('средний чек — по столам с деньгами; открытые столы в чеки не входят', () => {
+test('средний чек — по закрытым столам, как и «Чеков»; открытые не входят', () => {
   const r = buildShiftReport([
     check({ total: 1000, paid: 1000, payments: [{ amount: 1000, method: 'sbp', at: h(12) }] }),
     check({ total: 2000, paid: 2000, payments: [{ amount: 2000, method: 'sbp', at: h(12) }] }),
@@ -62,7 +62,7 @@ test('средний чек — по столам с деньгами; откр�
   assert.equal(r.checks, 3, 'чеков — закрытых столов')
   assert.equal(r.openTables, 1)
   assert.equal(r.openRemaining, 600)
-  assert.equal(r.avgCheck, 1100, '(1000 + 2000 + 300) / 3 стола с деньгами')
+  assert.equal(r.avgCheck, 1166.67, '(1000 + 2000 + 500) / 3 закрытых счёта')
   assert.equal(r.debt, 500)
 })
 
@@ -144,4 +144,12 @@ test('часы по времени заведения и через полноч
     [22, 23, 0]
   )
   assert.equal(r.byHour[2].amount, 500)
+})
+
+test('аутсайдеры начинаются с блюд, не проданных ни разу', () => {
+  const r = buildShiftReport([check({ lines: [{ name: 'Борщ', qty: 2, amount: 980, cancelled: false }] })], ['Борщ', 'Утка', 'Уха'])
+  assert.deepEqual(r.low.slice(0, 2), [
+    { name: 'Утка', qty: 0 },
+    { name: 'Уха', qty: 0 }
+  ])
 })

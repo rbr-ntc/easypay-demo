@@ -8,6 +8,7 @@ export interface KitchenPayload {
   summary: KitchenSummary & { bar: number; kitchen: number; cancelled: number; warn: number; ready: number }
   /** Что сейчас в стопе — с учётом тумблеров кухни, а не только menu.json. */
   stop?: string[]
+  stopInfo?: Record<string, { by: string | null; at: number | null; byMenu: boolean }>
   menuVersion?: number
   settingsVersion?: number
   now: number

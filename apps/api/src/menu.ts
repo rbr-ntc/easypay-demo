@@ -80,8 +80,30 @@ export function applyStopOverrides(overrides: Record<string, boolean>) {
   for (const [id, stop] of Object.entries(overrides)) stopOverrides.set(id, stop)
 }
 
-export function setStopOverride(id: string, stop: boolean) {
+/**
+ * Кто и когда выключил блюдо. Утка стояла в стопе с начала смены — по
+ * умолчанию из меню или со вчера, — и повар не мог понять, правда ли она
+ * закончилась. Метка «кто, когда» снимает этот вопрос.
+ */
+const stopMeta = new Map<string, { by: string | null; at: number | null }>()
+
+export function setStopOverride(id: string, stop: boolean, by: string | null = null, at: number = Date.now()) {
   stopOverrides.set(id, stop)
+  stopMeta.set(id, { by, at })
+}
+
+export function applyStopMeta(meta: Record<string, { by: string | null; at: number | null }>) {
+  for (const [id, m] of Object.entries(meta)) stopMeta.set(id, m)
+}
+
+/** Для стоп-листа кухни: у каждого выключенного блюда — кто и когда, или «по умолчанию в меню». */
+export function stopInfo(): Record<string, { by: string | null; at: number | null; byMenu: boolean }> {
+  return Object.fromEntries(
+    stopList().map(id => {
+      const m = stopOverrides.has(id) ? stopMeta.get(id) : undefined
+      return [id, { by: m?.by ?? null, at: m?.at ?? null, byMenu: !stopOverrides.has(id) }]
+    })
+  )
 }
 
 export function isStopped(id: string): boolean {

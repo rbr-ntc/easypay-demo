@@ -7,7 +7,7 @@
 
 import { computeTotals, round2 } from '@easypay/domain/money'
 import { buildShiftReport, type ReportCheck, type ShiftReport } from '@easypay/domain/shift'
-import { dishName, priceOf } from './menu.ts'
+import { currentMenu, dishName, priceOf } from './menu.ts'
 import { staffName, waiterOfTable } from './staff.ts'
 import { currentSettings } from './settings.ts'
 import type { Store } from './store/index.ts'
@@ -52,6 +52,9 @@ export async function windowOf(store: Store, shift: ShiftInfo): Promise<ShiftWin
   return { from: prev?.closedAt ?? 0, to: shift.closedAt ?? Infinity }
 }
 
+/** Названия блюд меню — для аутсайдеров, куда попадают и не проданные ни разу. */
+const menuNames = () => currentMenu().categories.flatMap(c => c.dishes.filter(d => !d.hidden).map(d => String(d.name)))
+
 const inWindow = (at: number, w?: ShiftWindow) => !w || (at > w.from && at <= w.to)
 
 export function reportOfCheck(c: ShiftCheck, w?: ShiftWindow): ReportCheck {
@@ -67,7 +70,11 @@ export function reportOfCheck(c: ShiftCheck, w?: ShiftWindow): ReportCheck {
     debt: c.debt,
     overpaid: c.overpaid,
     refunded: c.refunded ?? 0,
-    cancelledTotal: c.cancelledTotal,
+    // «Снято с кухни» — потерянный продукт: снятое с плиты. Отмена гостем до
+    // готовки ничего не стоила кухне и раньше путала менеджера
+    cancelledTotal: round2(
+      c.lines.filter(l => l.cancelled && /с плиты/.test(l.cancelReason ?? '')).reduce((a, l) => a + l.amount, 0)
+    ),
     payments: (c.payments ?? []).filter(p => inWindow(p.at, w)).map(p => ({ amount: p.amount, method: p.method, at: p.at })),
     tips: (c.tipsList ?? (c.tips > 0 ? [{ amount: c.tips, waiter: c.waiter, at: c.closedAt ?? c.openedAt }] : [])).filter(t => inWindow(t.at, w)),
     lines: c.lines.map(l => ({ name: l.name, qty: l.qty, amount: l.amount, cancelled: l.cancelled }))
@@ -116,6 +123,7 @@ export function checkOfOpen(tableId: string, t: TableSession): ShiftCheck {
     })),
     tipsList: t.tips.map(x => ({ amount: x.amount, waiter: waiterOfTable(tableId)?.name ?? null, at: x.at })),
     refunded: round2((t.refunds ?? []).reduce((a, r) => a + r.amount, 0)),
+    refundsList: (t.refunds ?? []).map(r => ({ amount: r.amount, method: r.method ?? 'sbp', at: r.at })),
     firstSentAt: sent.length ? Math.min(...sent) : null,
     lastServedAt: served.length ? Math.max(...served) : null
   }
@@ -161,7 +169,7 @@ export function createShiftRoutes(deps: ShiftDeps) {
     ])
     const openChecks = open.map(o => checkOfOpen(o.tableId, o.t))
     const win = shift ? await windowOf(store, shift) : undefined
-    const report = buildShiftReport([...closed, ...openChecks].map(c => reportOfCheck(c, win)))
+    const report = buildShiftReport([...closed, ...openChecks].map(c => reportOfCheck(c, win)), menuNames())
 
     // Долги этой смены — каждый должен получить решение до закрытия
     const debts = closed
@@ -169,6 +177,13 @@ export function createShiftRoutes(deps: ShiftDeps) {
       .map(c => ({ ...debtItem(c), settled: settledFor(settled, c.sessionId) }))
       .map(d => ({ ...d, left: round2(Math.max(0, d.amount - d.settled)) }))
 
+    // Возвраты наличными в окне смены — деньги ушли из кассы
+    const cashRefunds = round2(
+      [...closed, ...openChecks]
+        .flatMap(c => c.refundsList ?? [])
+        .filter(r => r.method === 'cash' && (!win || (r.at > win.from && r.at <= win.to)))
+        .reduce((a, r) => a + r.amount, 0)
+    )
     // Наличные по системе: оплаты наличными + взысканное наличными в эту смену
     const collectedCash = round2(
       settled
@@ -196,7 +211,9 @@ export function createShiftRoutes(deps: ShiftDeps) {
       refunds: closed
         .filter(c => c.overpaid > 0.01)
         .map(c => ({ tableId: c.tableId, sessionId: c.sessionId, amount: c.overpaid, closedAt: c.closedAt })),
-      cash: { system: round2(report.byMethod.cash + collectedCash), collected: collectedCash }
+      // Возврат наличными уменьшает то, что должно лежать в ящике: раньше
+      // касса «не сходилась» ровно на сумму отданного гостю
+      cash: { system: round2(report.byMethod.cash + collectedCash - cashRefunds), collected: collectedCash, refunded: cashRefunds }
     }
   }
 
@@ -241,6 +258,8 @@ export function createShiftRoutes(deps: ShiftDeps) {
     }
     for (const c of current) {
       if (c.overpaid <= 0.01) continue
+      // Вернули на кассе (за столом уже новые гости, из системы не вернуть) — отмечено
+      if (noteOf(`refund:${c.sessionId}`)) continue
       items.push({
         id: `refund:${c.sessionId}`,
         kind: 'refund',
@@ -287,7 +306,7 @@ export function createShiftRoutes(deps: ShiftDeps) {
       ...notes.map(n => ({
         id: `note:${n.key}`,
         kind: 'long',
-        title: n.key.startsWith('long:') ? 'Долго открытый стол' : 'Решение',
+        title: n.key.startsWith('long:') ? 'Долго открытый стол' : n.key.startsWith('refund:') ? 'Переплата возвращена на кассе' : 'Решение',
         text: `${n.text} · ${staffName(n.byId) ?? 'менеджер'}`,
         amount: 0,
         at: n.at
@@ -492,7 +511,7 @@ export function createShiftRoutes(deps: ShiftDeps) {
 
     if (p === '/api/decisions/note' && req.method === 'POST') {
       const body = await readBody(req)
-      const key = typeof body.key === 'string' && /^long:[\w-]{1,64}$/.test(body.key) ? body.key : null
+      const key = typeof body.key === 'string' && /^(long|refund):[\w-]{1,64}$/.test(body.key) ? body.key : null
       const text = typeof body.text === 'string' ? body.text.trim().slice(0, 200) : ''
       if (!key || !text) {
         json(res, 400, { error: 'key and text required' })

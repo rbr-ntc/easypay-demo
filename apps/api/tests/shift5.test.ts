@@ -2,6 +2,8 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 
 /**
+ * Пачка исправлений по смене агентов №5 (docs/prototype/shift-5-findings.md).
+ *
  * Аллергия по дороге на кухню — главная находка пятой смены. Сервер знал
  * аллергии гостя, но тикет повара нёс только аллергены блюда: гостье с
  * лактозой жарили рибай на сливочном масле, не зная о ней. Общее блюдо не
@@ -179,4 +181,35 @@ test('чеки: доплата и «поровну» с пометкой, нал
 
   const tip = await (await post(`/api/t/${table}/tip`, { amount: 100, method: 'card', idemKey: fresh() }, { guest: gleb })).json()
   assert.equal(tip.receipt.method, 'card')
+})
+
+test('возврат наличными уменьшает ожидаемую кассу; переплату можно закрыть отметкой', async () => {
+  const table = fresh()
+  const g = (await join(table, 'Тимур')).body.guestToken
+  await post(`/api/t/${table}/lines`, { dishId: 'espresso' }, { guest: g })
+  await post(`/api/t/${table}/send`, { scope: 'mine' }, { guest: g })
+  await post(`/api/t/${table}/pay`, { scope: 'own', method: 'sbp', idemKey: fresh() }, { guest: g })
+  const snap = await fetch(`${base}/api/t/${table}`, { headers: { 'x-staff-token': M } }).then(r => r.json())
+  // Кухня не начинала — принудительное закрытие снимает эспрессо, оплата становится переплатой
+  await post(`/api/t/${table}/close`, { force: true, sessionId: snap.sessionId }, { staff: M })
+
+  const before = await fetch(`${base}/api/shift`, { headers: { 'x-staff-token': M } }).then(r => r.json())
+  const refunded = await post(`/api/t/${table}/refund`, { method: 'cash', sessionId: snap.sessionId, idemKey: fresh() }, { staff: M })
+  assert.equal(refunded.status, 200)
+  const amount = (await refunded.json()).amount
+  const after = await fetch(`${base}/api/shift`, { headers: { 'x-staff-token': M } }).then(r => r.json())
+  assert.equal(after.cash.refunded - before.cash.refunded, amount)
+  assert.equal(Math.round((before.cash.system - after.cash.system) * 100) / 100, amount, 'из ящика ушло — система ждёт меньше')
+
+  // Журнал — за смену целиком, с отметкой начала
+  const log = await fetch(`${base}/api/log`, { headers: { 'x-staff-token': M } }).then(r => r.json())
+  assert.ok(log.entries.length > 0)
+  assert.ok(log.entries.every((e: any) => !log.since || e.at >= log.since))
+})
+
+test('переплату, которую уже не вернуть из системы, закрывают отметкой «вернули на кассе»', async () => {
+  const note = await post('/api/decisions/note', { key: 'refund:abc-123', text: 'Оля, наличными из кассы' }, { staff: M })
+  assert.equal(note.status, 200)
+  const bad = await post('/api/decisions/note', { key: 'evil:1', text: 'x' }, { staff: M })
+  assert.equal(bad.status, 400)
 })

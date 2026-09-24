@@ -21,10 +21,13 @@ const kindOf = (e: LogEntry): Kind => KINDS.find(k => k.re.test(e.action))?.id ?
 const TABS: { id: 'all' | Kind; label: string }[] = [{ id: 'all', label: 'Всё' }, ...KINDS.map(k => ({ id: k.id, label: k.label }))]
 
 export function Log() {
-  const q = useLoad(fetchLog)
+  const [whole, setWhole] = useState(false)
+  const q = useLoad(() => fetchLog(whole), [whole])
   const [tab, setTab] = useState<'all' | Kind>('all')
+  const [table, setTable] = useState('')
   if (!q.data) return <Loading failed={q.failed} />
-  const rows = q.data.entries.filter(e => tab === 'all' || kindOf(e) === tab)
+  const t = table.trim()
+  const rows = q.data.entries.filter(e => (tab === 'all' || kindOf(e) === tab) && (!t || e.tableId === t))
 
   return (
     <div className="flex max-w-[1000px] flex-col gap-3.5">
@@ -35,8 +38,21 @@ export function Log() {
           </Chip>
         ))}
         <span className="flex-1" />
-        <span className="text-[13px] text-c-mute">Журнал нельзя изменить или удалить</span>
+        <input
+          value={table}
+          onChange={e => setTable(e.target.value)}
+          placeholder="Стол"
+          aria-label="Фильтр по столу"
+          className="h-9 w-20 rounded-full border border-c-line bg-c-card px-3 text-[13px] outline-none focus:border-c-ink"
+        />
+        <Chip on={!whole} onClick={() => setWhole(false)}>
+          {q.data.since ? `Смена с ${hm(q.data.since)}` : 'Эта смена'}
+        </Chip>
+        <Chip on={whole} onClick={() => setWhole(true)}>
+          Всё
+        </Chip>
       </div>
+      <div className="-mt-1.5 text-[12px] text-c-mute">Журнал нельзя изменить или удалить · записей: {rows.length}</div>
       {rows.length === 0 ? (
         <Empty>Записей нет</Empty>
       ) : (

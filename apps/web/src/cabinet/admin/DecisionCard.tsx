@@ -120,9 +120,22 @@ export function DecisionCard({ item, onDone, compact = false }: { item: Decision
           </>
         )}
         {item.kind === 'refund' && (
-          <button disabled={busy} onClick={refund} className="h-10 rounded-xl bg-c-ink px-4 text-[14px] font-bold text-white disabled:opacity-50">
-            {busy ? 'Секунду…' : 'Вернул гостю'}
-          </button>
+          <>
+            <button disabled={busy} onClick={refund} className="h-10 rounded-xl bg-c-ink px-4 text-[14px] font-bold text-white disabled:opacity-50">
+              {busy ? 'Секунду…' : 'Вернул гостю'}
+            </button>
+            {/* За столом уже новые гости — из системы не вернуть, только отметить */}
+            <button
+              disabled={busy}
+              onClick={() => {
+                setText('')
+                setDialog('note')
+              }}
+              className="h-10 rounded-xl border border-c-line bg-c-card px-4 text-[14px] disabled:opacity-50"
+            >
+              Вернули на кассе…
+            </button>
+          </>
         )}
         {item.kind === 'long' && (
           <>
@@ -144,7 +157,13 @@ export function DecisionCard({ item, onDone, compact = false }: { item: Decision
 
       {dialog && (
         <Confirm
-          title={dialog === 'writeoff' ? `Списать ${fmt(item.amount)} на заведение?` : `Стол ${item.tableId}: всё в порядке?`}
+          title={
+            dialog === 'writeoff'
+              ? `Списать ${fmt(item.amount)} на заведение?`
+              : item.kind === 'refund'
+                ? `Стол ${item.tableId}: переплату вернули на кассе?`
+                : `Стол ${item.tableId}: всё в порядке?`
+          }
           ok={dialog === 'writeoff' ? 'Списать' : 'Отметить'}
           danger={dialog === 'writeoff'}
           busy={busy}
@@ -157,7 +176,9 @@ export function DecisionCard({ item, onDone, compact = false }: { item: Decision
             <>
               {dialog === 'writeoff'
                 ? 'Долг перестанет висеть на смене и уйдёт в потери заведения. Удержание с официанта — только по отдельной процедуре с юристом.'
-                : 'Например: «компания на банкете, счёт в конце».'}
+                : item.kind === 'refund'
+                  ? 'Кто и как вернул: «Оля, наличными из кассы, 940 ₽».'
+                  : 'Например: «компания на банкете, счёт в конце».'}
               <textarea
                 value={text}
                 onChange={e => setText(e.target.value)}

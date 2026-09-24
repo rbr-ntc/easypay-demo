@@ -7,7 +7,7 @@ import type { AuditEntry, MutationResult, Shift, TableSession } from '../types.t
 import type { DecisionNote, MenuDocKind, MenuDocRow, Settlement, ShiftCheck, ShiftInfo, Store } from './types.ts'
 
 const MAX_TABLES = 500
-const AUDIT_MAX = 400
+const AUDIT_MAX = 5000
 const CLOSED_TTL = 2 * 60 * 60 * 1000
 
 export function emptySession(status: 'open' | 'closed' = 'closed'): TableSession {
@@ -49,6 +49,7 @@ export function createMemoryStore(): Store {
   const checkTotals = { count: 0, paid: 0, debt: 0, overpaid: 0, cancelledTotal: 0 }
   const auditLog: AuditEntry[] = []
   const stops = new Map<string, boolean>()
+  const stopWho = new Map<string, { by: string | null; at: number }>()
   const menuDocs = new Map<MenuDocKind, MenuDocRow>()
   const photos = new Map<string, { mime: string; data: Buffer }>()
   let staff: StaffRecord[] | null = null
@@ -123,6 +124,7 @@ export function createMemoryStore(): Store {
       })),
       tipsList: session.tips.map(t => ({ amount: t.amount, waiter: waiterOfTable(tableId)?.name ?? null, at: t.at })),
       refunded: round2((session.refunds ?? []).reduce((a, r) => a + r.amount, 0)),
+      refundsList: (session.refunds ?? []).map(r => ({ amount: r.amount, method: r.method ?? 'sbp', at: r.at })),
       firstSentAt: session.lines.reduce<number | null>((m, l) => (l.sentAt && (m === null || l.sentAt < m) ? l.sentAt : m), null),
       lastServedAt: session.lines.reduce<number | null>((m, l) => (l.servedAt && (m === null || l.servedAt > m) ? l.servedAt : m), null),
       total: round2(money.tableTotal),
@@ -159,6 +161,7 @@ export function createMemoryStore(): Store {
     checkTotals.overpaid = round2(checkTotals.overpaid - (check.overpaid - left))
     check.overpaid = left
     check.refunded = round2((session.refunds ?? []).reduce((a, r) => a + r.amount, 0))
+    check.refundsList = (session.refunds ?? []).map(r => ({ amount: r.amount, method: r.method ?? 'sbp', at: r.at }))
   }
 
   return {
@@ -234,8 +237,8 @@ export function createMemoryStore(): Store {
       if (auditLog.length > AUDIT_MAX) auditLog.shift()
     },
 
-    async auditEntries(limit) {
-      return [...auditLog].reverse().slice(0, limit)
+    async auditEntries(limit, since) {
+      return [...auditLog].reverse().filter(e => !since || e.at >= since).slice(0, limit)
     },
 
     async shiftChecks(limit, shiftId) {
@@ -316,8 +319,13 @@ export function createMemoryStore(): Store {
       return Object.fromEntries(stops)
     },
 
-    async setStop(dishId, stop) {
+    async setStop(dishId, stop, byStaffId) {
       stops.set(dishId, stop)
+      stopWho.set(dishId, { by: byStaffId, at: Date.now() })
+    },
+
+    async stopDetails() {
+      return Object.fromEntries(stopWho)
     },
 
     async menuDoc(kind) {

@@ -15,6 +15,7 @@ import { can, ownsTable } from '@easypay/domain/roles'
 import type { Permission } from '@easypay/domain/roles'
 import {
   allergensOf,
+  applyStopMeta,
   applyStopOverrides,
   checkOptions,
   dishName,
@@ -64,6 +65,8 @@ const getStore = () =>
     await loadStaff(store)
     await loadSettings(store)
     applyStopOverrides(await store.stopOverrides())
+    const who = await store.stopDetails()
+    applyStopMeta(Object.fromEntries(Object.entries(who).map(([id, m]) => [id, { by: staffName(m.by) ?? m.by, at: m.at }])))
     return store
   }))
 
@@ -1352,7 +1355,13 @@ async function handleApi(req: any, res: any, url: URL) {
     const actor = actorFrom(req, url)
     if (!actor) return json(res, 401, staffUnauthorized(req))
     if (!allowed(actor, 'log')) return json(res, 403, { error: 'role not allowed' })
-    return json(res, 200, { entries: await store.auditEntries(150) })
+    // Журнал — за смену целиком: раньше отдавались последние 150 записей, и
+    // «смена открыта» с первыми посадками пропадали через полчаса работы.
+    // ?shift=all — без ограничения по смене (последние 2 000 записей)
+    const current = await store.currentShift()
+    const last = current ? null : (await store.shiftHistory(1))[0] ?? null
+    const since = url.searchParams.get('shift') === 'all' ? null : (current?.openedAt ?? last?.openedAt ?? null)
+    return json(res, 200, { entries: await store.auditEntries(2000, since), since })
   }
 
   // Реестр чеков смены — то, чем сводят кассу
@@ -1431,7 +1440,7 @@ async function handleApi(req: any, res: any, url: URL) {
     if (typeof body.stop !== 'boolean') return json(res, 400, { error: 'stop must be boolean' })
 
     await store.setStop(dish.id, body.stop, actor.id)
-    setStopOverride(dish.id, body.stop)
+    setStopOverride(dish.id, body.stop, actor.name)
     audit(actor, 'стоп-лист', null, `${dish.name} — ${body.stop ? 'закончилось' : 'снова в меню'}`)
     await flushAudit(store)
     await broadcastEverywhere(store)

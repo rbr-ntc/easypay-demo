@@ -32,6 +32,14 @@ type Ticket = KitchenTicket & {
 /** Бар готовит напитки: в menu.json это разделы «Напитки» и «Вино и бар». */
 const BAR_CATEGORIES = new Set(['Напитки', 'Вино и бар'])
 
+/** «сегодня 11:56» или «вчера 22:10» — вчерашний стоп подозрителен. */
+function stopTime(at: number): string {
+  const d = new Date(at)
+  const hm = d.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })
+  const today = new Date().toDateString() === d.toDateString()
+  return today ? hm : `${d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' })} ${hm}`
+}
+
 const COLUMNS: { id: 'new' | 'cooking' | 'ready'; kitchen: string; bar: string }[] = [
   { id: 'new', kitchen: 'Новые', bar: 'Новые' },
   { id: 'cooking', kitchen: 'В работе', bar: 'В работе' },
@@ -127,7 +135,7 @@ export function KitchenPage({ station }: { station: 'kitchen' | 'bar' }) {
             </div>
           )
         })}
-        <StopPanel station={station} stop={data.stop ?? []} q={q} setQ={setQ} canStop={may('stop')} onToast={toast} />
+        <StopPanel station={station} stop={data.stop ?? []} info={data.stopInfo} q={q} setQ={setQ} canStop={may('stop')} onToast={toast} />
       </div>
     </div>
   )
@@ -221,6 +229,7 @@ function TicketCard({
 function StopPanel({
   station,
   stop,
+  info,
   q,
   setQ,
   canStop,
@@ -228,6 +237,8 @@ function StopPanel({
 }: {
   station: 'kitchen' | 'bar'
   stop: string[]
+  /** Кто и когда поставил в стоп. */
+  info?: Record<string, { by: string | null; at: number | null; byMenu: boolean }>
   q: string
   setQ: (v: string) => void
   canStop: boolean
@@ -276,8 +287,18 @@ function StopPanel({
         {sorted.map(d => {
           const off = stopped.has(d.id)
           return (
-            <div key={d.id} className="flex h-11 items-center gap-2.5 border-b border-c-line2 last:border-b-0">
-              <span className={`min-w-0 flex-1 truncate text-[14px] ${off ? 'text-c-mute line-through' : ''}`}>{d.name}</span>
+            <div key={d.id} className="flex min-h-11 items-center gap-2.5 border-b border-c-line2 py-1 last:border-b-0">
+              <span className="min-w-0 flex-1">
+                <span className={`block truncate text-[14px] ${off ? 'text-c-mute line-through' : ''}`}>{d.name}</span>
+                {/* Кто и когда: утка «закончилась» по умолчанию в меню или ещё вчера — повар должен это видеть */}
+                {off && info?.[d.id] && (
+                  <span className="block text-[11px] text-c-bad-ink">
+                    {info[d.id].byMenu
+                      ? 'в стопе по умолчанию (меню)'
+                      : `в стопе${info[d.id].at ? ` с ${stopTime(info[d.id].at!)}` : ''}${info[d.id].by ? ` · ${info[d.id].by}` : ''}`}
+                  </span>
+                )}
+              </span>
               <Toggle
                 on={!off}
                 label={`${d.name}: ${off ? 'закончилось' : 'в меню'}`}

@@ -127,7 +127,7 @@ export const fetchShiftCard = (id: string) =>
   getJson<{ shift: ShiftPublic; z: ZReport | null; live: boolean }>(`/api/shifts/${encodeURIComponent(id)}`)
 export const fetchChecks = (shift?: string | null) =>
   getJson<{ shiftId: string | null; checks: CheckRow[] }>(`/api/checks${shift ? `?shift=${encodeURIComponent(shift)}` : ''}`)
-export const fetchLog = () => getJson<{ entries: LogEntry[] }>('/api/log')
+export const fetchLog = (all = false) => getJson<{ entries: LogEntry[]; since: number | null }>(`/api/log${all ? '?shift=all' : ''}`)
 
 export const openShift = () => staffPost('/api/shift/open')
 export const closeShift = (cashCounted: number, note: string) => staffPost('/api/shift/close', { cashCounted, note })

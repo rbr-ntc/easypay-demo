@@ -81,7 +81,7 @@ export async function createPostgresStore(url?: string): Promise<Store> {
           where p.table_session_id = ${row.id} order by p.created_at`,
       sql`select amount, created_at from tips where table_session_id = ${row.id}`,
       sql`select count(*) as n from guests where table_session_id = ${row.id}`,
-      sql`select coalesce(sum(amount), 0) as total from refunds where table_session_id = ${row.id}`
+      sql`select amount, method, created_at from refunds where table_session_id = ${row.id} order by created_at`
     ])
     const billed = lines.filter((l: any) => l.sent_at && !l.cancelled_at)
     const total = round2(billed.reduce((a: number, l: any) => a + Number(l.price) * l.qty, 0))
@@ -128,7 +128,8 @@ export async function createPostgresStore(url?: string): Promise<Store> {
         takenBy: p.taker_name ?? null
       })),
       tipsList: tips.map((t: any) => ({ amount: Number(t.amount), waiter, at: msOf(t.created_at) ?? 0 })),
-      refunded: round2(Number(refunds[0].total)),
+      refunded: round2(refunds.reduce((a: number, r: any) => a + Number(r.amount), 0)),
+      refundsList: refunds.map((r: any) => ({ amount: Number(r.amount), method: r.method ?? 'sbp', at: msOf(r.created_at) ?? 0 })),
       firstSentAt: sent.length ? Math.min(...sent) : null,
       lastServedAt: served.length ? Math.max(...served) : null
     }
@@ -564,12 +565,13 @@ export async function createPostgresStore(url?: string): Promise<Store> {
       `
     },
 
-    async auditEntries(limit) {
+    async auditEntries(limit, since) {
       const rows = await sql`
         select a.*, rt.number as table_number
         from audit_log a
         left join restaurant_tables rt on rt.id = a.table_id
         where a.venue_id = ${venueId}
+          ${since ? sql`and a.at >= ${new Date(since)}` : sql``}
         order by a.at desc
         limit ${limit}
       `
@@ -781,6 +783,11 @@ export async function createPostgresStore(url?: string): Promise<Store> {
     async stopOverrides() {
       const rows = await sql`select dish_id, stop from menu_stop where venue_id = ${venueId}`
       return Object.fromEntries(rows.map(r => [r.dish_id as string, Boolean(r.stop)]))
+    },
+
+    async stopDetails() {
+      const rows = await sql`select dish_id, updated_at, updated_by from menu_stop where venue_id = ${venueId}`
+      return Object.fromEntries(rows.map(r => [r.dish_id as string, { by: staffExt(r.updated_by), at: msOf(r.updated_at) }]))
     },
 
     async setStop(dishId, stop, byStaffId) {

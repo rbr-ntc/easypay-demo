@@ -25,7 +25,8 @@ export interface Store {
   shift(): Promise<Shift>
 
   audit(entry: AuditEntry): Promise<void>
-  auditEntries(limit: number): Promise<AuditEntry[]>
+  /** Журнал, свежие первыми; `since` — от начала смены, чтобы её начало не терялось. */
+  auditEntries(limit: number, since?: number | null): Promise<AuditEntry[]>
 
   /**
    * Реестр чеков смены: закрытые сессии со всем составом. Без `shiftId` —
@@ -71,6 +72,8 @@ export interface Store {
   stopOverrides(): Promise<Record<string, boolean>>
   /** Кто и когда выключил или вернул блюдо — пишется вместе со значением. */
   setStop(dishId: string, stop: boolean, byStaffId: string | null): Promise<void>
+  /** Кто (строковый id сотрудника) и когда последним переключал блюдо. */
+  stopDetails(): Promise<Record<string, { by: string | null; at: number | null }>>
 
   // ── Меню из кабинета ──────────────────────────────────────────────────
   /** Опубликованное меню или черновик менеджера; null — ещё не было. */
@@ -178,6 +181,8 @@ export interface ShiftCheck {
   tipsList?: { amount: number; waiter: string | null; at: number }[]
   /** Уже возвращено гостям. */
   refunded?: number
+  /** Возвраты по отдельности: наличные уходят из кассы, и сверка должна это знать. */
+  refundsList?: { amount: number; method: string; at: number }[]
   firstSentAt?: number | null
   lastServedAt?: number | null
 }
