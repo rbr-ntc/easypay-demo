@@ -1165,13 +1165,15 @@ test('способ оплаты сохраняется тот, который в
   const snap = await snapshot(table)
   assert.equal(snap.payments[0].method, 'tpay')
 
-  // Чужое слово в способе не проходит: платёж не может ссылаться на выдумку
+  // Чужое слово в способе не проходит: платёж не может ссылаться на выдумку.
+  // Раньше он молча становился СБП, теперь — честная ошибка (смена №5)
   const other = freshTable()
   const g2 = await joinGuest(other)
   await post(other, 'lines', { dishId: 'espresso' }, { guest: g2.guest })
   await post(other, 'send', { scope: 'mine' }, { guest: g2.guest })
-  await post(other, 'pay', { scope: 'full', idemKey: 'm-2', method: 'bitcoin' }, { guest: g2.guest })
-  assert.equal((await snapshot(other)).payments[0].method, 'sbp')
+  const bad = await post(other, 'pay', { scope: 'full', idemKey: 'm-2', method: 'bitcoin' }, { guest: g2.guest })
+  assert.equal(bad.status, 400)
+  assert.equal((await snapshot(other)).payments.length, 0)
 })
 
 test('гость может передумать платить наличными', async () => {

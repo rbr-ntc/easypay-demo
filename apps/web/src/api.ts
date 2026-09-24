@@ -123,6 +123,8 @@ export interface Snapshot {
   tips: ServerTip[]
   call: ServerCall | null
   calls: ServerCall[]
+  /** Принятые вызовы за 15 минут: кто идёт к гостю. */
+  acked?: { id: string; personaId: string; reason: string; at: number; by: string | null }[]
   waiter: { id: string; name: string } | null
   seats: number
   /** Заглушка для постороннего: состав и деньги вырезаны, это не пустой стол. */

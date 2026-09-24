@@ -213,3 +213,26 @@ test('переплату, которую уже не вернуть из сис�
   const bad = await post('/api/decisions/note', { key: 'evil:1', text: 'x' }, { staff: M })
   assert.equal(bad.status, 400)
 })
+
+test('мелочи смены №5: теги вырезаются целиком, незнакомый способ — ошибка, принятый вызов оставляет след', async () => {
+  const table = fresh()
+  const g = (await join(table, 'Тимур<script>x</script>')).body
+  assert.equal(g.snapshot.personas[0].name, 'Тимурx')
+  await post(`/api/t/${table}/lines`, { dishId: 'espresso', comment: '<img src=x onerror=alert(1)> без лука' }, { guest: g.guestToken })
+  await post(`/api/t/${table}/send`, { scope: 'mine' }, { guest: g.guestToken })
+  const ticket = (await kitchen()).tickets.find((t: any) => t.tableId === table)
+  assert.equal(ticket.comment, 'без лука')
+
+  const bitcoin = await post(`/api/t/${table}/pay`, { scope: 'own', method: 'bitcoin', idemKey: fresh() }, { guest: g.guestToken })
+  assert.equal(bitcoin.status, 400)
+  assert.equal((await bitcoin.json()).error, 'unknown method')
+
+  const call = await (await post(`/api/t/${table}/call`, { reason: 'help' }, { guest: g.guestToken })).json()
+  await post(`/api/t/${table}/ack`, { callId: call.callId }, { staff: M })
+  const snap = await fetch(`${base}/api/t/${table}`, { headers: { 'x-guest-token': g.guestToken } }).then(r => r.json())
+  assert.equal(snap.calls.length, 0)
+  assert.equal(snap.acked.length, 1)
+  assert.ok(snap.acked[0].by)
+
+  assert.equal((await kitchen()).shiftOpen, true, 'кухня знает, что смена идёт')
+})

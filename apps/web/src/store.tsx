@@ -230,7 +230,9 @@ export function humanError(err: ApiError): string {
     'unknown allergen': 'Такой аллергии нет в списке — выберите из предложенных',
     'unknown table': 'Такого стола нет в зале — проверьте QR на столе',
     'table full': 'За столом уже максимум гостей',
-    'nothing to pay': 'Оплачивать пока нечего',
+    // Частая причина — корзина ещё не отправлена: подсказываем, что сделать
+    'nothing to pay': 'Оплачивать пока нечего — если в корзине что-то есть, сначала отправьте на кухню',
+    'unknown method': 'Такой способ оплаты не поддерживается',
     'nothing to send': 'Всё уже отправлено на кухню',
     'already cooking': 'Кухня уже готовит это блюдо — отменить не получится',
     'already cancelled': 'Это блюдо уже отменено',
@@ -365,6 +367,17 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   useEffect(() => onSettingsChange(() => setMenuRev(r => r + 1)), [])
   useEffect(() => ensureMenu(snap?.menuVersion), [snap?.menuVersion])
   useEffect(() => ensureSettings(snap?.settingsVersion), [snap?.settingsVersion])
+  // Официант принял мой вызов — говорим, кто идёт: раньше вызов исчезал молча,
+  // и «идут ко мне» было не отличить от «вызов сбросили»
+  const seenAcks = useRef<Set<string>>(new Set())
+  useEffect(() => {
+    const mineId = identity?.personaId
+    for (const a of snap?.acked ?? []) {
+      if (seenAcks.current.has(a.id)) continue
+      seenAcks.current.add(a.id)
+      if (a.personaId === mineId && Date.now() - a.at < 60_000) toastRef.current?.(`${a.by ?? 'Официант'} идёт к вам`)
+    }
+  }, [snap?.acked, identity?.personaId])
   const personaId = identity?.personaId ?? null
   // Токен читаем через ref: действие сразу после join не должно видеть старое замыкание
   const identityRef = useRef<Identity | null>(identity)

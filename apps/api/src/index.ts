@@ -253,6 +253,10 @@ function snapshot(t: TableSession, id: string) {
       lines: p.lines ?? []
     })),
     tips: t.tips.map(x => ({ personaId: x.personaId, amount: x.amount, at: x.at, waiterId: x.waiterId })),
+    // Принятые вызовы за последние 15 минут: гость видит, кто к нему идёт
+    acked: (t.callAcks ?? [])
+      .filter(a => Date.now() - a.at < 15 * 60 * 1000)
+      .map(a => ({ id: a.id, personaId: a.personaId, reason: a.reason, at: a.at, by: a.byName })),
     calls: t.calls.map(c => ({
       id: c.id,
       at: c.at,
@@ -367,11 +371,20 @@ function pushTo(subscribers: Set<any>, payload: unknown) {
   }
 }
 
+/** Кухня плюс признак смены: повару 403 на /api/shift, а знать, идёт ли смена, нужно. */
+async function kitchenNow(store: Store) {
+  const [tables, current] = await Promise.all([store.activeSessions(), store.currentShift()])
+  return { ...kitchenPayload(tables), shiftOpen: !!current }
+}
+
 /** Зал целиком: столы плюс смена — открыта ли она сейчас, видно в шапке кабинета. */
 async function hallNow(store: Store) {
   const [tables, shift, current] = await Promise.all([store.activeSessions(), store.shift(), store.currentShift()])
+  // Смена закрыта — в шапке зала нечего показывать: раньше там оставались
+  // чаевые прошлой смены, а «начало» каждый запрос становилось «сейчас»
+  const shown = current ? shift : { ...shift, revenue: 0, closedRevenue: 0, debt: 0, overpaid: 0, tipsByStaff: {} }
   return {
-    ...hallPayload(tables, { ...shift, open: !!current, startedAt: current?.openedAt ?? shift.startedAt }),
+    ...hallPayload(tables, { ...shown, open: !!current, startedAt: current?.openedAt ?? null }),
     // Пороги тревог и напоминание о закрытии — из настроек заведения
     settingsVersion: settingsVersion()
   }
@@ -383,7 +396,7 @@ async function broadcastEverywhere(store: Store) {
   // Столов без подписчиков нет — зал и кухня всё равно должны узнать
   if (streams.size === 0 || ![...streams.values()].some(s => s.size)) {
     if (hallStreams.size > 0) pushTo(hallStreams, await hallNow(store))
-    if (kitchenStreams.size > 0) pushTo(kitchenStreams, kitchenPayload(await store.activeSessions()))
+    if (kitchenStreams.size > 0) pushTo(kitchenStreams, await kitchenNow(store))
   }
 }
 
@@ -402,7 +415,7 @@ async function broadcast(store: Store, id: string) {
     }
   }
   if (hallStreams.size > 0) pushTo(hallStreams, await hallNow(store))
-  if (kitchenStreams.size > 0) pushTo(kitchenStreams, kitchenPayload(await store.activeSessions()))
+  if (kitchenStreams.size > 0) pushTo(kitchenStreams, await kitchenNow(store))
 }
 
 // --- HTTP helpers ---
@@ -491,8 +504,12 @@ const PAY_METHODS = new Set(['sbp', 'card', 'cash'])
 const PAY_SCOPE_ALIASES: Record<string, PayScope> = { mine: 'own', all: 'full' }
 const MAX_QTY = 9
 
+/** Тег целиком, а не только скобки: «<img src=x onerror=…> без лука» → «без лука». */
+const TAGS = /<[^>]*>?/g
+
 function sanitizeName(name: unknown): string {
   return String(name ?? '')
+    .replace(TAGS, '')
     .replace(/[<>]/g, '')
     // eslint-disable-next-line no-control-regex
     .replace(/[\u0000-\u001f\u007f]/g, '')
@@ -506,6 +523,7 @@ const NOTE_MAX = 200
 function sanitizeNote(note: unknown): string | null {
   if (note === undefined || note === null) return null
   const clean = String(note)
+    .replace(TAGS, ' ')
     .replace(/[<>]/g, '')
     // eslint-disable-next-line no-control-regex
     .replace(/[\u0000-\u001f\u007f]/g, ' ')
@@ -681,7 +699,7 @@ function guestAction(t: TableSession, tableId: string, action: string, body: any
   if (action === 'lines') {
     const dish = getDish(asId(body.dishId))
     if (!dish) return fail(400, 'unknown dish')
-    if (isStopped(dish.id)) return fail(400, 'dish in stop list')
+    if (isStopped(dish.id)) return fail(400, 'dish in stop list', { dish: dish.name })
 
     const qty = Number(body.qty ?? 1)
     if (!Number.isInteger(qty) || qty < 1 || qty > MAX_QTY) return fail(400, 'bad qty', { min: 1, max: MAX_QTY })
@@ -779,6 +797,8 @@ function guestAction(t: TableSession, tableId: string, action: string, body: any
     // Способ берём тот, который гость выбрал на экране: раньше любой выбор
     // записывался как СБП, и список оплат врал официанту в лицо.
     const PHONE_METHODS: PayMethod[] = ['sbp', 'card', 'tpay', 'sber', 'mir']
+    // Незнакомый способ — ошибка, а не молчаливое «СБП»: иначе в отчёте осядет не то
+    if (body.method !== undefined && !PHONE_METHODS.includes(body.method)) return fail(400, 'unknown method', { allowed: PHONE_METHODS })
     const method: PayMethod = PHONE_METHODS.includes(body.method) ? body.method : 'sbp'
     if (!phoneMethodAllowed(method)) return fail(409, 'method disabled')
     // Этот платёж уже был — повтор после обрыва или рестарта сервера. Кэш
@@ -1163,6 +1183,12 @@ function staffAction(t: TableSession, tableId: string, action: string, body: any
     const call = callId ? t.calls.find(c => c.id === callId) : t.calls[0]
     if (!call) return fail(404, 'call not found')
     t.calls = t.calls.filter(c => c !== call)
+    // След для гостя: вызов не исчезает в пустоту, а превращается в «Оля идёт»
+    const ACK_KEEP_MS = 15 * 60 * 1000
+    t.callAcks = [
+      ...(t.callAcks ?? []).filter(a => Date.now() - a.at < ACK_KEEP_MS),
+      { id: call.id, personaId: call.personaId, reason: call.reason, at: Date.now(), byId: actor?.id ?? null, byName: actor?.name ?? null }
+    ]
     audit(actor, 'принял вызов', tableId, t.personas.find(p => p.id === call.personaId)?.name ?? null)
     return ok({ ok: true, left: t.calls.length })
   }
@@ -1370,6 +1396,7 @@ async function handleApi(req: any, res: any, url: URL) {
     if (!actor) return json(res, 401, staffUnauthorized(req))
     if (!allowed(actor, 'log')) return json(res, 403, { error: 'role not allowed' })
     const shift = await store.shift()
+    const openShift = await store.currentShift()
     const CHECKS_SHOWN = 100
     const [checks, checkTotals] = await Promise.all([
       store.shiftChecks(CHECKS_SHOWN),
@@ -1377,7 +1404,8 @@ async function handleApi(req: any, res: any, url: URL) {
     ])
     return json(res, 200, {
       shift: {
-        startedAt: shift.startedAt,
+        // Смена закрыта — начала нет; раньше сюда уходило «сейчас» при каждом запросе
+        startedAt: openShift?.openedAt ?? null,
         revenue: round2(shift.revenue),
         closedRevenue: round2(shift.closedRevenue),
         debt: round2(shift.debt),
@@ -1451,7 +1479,7 @@ async function handleApi(req: any, res: any, url: URL) {
     return staffFeed(req, res, url, async () => await hallNow(store), hallStreams, 'hall')
   }
   if (url.pathname === '/api/kitchen' || url.pathname === '/api/kitchen/stream') {
-    return staffFeed(req, res, url, async () => kitchenPayload(await store.activeSessions()), kitchenStreams, 'kitchen')
+    return staffFeed(req, res, url, async () => await kitchenNow(store), kitchenStreams, 'kitchen')
   }
 
   // /api/t/:table[/action]

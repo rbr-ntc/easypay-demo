@@ -11,6 +11,8 @@ export interface KitchenPayload {
   stopInfo?: Record<string, { by: string | null; at: number | null; byMenu: boolean }>
   menuVersion?: number
   settingsVersion?: number
+  /** Открыта ли смена — повару /api/shift недоступен. */
+  shiftOpen?: boolean
   now: number
 }
 

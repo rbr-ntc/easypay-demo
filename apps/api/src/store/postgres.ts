@@ -4,7 +4,7 @@ import { connect } from '@easypay/db'
 import crypto from 'node:crypto'
 import { computeTotals, round2 } from '@easypay/domain/money'
 import { dishName, priceOf } from '../menu.ts'
-import { waiterOfTable } from '../staff.ts'
+import { staffName, waiterOfTable } from '../staff.ts'
 import type { AuditEntry, MutationResult, Shift, TableSession } from '../types.ts'
 import type { DecisionNote, Settlement, ShiftCheck, ShiftInfo, Store } from './types.ts'
 import { emptySession } from './memory.ts'
@@ -166,13 +166,15 @@ export async function createPostgresStore(url?: string): Promise<Store> {
       row = last
     }
 
-    const [guests, lines, payments, tips, calls, refunds] = await Promise.all([
+    const [guests, lines, payments, tips, calls, refunds, acked] = await Promise.all([
       tx`select * from guests where table_session_id = ${row.id} order by joined_at`,
       tx`select * from order_lines where table_session_id = ${row.id} order by seq`,
       tx`select * from payments where table_session_id = ${row.id} order by created_at`,
       tx`select * from tips where table_session_id = ${row.id} order by created_at`,
       tx`select * from calls where table_session_id = ${row.id} and ack_at is null order by created_at`,
-      tx`select * from refunds where table_session_id = ${row.id} order by created_at`
+      tx`select * from refunds where table_session_id = ${row.id} order by created_at`,
+      // Принятые за 15 минут — гость видит «Оля идёт»
+      tx`select * from calls where table_session_id = ${row.id} and ack_at > now() - interval '15 minutes' order by ack_at`
     ])
 
     const ms = (v: any) => (v ? new Date(v).getTime() : null)
@@ -237,6 +239,10 @@ export async function createPostgresStore(url?: string): Promise<Store> {
         waiterId: staffExt(t.waiter_id),
         method: t.method ?? 'sbp'
       })),
+      callAcks: acked.map((c: any) => {
+        const byId = staffExt(c.ack_by)
+        return { id: c.id, personaId: c.guest_id, reason: c.reason, at: ms(c.ack_at) ?? 0, byId, byName: staffName(byId) }
+      }),
       calls: calls.map((c: any) => ({
         id: c.id,
         at: ms(c.created_at) ?? 0,
@@ -393,6 +399,13 @@ export async function createPostgresStore(url?: string): Promise<Store> {
     }
 
     // Вызовы: снятые помечаем принятыми, новые добавляем
+    // Кто принял вызов — чтобы гость после перечитывания видел, кто идёт
+    for (const a of session.callAcks ?? []) {
+      await tx`
+        update calls set ack_at = coalesce(ack_at, ${new Date(a.at)}), ack_by = coalesce(ack_by, ${staffUuid(a.byId)})
+        where id = ${a.id} and table_session_id = ${sid}
+      `
+    }
     const openIds = session.calls.map(c => c.id)
     await tx`
       update calls set ack_at = now()

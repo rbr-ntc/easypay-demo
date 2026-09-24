@@ -106,6 +106,8 @@ export interface TableSession {
   payments: Payment[]
   tips: Tip[]
   calls: Call[]
+  /** Недавно принятые вызовы: гость видит «Оля идёт», а не пустоту. */
+  callAcks?: { id: string; personaId: string; reason: string; at: number; byId: string | null; byName: string | null }[]
   seq: number
   /** Долг, с которым стол закрыли — измеряется до отмены неподанного. */
   closedWithDebt?: number

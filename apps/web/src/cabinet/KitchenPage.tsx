@@ -119,6 +119,12 @@ export function KitchenPage({ station }: { station: 'kitchen' | 'bar' }) {
         </div>
       )}
 
+      {/* Повару /api/shift закрыт, а знать, идёт ли смена, ему нужно */}
+      {data?.shiftOpen === false && (
+        <div role="status" className="rounded-2xl border border-c-line bg-c-chip px-4.5 py-3 text-[14px]">
+          <b>Смена закрыта.</b> Новых заказов не будет, пока менеджер не откроет смену.
+        </div>
+      )}
       <div className="grid items-start gap-3.5 lg:grid-cols-[repeat(3,minmax(160px,1fr))_minmax(210px,250px)]">
         {COLUMNS.map(col => {
           const list = tickets.filter(t => colOf(t) === col.id)
