@@ -9,7 +9,7 @@ import { existsSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import crypto from 'node:crypto'
-import { amountFor, computeTotals, equalSplitOf, isBillLine, PAY_SCOPES, round2, splitRounded } from '@easypay/domain/money'
+import { amountFor, computeTotals, isBillLine, PAY_SCOPES, round2, splitRounded } from '@easypay/domain/money'
 import type { PayScope } from '@easypay/domain/money'
 import { can, ownsTable } from '@easypay/domain/roles'
 import type { Permission } from '@easypay/domain/roles'
@@ -897,7 +897,7 @@ function guestAction(t: TableSession, tableId: string, action: string, body: any
         tableTotal: round2(money.tableTotal),
         paidBefore: round2(money.paidTotal),
         paidBeforeMine: round2(money.paidOf(persona.id)),
-        note: receiptNote(money, persona, scope, amount, equalSplitOf(money, persona.id))
+        note: receiptNote(money, persona, scope, amount)
       }
     })
   }

@@ -77,8 +77,13 @@ const SCOPE_NAME: Record<PayScope, string> = { own: 'Своё', equal: 'Поро
 /** Способы, включённые в настройках заведения: выключенный сервер всё равно не примет. */
 const allowedMethods = () => METHODS.filter(m => SETTINGS.pay[m.id as 'sbp' | 'card' | 'cash'])
 
-/** Делёж выключен — за столом на нескольких платят только целиком. */
-const allowedScopes = (alone: boolean): PayScope[] => (alone ? ['own'] : SETTINGS.pay.split ? ['own', 'equal', 'full'] : ['full'])
+/**
+ * Делёж выключен — за столом на нескольких платят только целиком. Кто-то уже
+ * заплатил «поровну» — остальным тоже поровну: смесь «поровну» и «своё»
+ * оставляла копеечные хвосты и путала суммы (живой стол 3).
+ */
+const allowedScopes = (alone: boolean, equalMode: boolean): PayScope[] =>
+  alone ? ['own'] : !SETTINGS.pay.split ? ['full'] : equalMode ? ['equal', 'full'] : ['own', 'equal', 'full']
 
 export function Payment() {
   const { ui, patch, me, snap, totals, pay, askCash, cancelCash, menuRev } = useStore()
@@ -95,13 +100,13 @@ export function Payment() {
   }, [myPaidNow])
   useEffect(() => {
     const methods = allowedMethods().map(m => m.id)
-    const scopes = allowedScopes(alone)
+    const scopes = allowedScopes(alone, totals.equalMode)
     const fix: { payMethod?: PayMethod; payScope?: PayScope } = {}
     if (methods.length && !methods.includes(ui.payMethod)) fix.payMethod = methods[0]
     if (!scopes.includes(ui.payScope)) fix.payScope = scopes[0]
     if (fix.payMethod || fix.payScope) patch(fix)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ui.payMethod, ui.payScope, alone, menuRev])
+  }, [ui.payMethod, ui.payScope, alone, menuRev, totals.equalMode])
   if (!me || !snap) return null
 
   const amount = totals.scopeAmount(ui.payScope)
@@ -168,7 +173,7 @@ function PayForm({
   const sbp = ui.payMethod === 'sbp'
   const myCashRequest = snap.cashIntent?.personaId === me.id ? snap.cashIntent : null
   const alone = totals.participants <= 1
-  const scopes = allowedScopes(alone)
+  const scopes = allowedScopes(alone, totals.equalMode)
   const otherPayments = snap.payments.filter(p => p.personaId !== me.id)
   const nameOf = (pid: string) => snap.personas.find(p => p.id === pid)?.name ?? 'Гость'
 
@@ -190,9 +195,9 @@ function PayForm({
           ? `${fmt(totals.myOwn)} ваше + ${fmt(totals.myShare)} доля общих блюд`
           : 'только ваши блюда — считает сервер'
       : ui.payScope === 'equal'
-        ? totals.paidTotal > 0.01
-          ? `Остаток ${fmt(totals.remaining)} поровну на ${totals.equalSplit} — кто уже заплатил своё, не в счёт`
-          : `Счёт стола поровну на ${totals.equalSplit}`
+        ? totals.myPaid > 0.01
+          ? `${fmt(totals.tableTotal)} поровну на ${totals.equalSplit} — по ${fmt(totals.tableTotal / totals.equalSplit)}, вы уже внесли ${fmt(totals.myPaid)}`
+          : `${fmt(totals.tableTotal)} поровну на ${totals.equalSplit} — по ${fmt(totals.tableTotal / totals.equalSplit)}`
         : others.length
           ? `${listNames(others)} ${others.length === 1 ? 'увидит' : 'увидят'}, что стол оплачен`
           : 'Весь счёт стола'

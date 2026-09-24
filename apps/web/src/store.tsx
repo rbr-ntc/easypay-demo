@@ -33,7 +33,7 @@ import { newIdemKey } from './keys'
 import { ensureMenu, findDish, onMenuChange } from './data'
 import { ensureSettings, onSettingsChange, SETTINGS } from './settings'
 import type { Animal, LineOptions } from './data'
-import { amountFor, computeTotals as computeMoney, equalSplitOf } from '@easypay/domain/money'
+import { amountFor, computeTotals as computeMoney } from '@easypay/domain/money'
 
 /**
  * Пять экранов гостя.
@@ -151,8 +151,10 @@ export interface Totals {
   myPaid: number
   myRemaining: number
   scopeAmount: (scope: PayScope) => number
-  /** На скольких делится «Поровну»: кто ещё должен, плюс сам платящий. */
+  /** На скольких делится «Поровну»: все за столом. */
   equalSplit: number
+  /** Кто-то уже платил «поровну» — остальным предлагаем тоже поровну. */
+  equalMode: boolean
   personaOwn: (pid: string) => number
   personaTotal: (pid: string) => number
   personaPaid: (pid: string) => number
@@ -182,11 +184,11 @@ export function computeTotals(snap: Snapshot | null, myId: string | null): Total
    * остаток, а сервер делит счёт — Анна внесла половину из 3 000 на троих,
    * Борис видел «Оплатить · 500 ₽», а списывалось 1 000 ₽.
    */
-  // Кто ещё должен — по серверным итогам: на них и делится «Поровну»
-  const owingCount = server?.byPersona ? server.byPersona.filter(p => p.paid === 0 && p.remaining > 0).length : core.owingCount
-  const moneyView = { remaining, tableTotal, participants, owingCount, remainingOf: () => myRemaining, paidOf: () => myPaid } as any
+  // Те же числа, что у сервера: «поровну» — доля счёта минус уже внесённое
+  const moneyView = { remaining, tableTotal, participants, remainingOf: () => myRemaining, paidOf: () => myPaid } as any
   const scopeAmount = (scope: PayScope) => (participants > 0 ? amountFor(moneyView, myId, scope) : 0)
-  const equalSplit = equalSplitOf(moneyView, myId)
+  const equalSplit = participants
+  const equalMode = (snap?.payments ?? []).some(p => p.scope === 'equal')
 
   return {
     participants,
@@ -203,6 +205,7 @@ export function computeTotals(snap: Snapshot | null, myId: string | null): Total
     myRemaining,
     scopeAmount,
     equalSplit,
+    equalMode,
     personaOwn: pid => server?.byPersona.find(p => p.personaId === pid)?.own ?? core.ownOf(pid),
     personaTotal: pid => server?.byPersona.find(p => p.personaId === pid)?.total ?? core.totalOf(pid),
     personaPaid: pid => server?.byPersona.find(p => p.personaId === pid)?.paid ?? core.paidOf(pid),

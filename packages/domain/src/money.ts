@@ -51,8 +51,6 @@ export interface MoneyTotals {
   paidOf(personaId: string | null): number
   totalOf(personaId: string | null): number
   remainingOf(personaId: string | null): number
-  /** Сколько гостей ещё не платили и должны: на них делится «Поровну». */
-  owingCount: number
 }
 
 export type PriceOf = (dishId: string) => number
@@ -200,10 +198,7 @@ export function computeTotals(state: MoneyState | null | undefined, priceOf: Pri
     ownOf,
     paidOf,
     totalOf,
-    remainingOf,
-    // Внёсший что-то уже сделал свою часть «поровну»: если считать и его, то
-    // следующий делит на лишнего, и при «все поровну» стол недоплачивал
-    owingCount: personaIds.filter(id => paidOf(id) === 0 && remainingOf(id) > 0).length
+    remainingOf
   }
 }
 
@@ -216,20 +211,26 @@ export function amountFor(totals: MoneyTotals, personaId: string | null, scope: 
     scope === 'full'
       ? totals.remaining
       : scope === 'equal'
-        ? Math.min(totals.remaining, totals.remaining / equalSplitOf(totals, personaId))
+        ? Math.min(totals.remaining, equalDueOf(totals, personaId))
         : Math.min(totals.remainingOf(personaId), totals.remaining)
   return absorbRounding(round2(raw), totals.remaining)
 }
 
 /**
- * На скольких делится «Поровну»: на тех, кто ещё должен, и на самого
- * платящего. Раньше делился весь счёт на всех за столом — и после того как
- * Глеб оплатил своё, Мила «поровну» платила треть всего счёта, а не половину
- * остатка: недоплачивала и шла платить второй раз.
+ * «Поровну» — равная доля всего счёта стола на всех за столом, за вычетом
+ * того, что гость уже внёс (и не больше остатка стола).
+ *
+ * Два прежних правила ломались на живом столе. «Треть счёта без учёта
+ * внесённого» после чужого «своего» недоплачивала. «Остаток на тех, кто ещё
+ * не платил» после дозаказа делил на одного — и «поровну» показывало весь
+ * стол (живой стол 3, Настя и Сергей). Равная доля с вычетом
+ * внесённого честна в любом порядке: все «поровну» по очереди закрывают стол,
+ * а после дозаказа каждый доплачивает до своей половины всего вечера.
  */
-export function equalSplitOf(totals: MoneyTotals, personaId: string | null): number {
-  const payerCounted = personaId !== null && totals.paidOf(personaId) === 0 && totals.remainingOf(personaId) > 0
-  return Math.max(1, totals.owingCount + (payerCounted ? 0 : 1))
+export function equalDueOf(totals: MoneyTotals, personaId: string | null): number {
+  const share = totals.tableTotal / Math.max(1, totals.participants)
+  const paid = personaId ? totals.paidOf(personaId) : 0
+  return Math.max(0, share - paid)
 }
 
 /**

@@ -115,12 +115,14 @@ export function Table() {
     .filter(Boolean)
     .join(' · ')
 
-  const payable = totals.myRemaining > 0.01 ? totals.myRemaining : totals.remaining
+  // Стол делит поровну — и кнопка показывает долю поровну, а не «своё»
+  const mine = totals.equalMode ? totals.scopeAmount('equal') : totals.myRemaining
+  const payable = mine > 0.01 ? mine : totals.remaining
   // «Всё оплачено» — только когда платили: у нового гостя с одним черновиком
   // платить ещё нечего, и «оплачено» было бы неправдой
   const payLabel =
-    totals.myRemaining > 0.01
-      ? `Заплатить · ${fmt(totals.myRemaining)}`
+    mine > 0.01
+      ? `Заплатить${totals.equalMode ? ' поровну' : ''} · ${fmt(mine)}`
       : totals.remaining > 0.01
         ? `Заплатить за стол · ${fmt(totals.remaining)}`
         : totals.paidTotal > 0.01

@@ -88,10 +88,14 @@ export function receiptLines(t: TableSession, money: MoneyTotals, persona: Perso
  * Почему строки чека не равны списанному — словами. Раньше пометка была
  * только у «весь стол»: «поровну» и доплата выглядели как ошибка кассы.
  */
-export function receiptNote(money: MoneyTotals, persona: Persona | null, scope: PayScope, amount: number, split: number): string | null {
+export function receiptNote(money: MoneyTotals, persona: Persona | null, scope: PayScope, amount: number): string | null {
   if (scope === 'full') return money.paidTotal > 0 ? 'оплачен остаток по столу' : null
   if (scope === 'equal') {
-    return `поровну: ${amount.toLocaleString('ru-RU')} ₽ — доля остатка ${round2(money.remaining).toLocaleString('ru-RU')} ₽ на ${split}; в чеке — весь стол`
+    const share = round2(money.tableTotal / Math.max(1, money.participants))
+    const before = persona ? round2(money.paidOf(persona.id)) : 0
+    return `поровну: доля ${share.toLocaleString('ru-RU')} ₽ из ${round2(money.tableTotal).toLocaleString('ru-RU')} ₽ на ${money.participants}` +
+      (before > 0 ? `, ранее внесено ${before.toLocaleString('ru-RU')} ₽` : '') +
+      `; в чеке — весь стол`
   }
   const before = persona ? money.paidOf(persona.id) : 0
   return before > 0.01 ? `доплата: ранее внесено ${round2(before).toLocaleString('ru-RU')} ₽` : null
