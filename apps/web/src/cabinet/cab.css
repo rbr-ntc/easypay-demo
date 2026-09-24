@@ -1,0 +1,76 @@
+/**
+ * Кабинет 4.0 — рабочая светлая тема персонала: зал, кухня, бар, кабинет.
+ *
+ * На мониторе и планшете тут живут часами, поэтому светло и спокойно; цвет —
+ * только смысловой: зелёный — деньги пришли, янтарь — внимание, красный —
+ * зовут или долг. Как и у гостя, цвета — токены (`bg-c-card`, `text-c-mute`),
+ * а не hex в компонентах.
+ */
+
+@theme inline {
+  --color-c-bg: #f6f4f0;
+  --color-c-card: #ffffff;
+  --color-c-line: #e6e2da;
+  --color-c-line2: #eeeae3;
+  --color-c-ink: #1b1a17; /* 16:1 на фоне */
+  --color-c-soft: #4a463f; /* 9:1 */
+  --color-c-mute: #6b665e; /* 5.2:1 на фоне, 5.6:1 на карточке */
+  --color-c-chip: #f3f0ea;
+  --color-c-tabs: #ece8e1;
+  --color-c-off: #d8d3ca;
+
+  --color-c-ok: #2e8a55;
+  --color-c-ok-ink: #2e6b47; /* текст «оплачено» — 6:1 на белом */
+  --color-c-ok-bg: #e4f0e6;
+  --color-c-ok-fg: #22613d;
+
+  --color-c-warn: #c98a1b;
+  --color-c-warn-ink: #9a6a0b;
+  --color-c-warn-bg: #fbf1dc;
+  --color-c-warn-fg: #7a5306;
+  --color-c-warn-line: #ebd39e;
+
+  --color-c-bad: #b03a1e;
+  --color-c-bad-ink: #9e2e17;
+  --color-c-bad-bg: #fbe9e4;
+  --color-c-bad-line: #f0c4b6;
+
+  --color-c-info: #2d5a8a;
+  --color-c-info-bg: #eef3fa;
+}
+
+.cab {
+  background: var(--color-c-bg);
+  color: var(--color-c-ink);
+  font-family: 'Manrope', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+.cab .c-num {
+  font-variant-numeric: tabular-nums;
+}
+
+.cab .c-card {
+  background: var(--color-c-card);
+  border: 1px solid var(--color-c-line);
+  border-radius: 16px;
+}
+
+@keyframes c-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.cab .c-fade {
+  animation: c-fade 0.2s both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cab .c-fade {
+    animation: none;
+  }
+}

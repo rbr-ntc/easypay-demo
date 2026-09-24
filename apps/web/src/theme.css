@@ -12,6 +12,7 @@
 
 @import 'tailwindcss';
 @import './guest/g4.css';
+@import './cabinet/cab.css';
 
 /**
  * `scrollbar` из базовых модулей daisyUI выключен намеренно: он ставит

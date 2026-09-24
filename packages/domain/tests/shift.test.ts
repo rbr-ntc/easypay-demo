@@ -7,7 +7,8 @@ import { buildShiftReport, type ReportCheck } from '../src/shift.ts'
  * считались в трёх местах по-разному, и витрина спорила с реестром чеков.
  */
 
-const h = (hour: number, min = 0) => new Date(2026, 8, 24, hour, min).getTime()
+// Время по Москве (UTC+3) — отчёт считает часы заведения, а не машины, где идут тесты
+const h = (hour: number, min = 0) => Date.UTC(2026, 8, 24, hour - 3, min)
 
 const check = (over: Partial<ReportCheck>): ReportCheck => ({
   sessionId: over.sessionId ?? `s${Math.random()}`,
@@ -132,4 +133,15 @@ test('пустая смена — нули, а не NaN', () => {
   assert.equal(r.avgCheck, 0)
   assert.equal(r.checks, 0)
   assert.equal(r.byHour.length, 0)
+})
+
+test('часы по времени заведения и через полночь: 22, 23, 0, а не 0…23', () => {
+  const r = buildShiftReport([
+    check({ total: 900, paid: 900, payments: [{ amount: 400, method: 'sbp', at: h(22, 30) }, { amount: 500, method: 'sbp', at: h(24, 20) }] })
+  ])
+  assert.deepEqual(
+    r.byHour.map(x => x.hour),
+    [22, 23, 0]
+  )
+  assert.equal(r.byHour[2].amount, 500)
 })

@@ -7,7 +7,7 @@ import type { Permission } from '@easypay/domain/roles'
 
 function Checking() {
   return (
-    <div className="ep-forest flex min-h-full items-center justify-center gap-3 p-5" style={{ color: '#9FB5A8' }}>
+    <div className="cab flex min-h-full items-center justify-center gap-3 p-5 text-c-mute">
       <span className="loading loading-spinner" /> Проверяем смену…
     </div>
   )
@@ -17,28 +17,26 @@ const SCREEN_LABEL: Partial<Record<Permission, string>> = {
   hall: 'зал',
   kitchen: 'кухня',
   table: 'экран стола',
-  log: 'журнал смены'
+  log: 'кабинет'
 }
 
 function NoAccess({ need }: { need: Permission }) {
   const { staff, signOutStaff } = useStore()
   const role = staff?.role
   return (
-    <div className="ep-forest flex min-h-full items-center justify-center p-5">
-      <div className="w-full max-w-sm rounded-[22px] p-1" style={{ background: '#0C2C21' }}>
-        <div className="card-body items-center text-center">
-          <h2 className="card-title">Экран недоступен</h2>
-          <p className="text-sm" style={{ color: '#9FB5A8' }}>
-            {staff?.name}, роли «{role ? ROLE_LABEL[role] : '—'}» раздел «{SCREEN_LABEL[need] ?? need}» не открыт.
-          </p>
-          <div className="card-actions mt-2 w-full flex-col">
-            <a className="btn btn-block btn-primary" href={homeRoute(role)}>
-              К своему экрану
-            </a>
-            <button className="btn btn-block" onClick={() => void signOutStaff()}>
-              Выйти из смены
-            </button>
-          </div>
+    <div className="cab flex min-h-full items-center justify-center p-5">
+      <div className="c-card w-full max-w-sm p-6 text-center">
+        <h2 className="text-[20px] font-bold">Экран недоступен</h2>
+        <p className="mt-2 text-[14px] text-c-mute">
+          {staff?.name}, роли «{role ? ROLE_LABEL[role] : '—'}» раздел «{SCREEN_LABEL[need] ?? need}» не открыт.
+        </p>
+        <div className="mt-5 flex flex-col gap-2">
+          <a className="flex h-11 items-center justify-center rounded-xl bg-c-ink text-[15px] font-bold text-white" href={homeRoute(role)}>
+            К своему экрану
+          </a>
+          <button className="h-11 rounded-xl border border-c-line bg-c-card text-[15px]" onClick={() => void signOutStaff()}>
+            Выйти из смены
+          </button>
         </div>
       </div>
     </div>

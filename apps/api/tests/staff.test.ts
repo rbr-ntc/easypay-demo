@@ -60,6 +60,7 @@ test('роли различаются правами, а не только на�
 test('повар начинает смену с кухни, остальные — с зала', () => {
   assert.equal(homeRoute('cook'), '#/kitchen')
   assert.equal(homeRoute('waiter'), '#/hall')
+  assert.equal(homeRoute('manager'), '#/admin/overview')
 })
 
 test('свои столы есть только у официанта', () => {

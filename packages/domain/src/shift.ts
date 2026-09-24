@@ -56,6 +56,15 @@ export interface ShiftReport {
   low: { name: string; qty: number }[]
 }
 
+/**
+ * Час по часам заведения, а не сервера: VPS живёт в UTC, и вечерняя выручка
+ * уезжала бы на три часа раньше. Пояс пока один — Москва; станет настройкой
+ * заведения вместе с кабинетом «Настройки».
+ */
+export const VENUE_TZ = 'Europe/Moscow'
+const hourFormat = new Intl.DateTimeFormat('ru-RU', { hour: 'numeric', hourCycle: 'h23', timeZone: VENUE_TZ })
+export const hourOf = (at: number): number => Number(hourFormat.format(at))
+
 const methodOf = (m: string): PayMethodKey => (m === 'cash' ? 'cash' : m === 'card' ? 'card' : 'sbp')
 
 export function buildShiftReport(checks: ReportCheck[]): ShiftReport {
@@ -64,26 +73,29 @@ export function buildShiftReport(checks: ReportCheck[]): ShiftReport {
 
   const byMethod: Record<PayMethodKey, number> = { sbp: 0, card: 0, cash: 0 }
   const hours = new Map<number, number>()
+  let firstAt = Infinity
+  let lastAt = -Infinity
   for (const c of checks) {
     for (const p of c.payments) {
       byMethod[methodOf(p.method)] = round2(byMethod[methodOf(p.method)] + p.amount)
-      const hour = new Date(p.at).getHours()
+      const hour = hourOf(p.at)
       hours.set(hour, round2((hours.get(hour) ?? 0) + p.amount))
+      firstAt = Math.min(firstAt, p.at)
+      lastAt = Math.max(lastAt, p.at)
     }
   }
   const revenue = round2(byMethod.sbp + byMethod.card + byMethod.cash)
   const refunds = round2(checks.reduce((a, c) => a + c.refunded, 0))
 
-  // Часы — сплошным рядом от первого до последнего: пустой час на графике
-  // тоже информация («в 16 никого»), а не повод его выкинуть
-  const hourKeys = [...hours.keys()].sort((a, b) => a - b)
-  const byHour =
-    hourKeys.length === 0
-      ? []
-      : Array.from({ length: hourKeys.at(-1)! - hourKeys[0] + 1 }, (_, i) => {
-          const hour = hourKeys[0] + i
-          return { hour, amount: hours.get(hour) ?? 0 }
-        })
+  // Часы — сплошным рядом от первой оплаты до последней: пустой час на
+  // графике тоже информация («в 16 никого»). Ряд идёт по времени, а не по
+  // номеру часа: смена 18:00–02:00 — это 18…23, 0, 1, а не 0…23
+  const HOUR = 3_600_000
+  const floorHour = (t: number) => t - (t % HOUR)
+  const span = hours.size === 0 ? 0 : Math.min(24, (floorHour(lastAt) - floorHour(firstAt)) / HOUR + 1)
+  const startHour = hours.size === 0 ? 0 : hourOf(firstAt)
+  const byHour = Array.from({ length: span }, (_, i) => (startHour + i) % 24)
+    .map(hour => ({ hour, amount: hours.get(hour) ?? 0 }))
 
   const withMoney = checks.filter(c => c.payments.length > 0)
 

@@ -38,46 +38,45 @@ export function StaffLogin() {
     if (key === '⌫') setPin(prev => prev.slice(0, -1))
     else if (key) setPin(prev => (prev.length >= PIN_LENGTH ? prev : prev + key))
   }
+  // На мониторе кабинета PIN набирают с клавиатуры, а не мышкой по кнопкам
+  const pressRef = useRef(press)
+  pressRef.current = press
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (/^\d$/.test(e.key)) pressRef.current(e.key)
+      else if (e.key === 'Backspace') pressRef.current('⌫')
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
 
   return (
-    <div className="ep-forest flex min-h-full flex-col justify-center p-6">
+    <div className="cab flex min-h-full flex-col justify-center p-6">
       <div className="mx-auto w-full max-w-sm">
         <div className="text-center">
-          <div
-            className="mx-auto flex size-13 items-center justify-center rounded-[16px] text-[22px] font-extrabold"
-            style={{ background: '#D5F94E', color: '#062119' }}
-          >
+          <div className="mx-auto flex size-13 items-center justify-center rounded-[16px] bg-c-ink text-[22px] font-extrabold text-white">
             e
           </div>
-          <div className="mt-4 text-[25px] font-extrabold tracking-tight">Вход в смену</div>
-          <p className="mt-2 text-[15px] leading-snug font-medium" style={{ color: '#9FB5A8' }}>
+          <div className="mt-4 text-[25px] font-bold tracking-tight">Вход в смену</div>
+          <p className="mt-2 text-[15px] leading-snug text-c-mute">
             {wasSignedOut()
               ? 'Вы вышли из смены. Введите PIN, чтобы зайти под другим сотрудником.'
-              : 'Введите свой PIN — экран откроется по вашей роли.'}
+              : 'Введите свой PIN — откроется ваше рабочее место.'}
           </p>
         </div>
 
-        <div className="mt-6.5 flex justify-center gap-3.5">
+        <div className="mt-6.5 flex justify-center gap-3.5" aria-label={`Введено цифр: ${pin.length} из ${PIN_LENGTH}`}>
           {Array.from({ length: PIN_LENGTH }).map((_, i) => (
-            <span
-              key={i}
-              className="size-4 rounded-full"
-              style={{ background: i < pin.length ? '#D5F94E' : 'rgba(250,245,234,.18)' }}
-            />
+            <span key={i} className={`size-4 rounded-full ${i < pin.length ? 'bg-c-ink' : 'bg-c-off'}`} />
           ))}
         </div>
-        <div className="mt-2.5 text-center text-[13px] font-semibold" style={{ color: '#9FB5A8' }}>
-          {busy ? 'Проверяем…' : 'Отправим сами, как введёте четвёртую цифру'}
+        <div className="mt-2.5 text-center text-[13px] text-c-mute">
+          {busy ? 'Проверяем…' : 'Можно с клавиатуры — отправим на четвёртой цифре'}
         </div>
 
         {error && (
-          <div
-            className="mt-4.5 rounded-field px-4 py-3.5 text-center"
-            style={{ background: 'rgba(158,53,23,.28)', border: '1px solid rgba(255,227,216,.4)' }}
-          >
-            <div className="text-[14px] font-extrabold" style={{ color: '#FFE3D8' }}>
-              {error}
-            </div>
+          <div role="alert" className="mt-4.5 rounded-xl border border-c-bad-line bg-c-bad-bg px-4 py-3.5 text-center text-[14px] font-bold text-c-bad-ink">
+            {error}
           </div>
         )}
 
@@ -88,8 +87,8 @@ export function StaffLogin() {
                 key={key}
                 onClick={() => press(key)}
                 disabled={busy}
-                className="h-16 rounded-[18px] text-[24px] font-extrabold disabled:opacity-45"
-                style={{ border: '1px solid rgba(250,245,234,.18)', background: 'rgba(250,245,234,.06)', color: '#FAF5EA' }}
+                aria-label={key === '⌫' ? 'Стереть' : key}
+                className="c-num h-16 rounded-[18px] border border-c-line bg-c-card text-[24px] font-bold active:bg-c-chip disabled:opacity-45"
               >
                 {key}
               </button>
@@ -99,12 +98,8 @@ export function StaffLogin() {
           )}
         </div>
 
-        <div className="mt-4 text-center text-[12px] font-semibold" style={{ color: '#9FB5A8' }}>
-          Демо: официант 1111 · повар 4444 · менеджер 9999
-        </div>
-        <div className="mt-1 text-center text-[12px] font-semibold" style={{ color: '#6E8579' }}>
-          Сессия живёт 12 часов
-        </div>
+        <div className="mt-4 text-center text-[12px] text-c-mute">Демо: официант 1111 · повар 4444 · менеджер 9999</div>
+        <div className="mt-1 text-center text-[12px] text-c-mute">Сессия живёт 12 часов</div>
       </div>
     </div>
   )

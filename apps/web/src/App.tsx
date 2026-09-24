@@ -8,11 +8,9 @@ import { DishSheet } from './sheets/DishSheet'
 import { NameSheet } from './sheets/NameSheet'
 import { Welcome } from './screens/Welcome'
 import { CallSheet } from './sheets/CallSheet'
-import { Waiter } from './Waiter'
-import { Hall } from './hall/Hall'
-import { Kitchen } from './kitchen/Kitchen'
+import { Cabinet } from './cabinet/Cabinet'
+import { parseRoute } from './cabinet/route'
 import { TablePicker } from './screens/TablePicker'
-import { StaffGate } from './staff/StaffGate'
 import { tableId } from './api'
 import { seatsOfTable } from './hallConfig'
 import { QrTent } from './QrTent'
@@ -96,25 +94,6 @@ function Guest() {
   )
 }
 
-// Экран стола без ?t=… — заходить сюда нужно из зала
-function NoTable() {
-  return (
-    <div className="flex min-h-full items-center justify-center bg-base-200 p-5">
-      <div className="card w-full max-w-sm bg-base-100 shadow-lg">
-        <div className="card-body items-center text-center">
-          <h2 className="card-title">Стол не выбран</h2>
-          <p className="text-sm text-base-content/60">
-            Экран стола открывается из зала — там видно, какие столы заняты.
-          </p>
-          <a className="btn btn-block btn-primary mt-2" href="#/hall">
-            Открыть зал
-          </a>
-        </div>
-      </div>
-    </div>
-  )
-}
-
 function useRoute(): string {
   const [route, setRoute] = useState(window.location.hash)
   useEffect(() => {
@@ -129,17 +108,14 @@ function useRoute(): string {
 function useDocumentTitle(route: string) {
   useEffect(() => {
     const table = tableId ? `Стол №${tableId}` : null
-    const title = route.startsWith('#/hall')
-      ? 'EasyPay · Зал'
-      : route.startsWith('#/kitchen')
-        ? 'EasyPay · Кухня'
-        : route.startsWith('#/waiter')
-        ? `EasyPay · ${table ?? 'стол не выбран'} — экран ресторана`
-        : route.startsWith('#/qr')
-          ? `EasyPay · QR ${table ?? 'столов'}`
-          : table
-            ? `EasyPay · ${table}`
-            : 'EasyPay · выберите стол'
+    const cab = parseRoute(route)
+    const title = cab
+      ? `EasyPay · ${cab.ws === 'admin' ? 'Кабинет' : cab.ws === 'hall' ? 'Зал' : cab.ws === 'kitchen' ? 'Кухня' : 'Бар'}`
+      : route.startsWith('#/qr')
+        ? `EasyPay · QR ${table ?? 'столов'}`
+        : table
+          ? `EasyPay · ${table}`
+          : 'EasyPay · выберите стол'
     document.title = title
   }, [route])
 }
@@ -147,30 +123,19 @@ function useDocumentTitle(route: string) {
 export default function App() {
   const route = useRoute()
   useDocumentTitle(route)
+  const cab = parseRoute(route)
   return (
     <StoreProvider>
       <div style={{ height: '100%', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
-      <ConnBanner />
-      {route.startsWith('#/hall') ? (
-        <StaffGate need="hall">
-          <Hall />
-        </StaffGate>
-      ) : route.startsWith('#/kitchen') ? (
-        <StaffGate need="kitchen">
-          <Kitchen />
-        </StaffGate>
-      ) : route.startsWith('#/waiter') ? (
-        tableId ? (
-          <StaffGate need="table">
-            <Waiter />
-          </StaffGate>
-        ) : (
-          <NoTable />
-        )
+      {cab ? (
+        <Cabinet route={cab} />
       ) : route.startsWith('#/qr') ? (
         <QrTent />
       ) : tableId && seatsOfTable(tableId) !== null ? (
-        <Guest />
+        <>
+          <ConnBanner />
+          <Guest />
+        </>
       ) : (
         <TablePicker />
       )}

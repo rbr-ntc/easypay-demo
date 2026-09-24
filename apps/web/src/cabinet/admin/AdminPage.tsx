@@ -1,0 +1,28 @@
+import type { CabRoute } from '../route'
+import { Empty } from '../ui'
+import { Overview } from './Overview'
+import { CloseShift } from './CloseShift'
+import { Debts } from './Debts'
+import { Shifts } from './Shifts'
+import { Checks } from './Checks'
+import { Log } from './Log'
+
+/** Раздел кабинета по адресу `#/admin/<раздел>/<под-адрес>`. */
+export function AdminPage({ route }: { route: CabRoute }) {
+  switch (route.page) {
+    case 'overview':
+      return <Overview />
+    case 'close':
+      return <CloseShift />
+    case 'debts':
+      return <Debts />
+    case 'shifts':
+      return <Shifts id={route.sub} />
+    case 'checks':
+      return <Checks shift={route.sub} />
+    case 'log':
+      return <Log />
+    default:
+      return <Empty>Раздел собирается</Empty>
+  }
+}

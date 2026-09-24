@@ -68,6 +68,8 @@ export function can(role: RoleName | undefined | null, permission: Permission): 
 /** Экран, с которого сотруднику логично начинать смену. */
 export function homeRoute(role: RoleName | undefined | null): string {
   if (role === ROLE.COOK) return '#/kitchen'
+  // Менеджер начинает с обзора смены: выручка и то, что требует решения
+  if (role === ROLE.MANAGER) return '#/admin/overview'
   return '#/hall'
 }
 

@@ -101,7 +101,9 @@ export function hallPayload(tables: Map<string, TableSession>, shift: any) {
       tips: round2(Object.values(shift.tipsByStaff ?? {}).reduce((s: number, x: any) => s + Number(x), 0)),
       overpaid: round2(shift.overpaid),
       tablesWithRevenue: shift.tablesWithRevenue,
-      startedAt: shift.startedAt
+      startedAt: shift.startedAt,
+      // Смена закрыта — в шапке кабинета «Смена закрыта», а не время открытия прошлой
+      open: shift.open !== false
     },
     summary,
     now

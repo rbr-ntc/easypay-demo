@@ -5,7 +5,7 @@ export interface HallPayload {
   restaurant: string
   zones: { id: string; name: string }[]
   tables: HallCard[]
-  shift: HallShift & { startedAt: number }
+  shift: HallShift & { startedAt: number; open?: boolean }
   summary: HallSummary
   now: number
 }

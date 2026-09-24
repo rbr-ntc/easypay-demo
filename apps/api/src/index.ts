@@ -349,12 +349,18 @@ function pushTo(subscribers: Set<any>, payload: unknown) {
   }
 }
 
+/** Зал целиком: столы плюс смена — открыта ли она сейчас, видно в шапке кабинета. */
+async function hallNow(store: Store) {
+  const [tables, shift, current] = await Promise.all([store.activeSessions(), store.shift(), store.currentShift()])
+  return hallPayload(tables, { ...shift, open: !!current, startedAt: current?.openedAt ?? shift.startedAt })
+}
+
 /** Стоп-лист поменялся — он в снимке у каждого стола, где кто-то смотрит меню. */
 async function broadcastEverywhere(store: Store) {
   for (const id of [...streams.keys()]) if (streams.get(id)?.size) await broadcast(store, id)
   // Столов без подписчиков нет — зал и кухня всё равно должны узнать
   if (streams.size === 0 || ![...streams.values()].some(s => s.size)) {
-    if (hallStreams.size > 0) pushTo(hallStreams, hallPayload(await store.activeSessions(), await store.shift()))
+    if (hallStreams.size > 0) pushTo(hallStreams, await hallNow(store))
     if (kitchenStreams.size > 0) pushTo(kitchenStreams, kitchenPayload(await store.activeSessions()))
   }
 }
@@ -373,7 +379,7 @@ async function broadcast(store: Store, id: string) {
       }
     }
   }
-  if (hallStreams.size > 0) pushTo(hallStreams, hallPayload(await store.activeSessions(), await store.shift()))
+  if (hallStreams.size > 0) pushTo(hallStreams, await hallNow(store))
   if (kitchenStreams.size > 0) pushTo(kitchenStreams, kitchenPayload(await store.activeSessions()))
 }
 
@@ -1310,7 +1316,7 @@ async function handleApi(req: any, res: any, url: URL) {
   }
 
   if (url.pathname === '/api/hall' || url.pathname === '/api/hall/stream') {
-    return staffFeed(req, res, url, async () => hallPayload(await store.activeSessions(), await store.shift()), hallStreams, 'hall')
+    return staffFeed(req, res, url, async () => await hallNow(store), hallStreams, 'hall')
   }
   if (url.pathname === '/api/kitchen' || url.pathname === '/api/kitchen/stream') {
     return staffFeed(req, res, url, async () => kitchenPayload(await store.activeSessions()), kitchenStreams, 'kitchen')
