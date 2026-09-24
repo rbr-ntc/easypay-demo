@@ -1,5 +1,6 @@
 import type { Animal } from './data'
 import { getStaffToken } from './staff'
+import { openStream } from './liveStream'
 import type { Staff } from '@easypay/domain/roles'
 
 // Стол — только из ?t=... (его несёт QR со стола). Молчаливого дефолта нет:
@@ -432,15 +433,6 @@ export function subscribe(
   if (staff) params.set('token', staff)
   const query = params.toString()
   const url = query ? `${API}/stream?${query}` : `${API}/stream`
-  const es = new EventSource(url)
-  es.onmessage = e => {
-    try {
-      onSnapshot(JSON.parse(e.data) as Snapshot)
-      onState(true)
-    } catch (err) {
-      console.error('bad snapshot:', err)
-    }
-  }
-  es.onerror = () => onState(false) // EventSource переподключается сам
-  return () => es.close()
+  // Вкладку свернули — поток отпускаем, вернулись — полный снимок придёт сразу
+  return openStream(() => url, onSnapshot, onState, 'стол')
 }

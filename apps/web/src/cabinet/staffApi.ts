@@ -1,5 +1,6 @@
 import type { Snapshot } from '../api'
 import { getStaffToken } from '../staff'
+import { openStream } from '../liveStream'
 
 /**
  * Действия персонала над ЛЮБЫМ столом. Гостевой клиент привязан к столу из
@@ -48,19 +49,12 @@ export function subscribeTable(
   onSnap: (s: Snapshot) => void,
   onState: (ok: boolean) => void
 ): () => void {
-  const es = new EventSource(
-    `/api/t/${encodeURIComponent(tableId)}/stream?token=${encodeURIComponent(getStaffToken())}`
+  return openStream(
+    () => `/api/t/${encodeURIComponent(tableId)}/stream?token=${encodeURIComponent(getStaffToken())}`,
+    onSnap,
+    onState,
+    `стол ${tableId}`
   )
-  es.onmessage = e => {
-    try {
-      onSnap(JSON.parse(e.data) as Snapshot)
-      onState(true)
-    } catch (err) {
-      console.error('bad table snapshot:', err)
-    }
-  }
-  es.onerror = () => onState(false)
-  return () => es.close()
 }
 
 /** Человеческие слова для кодов ошибок: персоналу нужно, что делать дальше. */

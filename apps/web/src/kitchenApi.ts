@@ -1,4 +1,5 @@
 import { getStaffToken } from './staff'
+import { openStream } from './liveStream'
 import type { KitchenSummary, KitchenTicket } from '@easypay/domain/kitchen'
 
 export interface KitchenPayload {
@@ -60,15 +61,5 @@ export function subscribeKitchen(
   onData: (p: KitchenPayload) => void,
   onState: (ok: boolean) => void
 ): () => void {
-  const es = new EventSource(`/api/kitchen/stream?token=${encodeURIComponent(getStaffToken())}`)
-  es.onmessage = e => {
-    try {
-      onData(JSON.parse(e.data) as KitchenPayload)
-      onState(true)
-    } catch (err) {
-      console.error('bad kitchen payload:', err)
-    }
-  }
-  es.onerror = () => onState(false)
-  return () => es.close()
+  return openStream(() => `/api/kitchen/stream?token=${encodeURIComponent(getStaffToken())}`, onData, onState, 'кухня')
 }
