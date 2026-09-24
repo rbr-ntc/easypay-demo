@@ -8,6 +8,7 @@ import { DishSheet } from './sheets/DishSheet'
 import { NameSheet } from './sheets/NameSheet'
 import { Welcome } from './screens/Welcome'
 import { CallSheet } from './sheets/CallSheet'
+import { AllergySheet } from './sheets/AllergySheet'
 import { Cabinet } from './cabinet/Cabinet'
 import { parseRoute } from './cabinet/route'
 import { TablePicker } from './screens/TablePicker'
@@ -77,6 +78,7 @@ function Guest() {
       {ui.sheet === 'dish' && <DishSheet />}
       {ui.sheet === 'name' && <NameSheet />}
       {ui.sheet === 'call' && <CallSheet />}
+      {ui.sheet === 'allergies' && <AllergySheet />}
 
       {/* Связь пропала после того, как данные уже были: показываем последнее известное */}
       {!connected && snap && (

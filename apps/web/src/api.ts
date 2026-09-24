@@ -272,6 +272,13 @@ export const apiTip = (guest: string, amount: number, idemKey: string) =>
 export const apiCall = (guest: string, reason: 'help' | 'bill' | 'water', note?: string) =>
   post<{ ok: true; callId: string; repeated: boolean }>('call', { reason, note }, { guest })
 
+/** Изменить свои аллергии после посадки: забыл отметить орехи — не повод остаться без защиты. */
+export const apiSetAllergies = (guest: string, allergies: string[]) =>
+  post<{ ok: true; allergies: string[] }>('allergies', { allergies }, { guest })
+
+/** Сел по ошибке (второй телефон, чужое имя) — выйти, пока за тобой ничего нет. */
+export const apiLeave = (guest: string) => post<{ ok: true }>('leave', {}, { guest })
+
 // Действия персонала — с сессией сотрудника и привязкой к сессии стола
 export const apiStart = (uid: number, sessionId: string) =>
   post<{ ok: true; startedAt: number }>('start', { uid, sessionId }, { staff: true })

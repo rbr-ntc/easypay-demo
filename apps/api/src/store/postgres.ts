@@ -240,7 +240,10 @@ export async function createPostgresStore(url?: string): Promise<Store> {
         reason: c.reason,
         note: c.note ?? null
       })),
-      seq: (lines.at(-1)?.seq ?? 0) + 1,
+      // Счётчик позиций хранится отдельно: «последняя + 1» после удаления из
+      // корзины выдавал тот же номер новой позиции, и повтор удаления после
+      // обрыва связи сносил уже её
+      seq: Math.max((lines.at(-1)?.seq ?? 0) + 1, Number(row.next_seq ?? 0)),
       overpaid: Number(row.overpaid ?? 0),
       // Возвраты обязаны переживать перечитывание: без них сервер забывает,
       // что деньги гостю уже отдали, и предлагает вернуть их снова
@@ -301,6 +304,19 @@ export async function createPostgresStore(url?: string): Promise<Store> {
           animal = excluded.animal,
           allergies = excluded.allergies
       `
+    }
+
+    // Гостя, севшего по ошибке, убрали: удаляем и строку гостя. Журнал
+    // ссылается на него по id — отвязываем, имя в тексте записи остаётся
+    const present = session.personas.map(p => p.id)
+    const gone = await tx`
+      select id from guests where table_session_id = ${sid}
+      ${present.length ? tx`and id <> all(${present}::uuid[])` : tx``}
+    `
+    if (gone.length) {
+      const ids = gone.map((g: any) => g.id)
+      await tx`update audit_log set guest_id = null where guest_id in ${tx(ids)}`
+      await tx`delete from guests where id in ${tx(ids)}`
     }
 
     // Удалённые из корзины позиции надо именно удалить: раньше persist только
@@ -391,7 +407,8 @@ export async function createPostgresStore(url?: string): Promise<Store> {
     await tx`
       update table_sessions set
         cleaned_at = ${session.cleanedAt ? new Date(session.cleanedAt) : null},
-        cash_intent = ${session.cashIntent ? tx.json(session.cashIntent) : null}
+        cash_intent = ${session.cashIntent ? tx.json(session.cashIntent) : null},
+        next_seq = ${session.seq}
       where id = ${sid}
     `
 

@@ -70,7 +70,11 @@ export function staffError(r: StaffResult): string {
     'staff login required': 'Нужно войти в смену',
     'signed out elsewhere': 'Вы вошли на другом устройстве — войдите заново',
     'table closed': 'Стол уже закрыт',
-    'unknown dish': 'Такого блюда нет в меню'
+    'unknown dish': 'Такого блюда нет в меню',
+    'guest has orders': 'У гостя есть заказы — убрать нельзя',
+    'guest has payments': 'Гость уже платил — убрать нельзя',
+    'last guest': 'Это последний гость за столом',
+    'guest not found': 'Гостя уже нет за столом'
   }
   return map[r.error ?? ''] ?? 'Не получилось — попробуйте ещё раз'
 }

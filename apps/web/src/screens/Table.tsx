@@ -29,7 +29,7 @@ function caption(line: ServerLine, now: number): string {
 }
 
 export function Table() {
-  const { ui, patch, me, snap, totals, removeLine, cancelMine, forgetMe, sendWave, toast } = useStore()
+  const { ui, patch, me, snap, totals, removeLine, cancelMine, forgetMe, leaveTable, sendWave, toast } = useStore()
   const [moreOpen, setMoreOpen] = useState(false)
   const [sending, setSending] = useState(false)
   // Подтверждение «отправить и соседей»: их черновики — чужой выбор
@@ -176,6 +176,29 @@ export function Table() {
               >
                 Позвать официанта
               </button>
+              <button
+                onClick={() => {
+                  setMoreOpen(false)
+                  patch({ sheet: 'allergies' })
+                }}
+                className="h-12 w-full px-3 text-left text-[15px] text-g-fg"
+              >
+                Мои аллергии{me.allergies?.length ? ` · ${me.allergies.join(', ')}` : ''}
+              </button>
+              {/* Сел по ошибке — второй телефон, чужое имя: выйти, пока за тобой ничего нет */}
+              {!snap.lines.some(l => l.personaId === me.id && l.sent && !l.cancelled) &&
+                !snap.payments.some(p => p.personaId === me.id) &&
+                snap.personas.length > 1 && (
+                  <button
+                    onClick={() => {
+                      setMoreOpen(false)
+                      void leaveTable()
+                    }}
+                    className="h-12 w-full px-3 text-left text-[15px] text-g-fg"
+                  >
+                    Я здесь по ошибке — выйти
+                  </button>
+                )}
               {/* Телефон передали соседу — он должен мочь стать собой */}
               <button
                 onClick={() => {

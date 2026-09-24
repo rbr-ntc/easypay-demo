@@ -474,10 +474,10 @@ const NAME_MAX = 30
 const ANIMALS = new Set(['fox', 'bear', 'panda', 'raccoon', 'owl', 'cat'])
 const TABLE_RE = /^[A-Za-z0-9_-]{1,24}$/
 const STAFF_ACTIONS = new Set([
-  'serve', 'ready', 'start', 'close', 'reset', 'ack', 'dismiss', 'clean', 'cash', 'refund'
+  'serve', 'ready', 'start', 'close', 'reset', 'ack', 'dismiss', 'clean', 'cash', 'refund', 'removeGuest'
 ])
 const GUEST_ACTIONS = new Set([
-  'lines', 'remove', 'send', 'pay', 'tip', 'call', 'cancelMine', 'cashIntent', 'cancelCash'
+  'lines', 'remove', 'send', 'pay', 'tip', 'call', 'cancelMine', 'cashIntent', 'cancelCash', 'leave', 'allergies'
 ])
 const IDEMPOTENT_ACTIONS = new Set(['join', 'lines', 'pay', 'tip', 'refund'])
 const CALL_REASONS = new Set(['help', 'bill', 'water'])
@@ -635,7 +635,45 @@ function joinGuest(t: TableSession, tableId: string, body: any): MutationResult 
   return ok({ personaId: persona.id, guestToken, snapshot: snapshot(t, tableId) })
 }
 
+/**
+ * Убрать гостя со стола — второй вход с того же телефона, чужое имя. Только
+ * если за ним ничего нет: ни отправленных блюд, ни платежей, ни чаевых. Его
+ * доля в общих блюдах переходит к остальным: он их не ел. Раньше такой
+ * «призрак» навсегда входил в делёж и в число гостей смены.
+ */
+function removePersona(t: TableSession, persona: Persona): string | null {
+  const ownSent = t.lines.some(l => l.personaId === persona.id && l.sent && !l.cancelled)
+  if (ownSent) return 'guest has orders'
+  if (t.payments.some(p => p.personaId === persona.id)) return 'guest has payments'
+  if (t.tips.some(x => x.personaId === persona.id)) return 'guest has payments'
+  if (t.personas.length <= 1) return 'last guest'
+  t.personas = t.personas.filter(p => p.id !== persona.id)
+  t.lines = t.lines
+    .filter(l => !(l.personaId === persona.id && !l.sent))
+    .map(l => (l.shared && l.sharedWith?.includes(persona.id) ? { ...l, sharedWith: l.sharedWith.filter(id => id !== persona.id) } : l))
+  t.calls = t.calls.filter(c => c.personaId !== persona.id)
+  if (t.cashIntent?.personaId === persona.id) t.cashIntent = null
+  return null
+}
+
 function guestAction(t: TableSession, tableId: string, action: string, body: any, persona: Persona): MutationResult {
+  if (action === 'allergies') {
+    // Забыл отметить орехи при входе — не повод остаться без защиты до конца ужина
+    if (!Array.isArray(body.allergies)) return fail(400, 'allergies must be a list', { allowed: ALLERGENS })
+    const unknown = (body.allergies as unknown[]).filter(a => typeof a !== 'string' || !ALLERGENS.includes(a))
+    if (unknown.length) return fail(400, 'unknown allergen', { unknown: unknown.map(String), allowed: ALLERGENS })
+    persona.allergies = ALLERGENS.filter(a => (body.allergies as string[]).includes(a))
+    audit(null, 'указал аллергии', tableId, `${persona.name}: ${persona.allergies.join(', ') || 'нет'}`, null, persona)
+    return ok({ ok: true, allergies: persona.allergies })
+  }
+
+  if (action === 'leave') {
+    const why = removePersona(t, persona)
+    if (why) return fail(409, why)
+    audit(null, 'вышел из-за стола', tableId, persona.name, null)
+    return ok()
+  }
+
   if (action === 'lines') {
     const dish = getDish(asId(body.dishId))
     if (!dish) return fail(400, 'unknown dish')
@@ -926,6 +964,16 @@ function staffAction(t: TableSession, tableId: string, action: string, body: any
   // ack — подойти к гостю, а не тронуть его деньги: это можно на любом столе
   if (action !== 'ack' && !ownsTable(actor, tableId)) {
     return fail(403, 'not your table', { waiter: waiterOfTable(tableId)?.name ?? null })
+  }
+
+  if (action === 'removeGuest') {
+    if (t.status !== 'open') return fail(409, 'table closed')
+    const persona = t.personas.find(p => p.id === asId(body.personaId))
+    if (!persona) return fail(404, 'guest not found')
+    const why = removePersona(t, persona)
+    if (why) return fail(409, why)
+    audit(actor, 'убрал гостя', tableId, persona.name)
+    return ok()
   }
 
   if (action === 'start' || action === 'ready' || action === 'serve') {

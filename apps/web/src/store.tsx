@@ -5,6 +5,8 @@ import {
   apiAck,
   apiAddLine,
   apiCall,
+  apiLeave,
+  apiSetAllergies,
   apiClose,
   apiServe,
   apiStart,
@@ -42,7 +44,7 @@ import { amountFor, computeTotals as computeMoney, equalSplitOf } from '@easypay
  * вернувшийся гость идёт сразу в меню. `tips` — часть `done`.
  */
 export type Screen = 'welcome' | 'menu' | 'table' | 'payment' | 'done'
-export type Sheet = null | 'dish' | 'name' | 'call'
+export type Sheet = null | 'dish' | 'name' | 'call' | 'allergies'
 /** `failed` — банк не подтвердил: деньги не списаны, повтор идёт тем же ключом. */
 export type PayStage = 'form' | 'qr' | 'processing' | 'failed'
 export type PayScope = 'own' | 'equal' | 'full'
@@ -234,6 +236,9 @@ export function humanError(err: ApiError): string {
     'already cancelled': 'Это блюдо уже отменено',
     'already served': 'Это блюдо уже подали',
     'allergen warning': 'В этом блюде есть то, на что вы указали аллергию',
+    'guest has orders': 'За вами уже есть заказ — выйти нельзя, позовите официанта',
+    'guest has payments': 'Вы уже платили — выйти нельзя, позовите официанта',
+    'last guest': 'Вы последний за столом',
     'signed out elsewhere': 'Вы вошли на другом устройстве — войдите заново',
     'not your table': 'Это стол другого официанта',
     'dish in stop list': 'Это блюдо сегодня закончилось',
@@ -321,6 +326,10 @@ interface Ctx {
   leaveTip: (amount: number, idemKey: string) => Promise<number>
   callWaiter: (reason: 'help' | 'bill' | 'water', note?: string) => Promise<void>
   forgetMe: () => void // «Я другой гость» — телефон передали новому человеку
+  /** Изменить свои аллергии после посадки. true — сервер принял. */
+  setAllergies: (allergies: string[]) => Promise<boolean>
+  /** Выйти из-за стола, если сел по ошибке и за тобой ничего нет. */
+  leaveTable: () => Promise<boolean>
   // смена сотрудника: вход по PIN, права роли
   staff: Staff | null
   staffChecked: boolean
@@ -596,6 +605,23 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       setIdentity(null)
       setUi(initialUi)
     },
+    setAllergies: allergies =>
+      guard(async () => {
+        if (!guestToken()) return false
+        await apiSetAllergies(guestToken()!, allergies)
+        toast(allergies.length ? `Аллергии: ${allergies.join(', ')} — кухня увидит` : 'Аллергий нет — отметили')
+        return true
+      }, false),
+    leaveTable: () =>
+      guard(async () => {
+        if (!guestToken()) return false
+        await apiLeave(guestToken()!)
+        localStorage.removeItem(ID_KEY)
+        setIdentity(null)
+        setUi(initialUi)
+        toast('Вы вышли из-за стола')
+        return true
+      }, false),
     staff,
     staffChecked,
     shiftTips,

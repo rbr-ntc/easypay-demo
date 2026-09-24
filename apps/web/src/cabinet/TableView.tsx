@@ -277,6 +277,21 @@ export function TableView({ id }: { id: string }) {
                       {/* Без глагола в прошедшем: род по имени не угадать */}
                       {settled ? '✓ оплачено' : paid > 0 ? `внесено ${fmt(paid)}` : total > 0 ? 'оплаты не было' : 'ещё выбирает'}
                     </div>
+                    {/* Сел по ошибке — второй вход, чужое имя: убрать, пока за ним ничего нет.
+                        Его доля в общих блюдах уйдёт остальным — он их не ел */}
+                    {open &&
+                      may('removeGuest') &&
+                      snap.personas.length > 1 &&
+                      paid === 0 &&
+                      !snap.lines.some(l => l.personaId === p.id && l.sent && !l.cancelled) && (
+                        <button
+                          disabled={busy === `guest-${p.id}`}
+                          onClick={() => void run(`guest-${p.id}`, 'removeGuest', { personaId: p.id }, `${p.name} — убран со стола`)}
+                          className="mt-1.5 ml-10.5 h-8 rounded-lg border border-c-line px-2.5 text-[13px] disabled:opacity-50"
+                        >
+                          Убрать гостя — сел по ошибке
+                        </button>
+                      )}
                   </div>
                 )
               })}

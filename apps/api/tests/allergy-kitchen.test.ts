@@ -106,3 +106,47 @@ test('расплатился наличными — его вызов «счёт
   assert.equal(after.calls.length, 1)
   assert.notEqual(after.calls[0].personaId, nikaId)
 })
+
+test('гость, севший по ошибке, выходит; его доля общего уходит остальным', async () => {
+  const table = fresh()
+  const marina = (await join(table, 'Марина')).body.guestToken
+  const ghost = (await join(table, 'Марина4')).body.guestToken
+  const katya = (await join(table, 'Катя')).body.guestToken
+  await post(`/api/t/${table}/lines`, { dishId: 'espresso', shared: true }, { guest: katya })
+  await post(`/api/t/${table}/send`, { scope: 'mine' }, { guest: katya })
+  const staffSnap = () => fetch(`${base}/api/t/${table}`, { headers: { 'x-staff-token': M } }).then(r => r.json())
+  let snap = await staffSnap()
+  assert.equal(snap.personas.length, 3)
+  const shareBefore = snap.totals.byPersona.find((p: any) => p.name === 'Марина' || p.personaId === snap.personas[0].id).total
+
+  assert.equal((await post(`/api/t/${table}/leave`, {}, { guest: ghost })).status, 200)
+  snap = await staffSnap()
+  assert.equal(snap.personas.length, 2)
+  const shareAfter = snap.totals.byPersona.find((p: any) => p.personaId === snap.personas[0].id).total
+  assert.ok(shareAfter > shareBefore, 'доля призрака ушла тем, кто ел')
+  assert.equal(snap.totals.tableTotal, snap.totals.byPersona.reduce((s: number, p: any) => s + p.total, 0))
+  // Вышедший гость больше ничего не может
+  assert.notEqual((await post(`/api/t/${table}/lines`, { dishId: 'espresso' }, { guest: ghost })).status, 200)
+
+  // Катя заказала — её не убрать ни самой, ни официанту
+  const katyaId = snap.personas.find((p: any) => p.name === 'Катя').id
+  const selfLeave = await post(`/api/t/${table}/leave`, {}, { guest: katya })
+  assert.equal(selfLeave.status, 409)
+  assert.equal((await selfLeave.json()).error, 'guest has orders')
+  const staffRemove = await post(`/api/t/${table}/removeGuest`, { personaId: katyaId, sessionId: snap.sessionId }, { staff: M })
+  assert.equal(staffRemove.status, 409)
+  void marina
+})
+
+test('аллергии меняются после посадки и сразу видны кухне', async () => {
+  const table = fresh()
+  const vera = (await join(table, 'Вера')).body.guestToken
+  await post(`/api/t/${table}/lines`, { dishId: 'espresso' }, { guest: vera })
+  await post(`/api/t/${table}/send`, { scope: 'mine' }, { guest: vera })
+  assert.equal((await post(`/api/t/${table}/allergies`, { allergies: 'орехи' }, { guest: vera })).status, 400)
+  assert.equal((await post(`/api/t/${table}/allergies`, { allergies: ['кошки'] }, { guest: vera })).status, 400)
+  const ok = await post(`/api/t/${table}/allergies`, { allergies: ['орехи'] }, { guest: vera })
+  assert.equal(ok.status, 200)
+  const ticket = (await kitchen()).tickets.find((t: any) => t.tableId === table)
+  assert.deepEqual(ticket.guestAllergies, [{ name: 'Вера', allergies: ['орехи'] }])
+})
