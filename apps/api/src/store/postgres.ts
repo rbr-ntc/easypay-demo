@@ -781,6 +781,25 @@ export async function createPostgresStore(url?: string): Promise<Store> {
       return row ? { mime: row.mime as string, data: Buffer.from(row.data) } : null
     },
 
+    async settings() {
+      const [row] = await sql`select settings from venues where id = ${venueId}`
+      const doc = row?.settings as Record<string, unknown> | undefined
+      // Пустой {} — значение по умолчанию из первой миграции, а не сохранённые настройки
+      if (!doc || !doc.savedAt) return null
+      return { doc, savedAt: Number(doc.savedAt) }
+    },
+
+    async saveSettings(doc) {
+      const savedAt = Date.now()
+      const name = String((doc as any)?.venue?.name ?? '').trim()
+      await sql`
+        update venues set settings = ${sql.json({ ...(doc as object), savedAt } as any)}
+          ${name ? sql`, name = ${name}` : sql``}
+         where id = ${venueId}
+      `
+      return savedAt
+    },
+
     async staffList() {
       const rows = await sql`
         select s.ext_id, s.name, s.role, s.pin_hash, s.phone,

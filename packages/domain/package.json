@@ -28,6 +28,10 @@
     "./shift": {
       "types": "./dist/shift.d.ts",
       "default": "./dist/shift.js"
+    },
+    "./settings": {
+      "types": "./dist/settings.d.ts",
+      "default": "./dist/settings.js"
     }
   },
   "scripts": {

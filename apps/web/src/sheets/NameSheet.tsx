@@ -5,6 +5,7 @@ import type { Animal } from '../data'
 import { ANIMAL_LIST, Avatar } from '../avatars'
 import { useStore } from '../store'
 import { ALLERGENS } from '@easypay/domain/allergens'
+import { SETTINGS } from '../settings'
 
 const ANIMAL_RU: Record<Animal, string> = {
   fox: 'лиса',
@@ -124,28 +125,33 @@ export function NameSheet() {
           })}
         </div>
 
-        <div className="mt-4.5 text-[13px] font-bold text-g-mute">Аллергия — предупредим и скажем кухне</div>
-        <div className="mt-2 flex flex-wrap gap-1.5">
-          {ALLERGENS.map(a => {
-            const on = allergies.includes(a)
-            return (
-              <button
-                key={a}
-                type="button"
-                aria-pressed={on}
-                onClick={() => setAllergies(list => (on ? list.filter(x => x !== a) : [...list, a]))}
-                className="h-10 rounded-full px-3.5 text-[15px]"
-                style={
-                  on
-                    ? { background: '#F3F0EA', color: '#1A1612', border: '1px solid #F3F0EA' }
-                    : { background: 'var(--g-s1)', color: '#F3F0EA', border: '1px solid rgba(255,255,255,.1)' }
-                }
-              >
-                {a}
-              </button>
-            )
-          })}
-        </div>
+        {/* Вопрос об аллергии можно выключить в настройках — для бара без кухни */}
+        {SETTINGS.guest.askAllergy && (
+          <>
+            <div className="mt-4.5 text-[13px] font-bold text-g-mute">Аллергия — предупредим и скажем кухне</div>
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {ALLERGENS.map(a => {
+                const on = allergies.includes(a)
+                return (
+                  <button
+                    key={a}
+                    type="button"
+                    aria-pressed={on}
+                    onClick={() => setAllergies(list => (on ? list.filter(x => x !== a) : [...list, a]))}
+                    className="h-10 rounded-full px-3.5 text-[15px]"
+                    style={
+                      on
+                        ? { background: '#F3F0EA', color: '#1A1612', border: '1px solid #F3F0EA' }
+                        : { background: 'var(--g-s1)', color: '#F3F0EA', border: '1px solid rgba(255,255,255,.1)' }
+                    }
+                  >
+                    {a}
+                  </button>
+                )
+              })}
+            </div>
+          </>
+        )}
 
         {others.length > 0 && (
           <div className="mt-4 text-[13px] text-g-mute">За столом уже: {others.map(p => p.name).join(' · ')}</div>

@@ -58,12 +58,18 @@ export interface ShiftReport {
 
 /**
  * Час по часам заведения, а не сервера: VPS живёт в UTC, и вечерняя выручка
- * уезжала бы на три часа раньше. Пояс пока один — Москва; станет настройкой
- * заведения вместе с кабинетом «Настройки».
+ * уезжала бы на три часа раньше. Пояс — настройка заведения.
  */
-export const VENUE_TZ = 'Europe/Moscow'
-const hourFormat = new Intl.DateTimeFormat('ru-RU', { hour: 'numeric', hourCycle: 'h23', timeZone: VENUE_TZ })
+export let VENUE_TZ = 'Europe/Moscow'
+let hourFormat = new Intl.DateTimeFormat('ru-RU', { hour: 'numeric', hourCycle: 'h23', timeZone: VENUE_TZ })
 export const hourOf = (at: number): number => Number(hourFormat.format(at))
+
+/** Пояс заведения из настроек: «Екатеринбург, UTC+5» — и отчёт по часам сдвигается. */
+export function setVenueTz(tz: string) {
+  if (tz === VENUE_TZ) return
+  hourFormat = new Intl.DateTimeFormat('ru-RU', { hour: 'numeric', hourCycle: 'h23', timeZone: tz })
+  VENUE_TZ = tz
+}
 
 const methodOf = (m: string): PayMethodKey => (m === 'cash' ? 'cash' : m === 'card' ? 'card' : 'sbp')
 

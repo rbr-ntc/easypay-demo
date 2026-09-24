@@ -8,6 +8,7 @@ export interface KitchenPayload {
   /** Что сейчас в стопе — с учётом тумблеров кухни, а не только menu.json. */
   stop?: string[]
   menuVersion?: number
+  settingsVersion?: number
   now: number
 }
 

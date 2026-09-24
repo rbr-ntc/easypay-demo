@@ -200,7 +200,11 @@ export function findDish(id: string): Dish | undefined {
   return undefined
 }
 
-export const RESTAURANT = HALL_CONFIG.restaurant
+/** Название заведения — из настроек кабинета; до их загрузки — из плана зала. */
+export let RESTAURANT = HALL_CONFIG.restaurant
+export function setRestaurant(name: string) {
+  RESTAURANT = name
+}
 // Зона стола берётся из плана зала (src/hall.json), а не хардкодом
 export const HALL_LABEL = (tableId ? zoneOfTable(tableId) : null) ?? 'Зал'
 export const TABLE_SEATS = tableId ? seatsOfTable(tableId) : null

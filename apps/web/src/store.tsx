@@ -29,6 +29,7 @@ import { can } from '@easypay/domain/roles'
 import type { Permission, Staff } from '@easypay/domain/roles'
 import { newIdemKey } from './keys'
 import { ensureMenu, findDish, onMenuChange } from './data'
+import { ensureSettings, onSettingsChange } from './settings'
 import type { Animal, LineOptions } from './data'
 import { amountFor, computeTotals as computeMoney } from '@easypay/domain/money'
 
@@ -269,7 +270,7 @@ export interface AddResult {
 interface Ctx {
   ui: UiState
   patch: (p: Partial<UiState>) => void
-  /** Растёт с каждой сменой меню: ключ для useMemo над MENU. */
+  /** Растёт с каждой сменой меню или настроек: ключ для useMemo над ними. */
   menuRev: number
   snap: Snapshot | null
   connected: boolean
@@ -344,7 +345,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   // Меню опубликовали — перерисовываем всех, кто читает MENU при отрисовке
   const [menuRev, setMenuRev] = useState(0)
   useEffect(() => onMenuChange(() => setMenuRev(r => r + 1)), [])
+  useEffect(() => onSettingsChange(() => setMenuRev(r => r + 1)), [])
   useEffect(() => ensureMenu(snap?.menuVersion), [snap?.menuVersion])
+  useEffect(() => ensureSettings(snap?.settingsVersion), [snap?.settingsVersion])
   const personaId = identity?.personaId ?? null
   // Токен читаем через ref: действие сразу после join не должно видеть старое замыкание
   const identityRef = useRef<Identity | null>(identity)

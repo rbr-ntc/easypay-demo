@@ -119,12 +119,21 @@ export const STATUS_LABEL: Record<TableStatus, string> = {
 }
 
 /** Пороги «внимания» — те же, по которым живут хостес и менеджер смены. */
-export const THRESHOLDS = {
+export let THRESHOLDS = {
   noOrderMs: 7 * 60_000, // сели и не заказали
   kitchenSlowMs: 20 * 60_000, // позиция висит на кухне
   awaitingPaymentMs: 10 * 60_000, // всё подано, денег нет
-  cleanupMs: 5 * 60_000 // стол закрыт и ещё не убран
+  cleanupMs: 5 * 60_000, // стол закрыт и ещё не убран
+  callMs: 3 * 60_000, // гость зовёт, а никто не идёт
+  cashMs: 5 * 60_000 // гость с наличными ждёт официанта
 }
+
+/** Пороги из настроек заведения (кабинет → «Настройки»). */
+export function setHallThresholds(next: Partial<typeof THRESHOLDS>) {
+  THRESHOLDS = { ...THRESHOLDS, ...next }
+}
+
+const minutes = (ms: number) => Math.max(1, Math.round(ms / 60_000))
 
 const NOTHING: HallAlert[] = []
 
@@ -169,9 +178,11 @@ export function tableAlerts(card: HallCard, now: number): HallAlert[] {
       id: 'call-waiter',
       // Текст гостя важнее подписи причины: официант должен знать, зачем идёт.
       // «Ольга зовёт официанта» вместо «уронили вилку» — это лишний заход.
-      label: card.call.note
+      label:
+        (card.call.note
         ? `${card.call.name}: ${card.call.note}`
-        : `${card.call.name} ${CALL_LABEL[card.call.reason] ?? CALL_LABEL.help}`,
+        : `${card.call.name} ${CALL_LABEL[card.call.reason] ?? CALL_LABEL.help}`) +
+        (now - card.call.at > THRESHOLDS.callMs ? ` · ждёт ${minutes(now - card.call.at)} мин` : ''),
       severity: 'danger',
       since: card.call.at
     })
@@ -181,7 +192,9 @@ export function tableAlerts(card: HallCard, now: number): HallAlert[] {
   if (card.cashIntent) {
     alerts.push({
       id: 'cash-wanted',
-      label: `${card.cashIntent.name} платит наличными`,
+      label:
+        `${card.cashIntent.name} платит наличными` +
+        (now - card.cashIntent.at > THRESHOLDS.cashMs ? ` · ждёт ${minutes(now - card.cashIntent.at)} мин` : ''),
       severity: 'danger',
       since: card.cashIntent.at
     })

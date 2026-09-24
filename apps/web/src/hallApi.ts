@@ -7,6 +7,8 @@ export interface HallPayload {
   tables: HallCard[]
   shift: HallShift & { startedAt: number; open?: boolean }
   summary: HallSummary
+  /** Версия настроек заведения: пороги тревог, напоминание о смене. */
+  settingsVersion?: number
   now: number
 }
 

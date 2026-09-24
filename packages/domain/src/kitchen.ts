@@ -42,9 +42,14 @@ export interface KitchenSummary {
 }
 
 /** Пороги ожидания разные по цехам: капучино через 10 минут — уже провал. */
-export const STATION_THRESHOLDS: Record<string, { warnMs: number; dangerMs: number }> = {
+export let STATION_THRESHOLDS: Record<string, { warnMs: number; dangerMs: number }> = {
   kitchen: { warnMs: 10 * 60_000, dangerMs: 20 * 60_000 },
   bar: { warnMs: 3 * 60_000, dangerMs: 6 * 60_000 }
+}
+
+/** Порог цеха из настроек заведения: «блюдо на кухне дольше N минут». */
+export function setStationThresholds(station: string, limits: { warnMs: number; dangerMs: number }) {
+  STATION_THRESHOLDS = { ...STATION_THRESHOLDS, [station]: limits }
 }
 
 export const KITCHEN_THRESHOLDS = STATION_THRESHOLDS.kitchen

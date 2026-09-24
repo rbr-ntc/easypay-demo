@@ -83,6 +83,11 @@ export interface Store {
   /** Создать или обновить сотрудника вместе с закреплёнными столами. */
   saveStaff(rec: StaffRecord): Promise<void>
 
+  // ── Настройки заведения ───────────────────────────────────────────────
+  /** Сохранённые настройки и момент сохранения; null — не сохраняли. */
+  settings(): Promise<{ doc: unknown; savedAt: number } | null>
+  saveSettings(doc: unknown): Promise<number>
+
   close(): Promise<void>
 }
 

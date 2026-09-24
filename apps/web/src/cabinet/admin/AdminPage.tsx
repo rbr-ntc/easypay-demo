@@ -1,5 +1,4 @@
 import type { CabRoute } from '../route'
-import { Empty } from '../ui'
 import { Overview } from './Overview'
 import { CloseShift } from './CloseShift'
 import { Debts } from './Debts'
@@ -8,6 +7,7 @@ import { Checks } from './Checks'
 import { Log } from './Log'
 import { MenuPage } from './menu/MenuPage'
 import { StaffPage } from './StaffPage'
+import { SettingsPage } from './SettingsPage'
 
 /** Раздел кабинета по адресу `#/admin/<раздел>/<под-адрес>`. */
 export function AdminPage({ route }: { route: CabRoute }) {
@@ -28,7 +28,7 @@ export function AdminPage({ route }: { route: CabRoute }) {
       return <MenuPage />
     case 'staff':
       return <StaffPage />
-    default:
-      return <Empty>Раздел собирается</Empty>
+    case 'settings':
+      return <SettingsPage />
   }
 }

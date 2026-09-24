@@ -4,6 +4,7 @@ import { subscribeHall } from '../hallApi'
 import type { HallPayload } from '../hallApi'
 import { ROLE_LABEL } from '@easypay/domain/roles'
 import { RESTAURANT } from '../data'
+import { ensureSettings, SETTINGS } from '../settings'
 import { Icon } from './icons'
 import { ADMIN_PAGES, go, href, type CabRoute, type Workspace } from './route'
 import { CToast } from './ui'
@@ -47,6 +48,7 @@ export function Shell({ route, title, children }: { route: CabRoute; title: Reac
   const canHall = may('hall')
   // Поток зала нужен и шапке (смена), и самому залу — подписываемся один раз
   useEffect(() => (canHall ? subscribeHall(setHall, setHallLive) : undefined), [canHall])
+  useEffect(() => ensureSettings(hall?.settingsVersion), [hall?.settingsVersion])
   useEffect(() => {
     const t = setInterval(() => setNow(Date.now()), 1000)
     return () => clearInterval(t)
@@ -173,6 +175,14 @@ export function Shell({ route, title, children }: { route: CabRoute; title: Reac
             )}
           </header>
 
+          {admin && shiftOpen && startedAt && route.page !== 'close' && remindDue(startedAt, now) && (
+            <div role="status" className="flex shrink-0 flex-wrap items-center gap-3 border-b border-c-warn-line bg-c-warn-bg px-4 py-2.5 text-[14px] text-c-warn-fg md:px-6">
+              <span className="flex-1">Пора закрывать смену — в настройках напоминание на {SETTINGS.shift.remindAt}.</span>
+              <button onClick={() => go({ ws: 'admin', page: 'close' })} className="h-8 rounded-lg bg-c-ink px-3 text-[13px] font-bold text-white">
+                Закрыть смену
+              </button>
+            </div>
+          )}
           <div className="min-h-0 flex-1 overflow-y-auto px-4 pt-5 pb-10 md:px-6">
             <h1 className="mb-4.5 text-[22px] font-bold md:text-[24px]">{title}</h1>
             {children}
@@ -182,6 +192,21 @@ export function Shell({ route, title, children }: { route: CabRoute; title: Reac
       {ui.toast && <CToast msg={ui.toast} />}
     </Ctx.Provider>
   )
+}
+
+/**
+ * Напоминание «пора закрывать смену»: наступило время из настроек, а смена
+ * открыта с прошлого дня или с вечера. Днём, в обед, оно не всплывает.
+ */
+function remindDue(startedAt: number, now: number): boolean {
+  const at = SETTINGS.shift.remindAt
+  if (!at) return false
+  const [h, m] = at.split(':').map(Number)
+  const due = new Date(now)
+  due.setHours(h, m, 0, 0)
+  if (due.getTime() > now) due.setDate(due.getDate() - 1)
+  // Смена открыта раньше последнего наступившего «часа закрытия», и с тех пор прошло меньше полусуток
+  return startedAt < due.getTime() && now - due.getTime() < 12 * 60 * 60 * 1000
 }
 
 const NARROW = '(max-width: 1023px)'

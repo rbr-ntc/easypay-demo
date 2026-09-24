@@ -9,6 +9,7 @@ import { computeTotals, round2 } from '@easypay/domain/money'
 import { buildShiftReport, type ReportCheck, type ShiftReport } from '@easypay/domain/shift'
 import { dishName, priceOf } from './menu.ts'
 import { staffName, waiterOfTable } from './staff.ts'
+import { currentSettings } from './settings.ts'
 import type { Store } from './store/index.ts'
 import type { Settlement, ShiftCheck, ShiftInfo } from './store/types.ts'
 import type { Actor, TableSession } from './types.ts'
@@ -26,8 +27,8 @@ export interface ShiftDeps {
   broadcastEverywhere: (store: Store) => Promise<void>
 }
 
-/** Долго открытый стол попадает в «требует решения» после стольких часов. */
-const LONG_OPEN_MS = 4 * 60 * 60 * 1000
+/** Долго открытый стол попадает в «требует решения» — порог из настроек, в часах. */
+const longOpenMs = () => currentSettings().alerts.longTableH * 60 * 60 * 1000
 /** Долги старше этого срока из очереди уходят в архив. */
 const DEBT_WINDOW_MS = 30 * 24 * 60 * 60 * 1000
 const CHECKS_LIMIT = 300
@@ -232,7 +233,7 @@ export function createShiftRoutes(deps: ShiftDeps) {
       })
     }
     for (const { tableId, t } of open) {
-      if (!t.openedAt || now - t.openedAt < LONG_OPEN_MS || !t.sessionId) continue
+      if (!t.openedAt || now - t.openedAt < longOpenMs() || !t.sessionId) continue
       const key = `long:${t.sessionId}`
       if (noteOf(key)) continue
       const money = computeTotals(t, priceOf)
@@ -334,7 +335,7 @@ export function createShiftRoutes(deps: ShiftDeps) {
       }
       // Нерешённый долг — не повод «закрыть и забыть»: он уйдёт в никуда
       const unresolved = state.debts.filter(d => d.left > 0.01)
-      if (unresolved.length) {
+      if (unresolved.length && currentSettings().shift.debtBlocksClose) {
         json(res, 409, { error: 'debts unresolved', tables: unresolved.map(d => d.tableId) })
         return true
       }
@@ -346,7 +347,7 @@ export function createShiftRoutes(deps: ShiftDeps) {
       const diff = round2(counted - state.cash.system)
       const note = typeof body.note === 'string' ? body.note.trim().slice(0, 300) : ''
       // Расхождение кассы — только с объяснением: иначе его нечем объяснить владельцу
-      if (Math.abs(diff) > 0.01 && note.length < 4) {
+      if (Math.abs(diff) > 0.01 && note.length < 4 && currentSettings().shift.noteOnDiff) {
         json(res, 409, { error: 'note required', diff })
         return true
       }

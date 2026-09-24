@@ -4,10 +4,12 @@ import App from './App'
 import './theme.css'
 import './styles.css'
 import { loadMenu } from './data'
+import { loadSettings } from './settings'
 
-// Меню — до первого кадра: иначе гость на мгновение увидит старые цены из
-// сборки. Сервер молчит дольше трёх секунд — рисуем по меню из сборки.
-void loadMenu().finally(() => {
+// Меню и настройки — до первого кадра: иначе гость на мгновение увидит старые
+// цены и выключенные способы оплаты. Сервер молчит дольше трёх секунд —
+// рисуем по тому, что в сборке.
+void Promise.all([loadMenu(), loadSettings()]).finally(() => {
   ReactDOM.createRoot(document.getElementById('root')!).render(
     <React.StrictMode>
       <App />

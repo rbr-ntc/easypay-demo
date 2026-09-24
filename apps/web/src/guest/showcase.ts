@@ -1,6 +1,7 @@
 import showcaseJson from '@easypay/config/showcase.json'
 import { CATEGORIES, MENU, findDish } from '../data'
 import type { Dish } from '../data'
+import { SETTINGS } from '../settings'
 
 /**
  * Витрина гостя 4.x: сезон, гамма, подборки и картинки.
@@ -49,6 +50,8 @@ export const KITCHEN_UNTIL = SHOWCASE.kitchenUntil
 
 /** Сезон по календарю: заведению не нужно помнить, что пора сменить меню. */
 export function currentSeason(now = new Date()): SeasonKey {
+  // Сезон, выбранный в кабинете, главнее файла витрины и календаря
+  if (SETTINGS.guest.season !== 'auto') return SETTINGS.guest.season
   if (SHOWCASE.season !== 'auto') return SHOWCASE.season
   const m = now.getMonth()
   if (m === 11 || m <= 1) return 'winter'

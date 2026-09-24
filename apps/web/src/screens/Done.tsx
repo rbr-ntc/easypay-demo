@@ -1,19 +1,21 @@
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { optionsLabel, WAITER_NAME } from '../data'
 import { useStore, tipAmount } from '../store'
 import { newIdemKey } from '../keys'
 import { fmt } from '../format'
 import { artSet, currentSeason, seasonConfig } from '../guest/showcase'
 import { Slideshow } from '../guest/parts'
+import { tipPresets } from '@easypay/domain/settings'
+import { SETTINGS } from '../settings'
 
 /**
  * «Спасибо» — оплата, чаевые, отзыв и чек на одном экране.
  *
- * Чаевые — рублями, а не процентами: гость решает про деньги. Уходят
- * напрямую официанту, мимо счёта — так и написано.
+ * Чаевые — рублями или процентом от оплаченного (настройка заведения) и
+ * только если заведение их принимает. Уходят напрямую официанту, мимо
+ * счёта — так и написано.
  */
 
-const TIPS = [0, 100, 200, 300]
 const RATES = ['Всё отлично', 'Нормально', 'Есть замечание']
 
 export function Done() {
@@ -32,6 +34,12 @@ export function Done() {
   const waiter = snap?.waiter?.name ?? WAITER_NAME
   const method = ui.payMethod === 'sbp' ? 'СБП' : ui.payMethod === 'cash' ? 'наличными' : 'картой'
   const paid = receipt?.amount ?? ui.lastPaid
+  const tips = tipPresets(SETTINGS.pay.tipMode, paid)
+  // Процентные варианты зависят от суммы: предвыбор — средний вариант
+  useEffect(() => {
+    if (!tips.some(t => t.amount === ui.tip)) patch({ tip: tips[2]?.amount ?? 0 })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [paid])
 
   const sendTip = async () => {
     if (busy || tip <= 0) return
@@ -68,6 +76,7 @@ export function Done() {
         </div>
       </div>
 
+      {SETTINGS.pay.tips && (
       <div className="px-5 pt-7 text-center">
         <div className="flex items-center justify-center gap-2.5">
           <span className="flex size-9 items-center justify-center rounded-full bg-g-s1 text-[15px] font-bold text-g-tan">
@@ -82,11 +91,11 @@ export function Done() {
         ) : (
           <>
             <div className="mt-4 flex justify-center gap-2.5">
-              {TIPS.map(t => {
+              {tips.map(({ label, amount: t }) => {
                 const on = tip === t
                 return (
                   <button
-                    key={t}
+                    key={label}
                     onClick={() => patch({ tip: t })}
                     aria-pressed={on}
                     className="size-18 rounded-full text-[15px] font-bold"
@@ -96,7 +105,7 @@ export function Done() {
                         : { background: 'var(--g-s1)', color: '#F3F0EA', border: '1px solid rgba(255,255,255,.1)' }
                     }
                   >
-                    {t ? `${t} ₽` : 'Нет'}
+                    {label}
                   </button>
                 )
               })}
@@ -111,6 +120,7 @@ export function Done() {
           </>
         )}
       </div>
+      )}
 
       <div className="mx-5 mt-9 text-center">
         <h2 className="g-serif text-[28px]">как всё прошло?</h2>
@@ -169,6 +179,11 @@ export function Done() {
             </div>
             {/* Честно: это чек заказа, а не документ по 54-ФЗ — его пробивает касса */}
             <div className="mt-2 text-[12px] text-g-mute">Это чек заказа. Фискальный чек выдаёт касса ресторана.</div>
+            {(SETTINGS.venue.legal || SETTINGS.venue.address) && (
+              <div className="mt-1.5 text-[12px] leading-snug text-g-mute">
+                {[SETTINGS.venue.legal, SETTINGS.venue.inn && `ИНН ${SETTINGS.venue.inn}`, SETTINGS.venue.address].filter(Boolean).join(' · ')}
+              </div>
+            )}
           </div>
         )}
       </div>

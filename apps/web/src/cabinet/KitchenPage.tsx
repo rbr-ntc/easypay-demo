@@ -4,6 +4,7 @@ import type { KitchenTicket } from '@easypay/domain/kitchen'
 import { dismissCancelled, handOver, markReady, subscribeKitchen, takeToWork } from '../kitchenApi'
 import type { KitchenPayload } from '../kitchenApi'
 import { ensureMenu, MENU, optionsLabel } from '../data'
+import { ensureSettings } from '../settings'
 import { useStore } from '../store'
 import { useCab } from './Shell'
 import { setStop, staffError } from './staffApi'
@@ -41,6 +42,7 @@ export function KitchenPage({ station }: { station: 'kitchen' | 'bar' }) {
 
   useEffect(() => subscribeKitchen(setData, setLive), [])
   useEffect(() => ensureMenu(data?.menuVersion), [data?.menuVersion])
+  useEffect(() => ensureSettings(data?.settingsVersion), [data?.settingsVersion])
 
   const tickets = ((data?.tickets ?? []) as Ticket[]).filter(t => t.station === station)
   const cancelled = ((data?.cancelled ?? []) as Ticket[]).filter(t => t.station === station)

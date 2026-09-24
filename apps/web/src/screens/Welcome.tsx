@@ -3,6 +3,7 @@ import { tableId } from '../api'
 import { useStore } from '../store'
 import { listNames, plural } from '../format'
 import { artSet } from '../guest/showcase'
+import { SETTINGS } from '../settings'
 import { AvatarStack, Slideshow } from '../guest/parts'
 
 /**
@@ -20,7 +21,8 @@ export function Welcome() {
 
   return (
     <div className="g-anim-fade absolute inset-0 overflow-hidden">
-      <Slideshow images={artSet('welcome')} />
+      {/* Сменяющиеся фото можно выключить в настройках — тогда первое, неподвижно */}
+      <Slideshow images={SETTINGS.guest.photos ? artSet('welcome') : artSet('welcome').slice(0, 1)} />
       <div className="g-photo-fade absolute inset-0" />
 
       <div className="absolute right-6 bottom-[calc(2.5rem+env(safe-area-inset-bottom))] left-6 text-center text-white">

@@ -132,6 +132,8 @@ export interface Snapshot {
   stop?: string[]
   /** Версия опубликованного меню: сменилась — перечитываем меню. */
   menuVersion?: number
+  /** Версия настроек заведения: способы оплаты, чаевые, пороги. */
+  settingsVersion?: number
   /** Просьба принять наличные: деньги ещё не в счёте, их берёт человек. */
   cashIntent?: { personaId: string; scope: string; amount: number; at: number } | null
   totals: ServerTotals

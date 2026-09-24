@@ -52,6 +52,7 @@ export function createMemoryStore(): Store {
   const menuDocs = new Map<MenuDocKind, MenuDocRow>()
   const photos = new Map<string, { mime: string; data: Buffer }>()
   let staff: StaffRecord[] | null = null
+  let settings: { doc: unknown; savedAt: number } | null = null
   const shift = freshShift()
   let guestsSeen = 0
 
@@ -327,6 +328,16 @@ export function createMemoryStore(): Store {
 
     async photo(id) {
       return photos.get(id) ?? null
+    },
+
+    async settings() {
+      return settings ? structuredClone(settings) : null
+    },
+
+    async saveSettings(doc) {
+      const savedAt = Date.now()
+      settings = { doc: structuredClone(doc), savedAt }
+      return savedAt
     },
 
     async staffList() {

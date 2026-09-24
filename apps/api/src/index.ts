@@ -34,6 +34,8 @@ import { createStore, type Store } from './store/index.ts'
 import { createShiftRoutes } from './shiftApi.ts'
 import { createMenuRoutes, loadPublishedMenu } from './menuApi.ts'
 import { createStaffRoutes, loadStaff } from './staffApi.ts'
+import { createSettingsRoutes, loadSettings } from './settingsApi.ts'
+import { currentSettings, phoneMethodAllowed, settingsVersion } from './settings.ts'
 import {
   dropSession,
   wasRevoked,
@@ -59,6 +61,7 @@ const getStore = () =>
   (storePromise ??= createStore().then(async store => {
     await loadPublishedMenu(store)
     await loadStaff(store)
+    await loadSettings(store)
     applyStopOverrides(await store.stopOverrides())
     return store
   }))
@@ -224,6 +227,8 @@ function snapshot(t: TableSession, id: string) {
     stop: stopList(),
     // Версия меню: сменилась — клиент перечитывает меню после публикации
     menuVersion: menuVersion(),
+    // То же для настроек: способы оплаты и чаевые меняются посреди ужина
+    settingsVersion: settingsVersion(),
     personas: t.personas.map(p => ({
       id: p.id,
       name: p.name,
@@ -319,6 +324,7 @@ function publicStub(t: TableSession, id: string) {
     // Меню смотрят и до того, как представились: «закончилось» нужно и им
     stop: stopList(),
     menuVersion: menuVersion(),
+    settingsVersion: settingsVersion(),
     status: t.status,
     openedAt: t.openedAt,
     closedAt: t.closedAt,
@@ -360,7 +366,11 @@ function pushTo(subscribers: Set<any>, payload: unknown) {
 /** Зал целиком: столы плюс смена — открыта ли она сейчас, видно в шапке кабинета. */
 async function hallNow(store: Store) {
   const [tables, shift, current] = await Promise.all([store.activeSessions(), store.shift(), store.currentShift()])
-  return hallPayload(tables, { ...shift, open: !!current, startedAt: current?.openedAt ?? shift.startedAt })
+  return {
+    ...hallPayload(tables, { ...shift, open: !!current, startedAt: current?.openedAt ?? shift.startedAt }),
+    // Пороги тревог и напоминание о закрытии — из настроек заведения
+    settingsVersion: settingsVersion()
+  }
 }
 
 /** Стоп-лист поменялся — он в снимке у каждого стола, где кто-то смотрит меню. */
@@ -710,11 +720,14 @@ function guestAction(t: TableSession, tableId: string, action: string, body: any
       return fail(400, 'unknown pay scope', { allowed: [...PAY_SCOPES, ...Object.keys(PAY_SCOPE_ALIASES)] })
     }
     const scope: PayScope = wanted
+    // Делёж счёта выключен в настройках — платят за весь стол целиком
+    if (!currentSettings().pay.split && scope !== 'full' && t.personas.length > 1) return fail(409, 'split disabled')
     // С телефона платят только безналом: наличные принимает официант и подтверждает сам.
     // Способ берём тот, который гость выбрал на экране: раньше любой выбор
     // записывался как СБП, и список оплат врал официанту в лицо.
     const PHONE_METHODS: PayMethod[] = ['sbp', 'card', 'tpay', 'sber', 'mir']
     const method: PayMethod = PHONE_METHODS.includes(body.method) ? body.method : 'sbp'
+    if (!phoneMethodAllowed(method)) return fail(409, 'method disabled')
     const money = computeTotals(t, priceOf)
     const amount = round2(amountFor(money, persona.id, scope))
     if (amount <= 0) return fail(400, 'nothing to pay')
@@ -781,6 +794,7 @@ function guestAction(t: TableSession, tableId: string, action: string, body: any
   }
 
   if (action === 'tip') {
+    if (!currentSettings().pay.tips) return fail(409, 'tips disabled')
     const raw = Number(body.amount)
     if (!Number.isFinite(raw) || raw <= 0) return fail(400, 'bad amount')
     const money = computeTotals(t, priceOf)
@@ -836,6 +850,8 @@ function guestAction(t: TableSession, tableId: string, action: string, body: any
     // Это ещё не деньги, а просьба принять их. Официант увидит её в зале и подойдёт.
     const wanted = PAY_SCOPE_ALIASES[String(body.scope ?? 'own')] ?? body.scope ?? 'own'
     if (!PAY_SCOPES.includes(wanted as PayScope)) return fail(400, 'unknown pay scope', { allowed: PAY_SCOPES })
+    if (!currentSettings().pay.cash) return fail(409, 'method disabled')
+    if (!currentSettings().pay.split && wanted !== 'full' && t.personas.length > 1) return fail(409, 'split disabled')
 
     const money = computeTotals(t, priceOf)
     const amount = round2(amountFor(money, persona.id, wanted as PayScope))
@@ -1229,6 +1245,8 @@ async function handleApi(req: any, res: any, url: URL) {
 
   // Персонал из кабинета: список, новый сотрудник, PIN, увольнение
   if (await staffRoutes(req, res, url, store)) return
+  // Настройки заведения: читают все, меняет менеджер
+  if (await settingsRoutes(req, res, url, store)) return
 
   if (url.pathname === '/api/staff/roster') {
     const actor = actorFrom(req, url)
@@ -1450,6 +1468,17 @@ async function handleApi(req: any, res: any, url: URL) {
   if (out.status === 200) await broadcast(store, tableId)
   return json(res, out.status, out.body)
 }
+
+const settingsRoutes = createSettingsRoutes({
+  json,
+  readBody,
+  actorFrom,
+  allowed,
+  staffUnauthorized,
+  audit,
+  flushAudit,
+  broadcastEverywhere
+})
 
 const staffRoutes = createStaffRoutes({
   json,
