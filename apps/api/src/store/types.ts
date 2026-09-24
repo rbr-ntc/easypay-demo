@@ -26,8 +26,33 @@ export interface Store {
   audit(entry: AuditEntry): Promise<void>
   auditEntries(limit: number): Promise<AuditEntry[]>
 
-  /** Реестр чеков смены: закрытые сессии со всем составом. */
-  shiftChecks(limit: number): Promise<ShiftCheck[]>
+  /**
+   * Реестр чеков смены: закрытые сессии со всем составом. Без `shiftId` —
+   * текущая смена, с ним — любая из истории.
+   */
+  shiftChecks(limit: number, shiftId?: string | null): Promise<ShiftCheck[]>
+
+  // ── Жизненный цикл смены ──────────────────────────────────────────────
+  /** Открытая смена или null — тогда новые столы не открываются. */
+  currentShift(): Promise<ShiftInfo | null>
+  /**
+   * Открыть смену. Столы, перенесённые из прошлой (остались открытыми при
+   * закрытии), переходят в новую — их выручка считается здесь.
+   */
+  openShift(byStaffId: string | null): Promise<ShiftInfo>
+  /** Закрыть текущую смену, заморозив Z-отчёт. Открытые столы остаются — это перенос. */
+  closeShift(report: unknown, byStaffId: string | null): Promise<ShiftInfo | null>
+  /** Закрытые смены, свежие первыми. */
+  shiftHistory(limit: number): Promise<ShiftInfo[]>
+
+  // ── Долги и решения ───────────────────────────────────────────────────
+  /** Закрытые с долгом столы за последние `sinceMs` — из них очередь «требует решения». */
+  checksWithDebt(sinceMs: number): Promise<ShiftCheck[]>
+  settlements(): Promise<Settlement[]>
+  addSettlement(s: Omit<Settlement, 'id' | 'at'>): Promise<Settlement>
+  /** Решения без денег: «это банкет — нормально» по долго открытому столу. */
+  decisionNotes(): Promise<DecisionNote[]>
+  addDecisionNote(n: Omit<DecisionNote, 'at'>): Promise<void>
 
   /**
    * Итоги ПО ВСЕМ закрытым чекам смены, а не по видимой их части. Список на
@@ -52,8 +77,39 @@ export interface ShiftCheckLine {
   amount: number
   options: Record<string, string>
   guest: string | null
+  shared?: boolean
   cancelled: boolean
   cancelReason: string | null
+}
+
+export interface ShiftInfo {
+  id: string
+  openedAt: number
+  openedBy: string | null
+  closedAt: number | null
+  closedBy: string | null
+  /** Z-отчёт — заморожен при закрытии и больше не меняется. */
+  report: unknown | null
+}
+
+/** Решение по долгу: взыскали (каким способом) или списали на заведение (почему). */
+export interface Settlement {
+  id: string
+  sessionId: string
+  tableId: string
+  kind: 'collected' | 'written_off'
+  amount: number
+  method: 'cash' | 'transfer' | 'sbp' | null
+  reason: string | null
+  byId: string | null
+  at: number
+}
+
+export interface DecisionNote {
+  key: string
+  text: string
+  byId: string | null
+  at: number
 }
 
 /** Свод по всем чекам смены: этим сходится касса. */
@@ -80,4 +136,13 @@ export interface ShiftCheck {
   overpaid: number
   tips: number
   cancelledTotal: number
+  /** Смена, к которой относится чек. */
+  shiftId?: string | null
+  /** Платежи по отдельности: способ и время нужны отчёту по часам и по кассе. */
+  payments?: { amount: number; method: string; at: number; guest: string | null; takenBy: string | null }[]
+  tipsList?: { amount: number; waiter: string | null }[]
+  /** Уже возвращено гостям. */
+  refunded?: number
+  firstSentAt?: number | null
+  lastServedAt?: number | null
 }

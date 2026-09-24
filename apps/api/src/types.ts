@@ -111,6 +111,8 @@ export interface TableSession {
   refunds?: Refund[]
   /** Сброс стола: хранилище освободит стол после того, как зафиксирует чек. */
   resetRequested?: boolean
+  /** Смена, в которой стол открыли. Перенесённый стол получает новую смену при её открытии. */
+  shiftId?: string | null
   /** Привязка к строкам БД. В памяти не используется. */
   db?: { tableUuid: string; sessionUuid: string | null }
 }

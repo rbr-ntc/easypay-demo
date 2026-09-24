@@ -4,7 +4,7 @@ import { computeTotals, isBillLine, round2 } from '@easypay/domain/money'
 import { dishName, priceOf } from '../menu.ts'
 import { waiterOfTable } from '../staff.ts'
 import type { AuditEntry, MutationResult, Shift, TableSession } from '../types.ts'
-import type { ShiftCheck, Store } from './types.ts'
+import type { DecisionNote, Settlement, ShiftCheck, ShiftInfo, Store } from './types.ts'
 
 const MAX_TABLES = 500
 const AUDIT_MAX = 400
@@ -52,6 +52,22 @@ export function createMemoryStore(): Store {
   const shift = freshShift()
   let guestsSeen = 0
 
+  // Смена в памяти открыта с запуска: демо и тесты без базы начинают работать
+  // сразу, как и раньше. Дальше — явное закрытие и открытие менеджером.
+  const newShift = (by: string | null): ShiftInfo => ({
+    id: `shift-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
+    openedAt: Date.now(),
+    openedBy: by,
+    closedAt: null,
+    closedBy: null,
+    report: null
+  })
+  let current: ShiftInfo | null = newShift(null)
+  shift.startedAt = current.openedAt
+  const history: ShiftInfo[] = []
+  const settled: Settlement[] = []
+  const notes: DecisionNote[] = []
+
   const sweeper = setInterval(() => {
     const cutoff = Date.now() - CLOSED_TTL
     for (const [id, t] of tables) {
@@ -82,16 +98,29 @@ export function createMemoryStore(): Store {
       closedAt: session.closedAt ?? Date.now(),
       guests: session.personas.length,
       waiter: waiterOfTable(tableId)?.name ?? null,
-      lines: session.lines.map(l => ({
+      lines: session.lines.filter(l => l.sent || l.cancelled).map(l => ({
         name: dishName(l.dishId),
         qty: l.qty,
         price: l.price,
         amount: round2(l.price * l.qty),
         options: l.options ?? {},
         guest: nameOf(l.personaId),
+        shared: !!l.shared,
         cancelled: !!l.cancelled,
         cancelReason: l.cancelReason ?? null
       })),
+      shiftId: session.shiftId ?? current?.id ?? null,
+      payments: session.payments.map(p => ({
+        amount: p.amount,
+        method: p.method ?? 'sbp',
+        at: p.at,
+        guest: p.personaId ? nameOf(p.personaId) : null,
+        takenBy: p.takenByName ?? null
+      })),
+      tipsList: session.tips.map(t => ({ amount: t.amount, waiter: waiterOfTable(tableId)?.name ?? null })),
+      refunded: round2((session.refunds ?? []).reduce((a, r) => a + r.amount, 0)),
+      firstSentAt: session.lines.reduce<number | null>((m, l) => (l.sentAt && (m === null || l.sentAt < m) ? l.sentAt : m), null),
+      lastServedAt: session.lines.reduce<number | null>((m, l) => (l.servedAt && (m === null || l.servedAt > m) ? l.servedAt : m), null),
       total: round2(money.tableTotal),
       paid: round2(money.paidTotal),
       // Долг чека = что гость получил и не оплатил. Снятое с кухни живёт
@@ -125,6 +154,7 @@ export function createMemoryStore(): Store {
     if (Math.abs(check.overpaid - left) < 0.005) return
     checkTotals.overpaid = round2(checkTotals.overpaid - (check.overpaid - left))
     check.overpaid = left
+    check.refunded = round2((session.refunds ?? []).reduce((a, r) => a + r.amount, 0))
   }
 
   return {
@@ -140,6 +170,8 @@ export function createMemoryStore(): Store {
       const guestsBefore = session.personas.length
 
       const result = apply(session)
+      // Стол открыли — он принадлежит текущей смене
+      if (session.status === 'open' && !session.shiftId) session.shiftId = current?.id ?? null
 
       if (session.personas.length > guestsBefore) guestsSeen += session.personas.length - guestsBefore
       // Сессию закрыли этим действием — фиксируем чек, пока состав ещё на руках
@@ -163,15 +195,15 @@ export function createMemoryStore(): Store {
 
     /** Смена выводится из первички: закрытые чеки + деньги на открытых столах. */
     async shift() {
-      const openTables = [...tables.values()].filter(t => t.status === 'open')
+      const openTables = [...tables.values()].filter(t => t.status === 'open' && t.shiftId === current?.id)
       const openPaid = openTables.reduce((s, t) => s + t.payments.reduce((x, p) => x + p.amount, 0), 0)
       const tipsByStaff: Record<string, number> = Object.create(null)
       const addTips = (tips: { waiterId: string | null; amount: number }[]) => {
         for (const tip of tips) if (tip.waiterId) tipsByStaff[tip.waiterId] = (tipsByStaff[tip.waiterId] ?? 0) + tip.amount
       }
-      for (const t of tables.values()) addTips(t.tips)
+      for (const t of tables.values()) if (t.shiftId === current?.id) addTips(t.tips)
 
-      const closed = closedChecks
+      const closed = closedChecks.filter(c => c.shiftId === current?.id)
       return {
         tables: closed.length,
         closedRevenue: round2(closed.reduce((s, c) => s + c.paid, 0)),
@@ -202,8 +234,63 @@ export function createMemoryStore(): Store {
       return [...auditLog].reverse().slice(0, limit)
     },
 
-    async shiftChecks(limit) {
-      return closedChecks.slice(0, limit)
+    async shiftChecks(limit, shiftId) {
+      const id = shiftId ?? current?.id
+      return closedChecks.filter(c => c.shiftId === id).slice(0, limit)
+    },
+
+    async currentShift() {
+      return current
+    },
+
+    async openShift(byStaffId) {
+      if (current) return current
+      current = newShift(byStaffId)
+      // Счётчики сверки — заново: они про ЭТУ смену
+      Object.assign(checkTotals, { count: 0, paid: 0, debt: 0, overpaid: 0, cancelledTotal: 0 })
+      guestsSeen = 0
+      shift.startedAt = current.openedAt
+      // Перенесённые столы — те, что остались открытыми, — переходят в новую смену
+      for (const t of tables.values()) if (t.status === 'open') t.shiftId = current.id
+      return current
+    },
+
+    async closeShift(report, byStaffId) {
+      if (!current) return null
+      const done: ShiftInfo = { ...current, closedAt: Date.now(), closedBy: byStaffId, report }
+      history.unshift(done)
+      current = null
+      return done
+    },
+
+    async shiftHistory(limit) {
+      return history.slice(0, limit)
+    },
+
+    async checksWithDebt(sinceMs) {
+      const from = Date.now() - sinceMs
+      return closedChecks.filter(c => c.debt > 0.01 && (c.closedAt ?? 0) >= from)
+    },
+
+    async settlements() {
+      return [...settled]
+    },
+
+    async addSettlement(s) {
+      const row: Settlement = { ...s, id: crypto.randomUUID(), at: Date.now() }
+      settled.push(row)
+      return row
+    },
+
+    async decisionNotes() {
+      return [...notes]
+    },
+
+    async addDecisionNote(n) {
+      const i = notes.findIndex(x => x.key === n.key)
+      const row = { ...n, at: Date.now() }
+      if (i >= 0) notes[i] = row
+      else notes.push(row)
     },
 
     async shiftCheckTotals() {

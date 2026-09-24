@@ -30,6 +30,7 @@ import { ALLERGENS } from '@easypay/domain/allergens'
 import { isKnownTable, seatsOf } from './hallplan.ts'
 import { hallPayload, kitchenPayload } from './feeds.ts'
 import { createStore, type Store } from './store/index.ts'
+import { createShiftRoutes } from './shiftApi.ts'
 import {
   dropSession,
   wasRevoked,
@@ -1218,6 +1219,9 @@ async function handleApi(req: any, res: any, url: URL) {
     return json(res, 200, { staff: staffRoster() })
   }
 
+  // Смена, реестр чеков любой смены, «требует решения»
+  if (await shiftRoutes(req, res, url, store)) return
+
   if (url.pathname === '/api/log') {
     const actor = actorFrom(req, url)
     if (!actor) return json(res, 401, staffUnauthorized(req))
@@ -1372,6 +1376,15 @@ async function handleApi(req: any, res: any, url: URL) {
   const body = await readBody(req).catch(() => null)
   if (body === null) return json(res, 400, { error: 'bad json' })
 
+  // Смена закрыта — новые столы не открываются. Уже открытые (перенесённые)
+  // работают дальше: гостя за столом не выгоняют посреди ужина.
+  if (action === 'join' && !(await store.currentShift())) {
+    const t = await store.read(tableId)
+    if (t.status !== 'open') {
+      return json(res, 409, { error: 'shift closed', hint: 'ресторан ещё не открыл смену — позовите официанта' })
+    }
+  }
+
   // Для денег ключ идемпотентности обязателен: без него ретрай спишет дважды
   if ((action === 'pay' || action === 'tip') && !asId(body.idemKey)) {
     return json(res, 400, { error: 'idemKey required' })
@@ -1417,6 +1430,17 @@ async function handleApi(req: any, res: any, url: URL) {
   if (out.status === 200) await broadcast(store, tableId)
   return json(res, out.status, out.body)
 }
+
+const shiftRoutes = createShiftRoutes({
+  json,
+  readBody,
+  actorFrom,
+  allowed,
+  staffUnauthorized,
+  audit,
+  flushAudit,
+  broadcastEverywhere
+})
 
 export function createServer() {
   const server = http.createServer(async (req, res) => {

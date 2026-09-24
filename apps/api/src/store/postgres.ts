@@ -6,7 +6,7 @@ import { computeTotals, round2 } from '@easypay/domain/money'
 import { dishName, priceOf } from '../menu.ts'
 import { waiterOfTable } from '../staff.ts'
 import type { AuditEntry, MutationResult, Shift, TableSession } from '../types.ts'
-import type { ShiftCheck, Store } from './types.ts'
+import type { DecisionNote, Settlement, ShiftCheck, ShiftInfo, Store } from './types.ts'
 import { emptySession } from './memory.ts'
 
 /** Сколько ещё показывать закрытый стол витринам зала и кухни. */
@@ -51,6 +51,84 @@ export async function createPostgresStore(url?: string): Promise<Store> {
     if (open) return open.id
     const [created] = await tx`insert into shifts (venue_id) values (${venueId}) returning id`
     return created.id
+  }
+
+  const msOf = (v: any) => (v ? new Date(v).getTime() : null)
+
+  function shiftOfRow(row: any): ShiftInfo {
+    return {
+      id: row.id,
+      openedAt: msOf(row.opened_at) ?? Date.now(),
+      openedBy: staffExt(row.opened_by),
+      closedAt: msOf(row.closed_at),
+      closedBy: staffExt(row.closed_by),
+      report: row.report ?? null
+    }
+  }
+
+  /** Чек закрытой сессии: состав, платежи по отдельности, чаевые, возвраты. */
+  async function checkOfRow(row: any): Promise<ShiftCheck> {
+    const [lines, payments, tips, guests, refunds] = await Promise.all([
+      sql`select l.*, g.name as guest_name from order_lines l
+          left join guests g on g.id = l.guest_id
+          where l.table_session_id = ${row.id} order by l.seq`,
+      sql`select p.*, g.name as guest_name, s.name as taker_name from payments p
+          left join guests g on g.id = p.guest_id
+          left join staff s on s.id = p.taken_by
+          where p.table_session_id = ${row.id} order by p.created_at`,
+      sql`select amount from tips where table_session_id = ${row.id}`,
+      sql`select count(*) as n from guests where table_session_id = ${row.id}`,
+      sql`select coalesce(sum(amount), 0) as total from refunds where table_session_id = ${row.id}`
+    ])
+    const billed = lines.filter((l: any) => l.sent_at && !l.cancelled_at)
+    const total = round2(billed.reduce((a: number, l: any) => a + Number(l.price) * l.qty, 0))
+    const paid = round2(payments.reduce((a: number, p: any) => a + Number(p.amount), 0))
+    const waiter = waiterOfTable(row.table_number)?.name ?? null
+    const times = (col: string) => lines.map((l: any) => msOf(l[col])).filter((x: number | null): x is number => x !== null)
+    const sent = times('sent_at')
+    const served = times('served_at')
+    return {
+      tableId: row.table_number,
+      sessionId: row.id,
+      openedAt: msOf(row.opened_at) ?? 0,
+      closedAt: msOf(row.closed_at),
+      guests: Number(guests[0].n),
+      waiter,
+      lines: lines
+        .filter((l: any) => l.sent_at || l.cancelled_at)
+        .map((l: any) => ({
+          name: l.name,
+          qty: l.qty,
+          price: Number(l.price),
+          amount: round2(Number(l.price) * l.qty),
+          options: l.options ?? {},
+          guest: l.guest_name ?? null,
+          shared: !!l.shared,
+          cancelled: !!l.cancelled_at,
+          cancelReason: l.cancel_reason
+        })),
+      total,
+      paid,
+      // Долг = получено минус оплачено — те же числа, что строкой выше
+      debt: round2(Math.max(0, total - paid)),
+      overpaid: round2(Number(row.overpaid)),
+      tips: round2(tips.reduce((a: number, t: any) => a + Number(t.amount), 0)),
+      cancelledTotal: round2(
+        lines.filter((l: any) => l.cancelled_at).reduce((a: number, l: any) => a + Number(l.price) * l.qty, 0)
+      ),
+      shiftId: row.shift_id ?? null,
+      payments: payments.map((p: any) => ({
+        amount: Number(p.amount),
+        method: p.method ?? 'sbp',
+        at: msOf(p.created_at) ?? 0,
+        guest: p.guest_name ?? null,
+        takenBy: p.taker_name ?? null
+      })),
+      tipsList: tips.map((t: any) => ({ amount: Number(t.amount), waiter })),
+      refunded: round2(Number(refunds[0].total)),
+      firstSentAt: sent.length ? Math.min(...sent) : null,
+      lastServedAt: served.length ? Math.max(...served) : null
+    }
   }
 
   /** Собирает сессию стола в тот же объект, с которым работают доменные правила. */
@@ -173,6 +251,7 @@ export async function createPostgresStore(url?: string): Promise<Store> {
       })),
       cleanedAt: ms(row.cleaned_at),
       cashIntent: row.cash_intent ?? null,
+      shiftId: row.shift_id ?? null,
       db: { tableUuid: tid, sessionUuid: row.id }
     }
     return session
@@ -486,62 +565,138 @@ export async function createPostgresStore(url?: string): Promise<Store> {
       })) as AuditEntry[]
     },
 
-    async shiftChecks(limit) {
+    async shiftChecks(limit, shiftId) {
+      // Без shiftId — текущая смена; с ним — любая из истории
+      const rows = shiftId
+        ? await sql`
+            select ts.*, rt.number as table_number
+            from table_sessions ts
+            join restaurant_tables rt on rt.id = ts.table_id
+            where rt.venue_id = ${venueId} and ts.shift_id = ${shiftId} and ts.closed_at is not null
+            order by ts.closed_at desc
+            limit ${limit}
+          `
+        : await sql`
+            select ts.*, rt.number as table_number
+            from table_sessions ts
+            join restaurant_tables rt on rt.id = ts.table_id
+            join shifts sh on sh.id = ts.shift_id
+            where rt.venue_id = ${venueId} and sh.closed_at is null and ts.closed_at is not null
+            order by ts.closed_at desc
+            limit ${limit}
+          `
+      const checks: ShiftCheck[] = []
+      for (const row of rows) checks.push(await checkOfRow(row))
+      return checks
+    },
+
+    async currentShift() {
+      const [row] = await sql`
+        select * from shifts where venue_id = ${venueId} and closed_at is null
+        order by opened_at desc limit 1
+      `
+      return row ? shiftOfRow(row) : null
+    },
+
+    async openShift(byStaffId) {
+      return sql.begin(async tx => {
+        const [open] = await tx`select * from shifts where venue_id = ${venueId} and closed_at is null limit 1 for update`
+        if (open) return shiftOfRow(open)
+        const [row] = await tx`
+          insert into shifts (venue_id, opened_by) values (${venueId}, ${staffUuid(byStaffId)}) returning *
+        `
+        // Перенесённые столы — открытые на момент закрытия прошлой смены —
+        // переходят в новую: их выручка считается здесь
+        await tx`
+          update table_sessions ts set shift_id = ${row.id}
+          from restaurant_tables rt
+          where rt.id = ts.table_id and rt.venue_id = ${venueId} and ts.closed_at is null
+        `
+        return shiftOfRow(row)
+      }) as Promise<ShiftInfo>
+    },
+
+    async closeShift(report, byStaffId) {
+      const [row] = await sql`
+        update shifts set closed_at = now(), closed_by = ${staffUuid(byStaffId)}, report = ${sql.json(report as any)}
+        where venue_id = ${venueId} and closed_at is null
+        returning *
+      `
+      return row ? shiftOfRow(row) : null
+    },
+
+    async shiftHistory(limit) {
+      const rows = await sql`
+        select * from shifts where venue_id = ${venueId} and closed_at is not null
+        order by closed_at desc limit ${limit}
+      `
+      return rows.map(shiftOfRow)
+    },
+
+    async checksWithDebt(sinceMs) {
       const rows = await sql`
         select ts.*, rt.number as table_number
         from table_sessions ts
         join restaurant_tables rt on rt.id = ts.table_id
-        join shifts sh on sh.id = ts.shift_id
-        where rt.venue_id = ${venueId} and sh.closed_at is null and ts.closed_at is not null
+        where rt.venue_id = ${venueId} and ts.closed_at is not null
+          and ts.closed_at >= ${new Date(Date.now() - sinceMs)}
+          and coalesce((select sum(l.price * l.qty) from order_lines l
+                         where l.table_session_id = ts.id and l.sent_at is not null and l.cancelled_at is null), 0)
+            > coalesce((select sum(p.amount) from payments p where p.table_session_id = ts.id), 0) + 0.01
         order by ts.closed_at desc
-        limit ${limit}
+        limit 200
       `
       const checks: ShiftCheck[] = []
-      for (const row of rows) {
-        const [lines, payments, tips, guests] = await Promise.all([
-          sql`select l.*, g.name as guest_name from order_lines l
-              left join guests g on g.id = l.guest_id
-              where l.table_session_id = ${row.id} order by l.seq`,
-          sql`select coalesce(sum(amount), 0) as total from payments where table_session_id = ${row.id}`,
-          sql`select coalesce(sum(amount), 0) as total from tips where table_session_id = ${row.id}`,
-          sql`select count(*) as n from guests where table_session_id = ${row.id}`
-        ])
-        const billed = lines.filter((l: any) => l.sent_at && !l.cancelled_at)
-        const total = billed.reduce((s: number, l: any) => s + Number(l.price) * l.qty, 0)
-        checks.push({
-          tableId: row.table_number,
-          sessionId: row.id,
-          openedAt: new Date(row.opened_at).getTime(),
-          closedAt: row.closed_at ? new Date(row.closed_at).getTime() : null,
-          guests: Number(guests[0].n),
-          waiter: waiterOfTable(row.table_number)?.name ?? null,
-          lines: lines.map((l: any) => ({
-            name: l.name,
-            qty: l.qty,
-            price: Number(l.price),
-            amount: round2(Number(l.price) * l.qty),
-            options: l.options ?? {},
-            guest: l.guest_name ?? null,
-            cancelled: !!l.cancelled_at,
-            cancelReason: l.cancel_reason
-          })),
-          total: round2(total),
-          paid: round2(Number(payments[0].total)),
-          // Долг = получено минус оплачено. Раньше здесь брались row.total и
-          // row.paid — колонок с такими именами в table_sessions нет вовсе,
-          // поэтому долг всегда выходил нулём: чек показывал счёт 250, оплату 0
-          // и долг 0 одновременно. Считаем из тех же чисел, что строкой выше.
-          debt: round2(Math.max(0, round2(total) - round2(Number(payments[0].total)))),
-          overpaid: round2(Number(row.overpaid)),
-          tips: round2(Number(tips[0].total)),
-          cancelledTotal: round2(
-            lines
-              .filter((l: any) => l.cancelled_at)
-              .reduce((s: number, l: any) => s + Number(l.price) * l.qty, 0)
-          )
-        })
-      }
+      for (const row of rows) checks.push(await checkOfRow(row))
       return checks
+    },
+
+    async settlements() {
+      const rows = await sql`
+        select d.*, rt.number as table_number
+        from debt_settlements d
+        join table_sessions ts on ts.id = d.table_session_id
+        join restaurant_tables rt on rt.id = ts.table_id
+        where d.venue_id = ${venueId}
+        order by d.created_at
+      `
+      return rows.map(
+        (r: any): Settlement => ({
+          id: r.id,
+          sessionId: r.table_session_id,
+          tableId: r.table_number,
+          kind: r.kind,
+          amount: Number(r.amount),
+          method: r.method ?? null,
+          reason: r.reason ?? null,
+          byId: staffExt(r.by_staff_id),
+          at: new Date(r.created_at).getTime()
+        })
+      )
+    },
+
+    async addSettlement(x) {
+      const [r] = await sql`
+        insert into debt_settlements (venue_id, table_session_id, kind, amount, method, reason, by_staff_id)
+        values (${venueId}, ${x.sessionId}, ${x.kind}, ${x.amount}, ${x.method}, ${x.reason}, ${staffUuid(x.byId)})
+        returning *
+      `
+      return { ...x, id: r.id, at: new Date(r.created_at).getTime() }
+    },
+
+    async decisionNotes() {
+      const rows = await sql`select * from decision_notes where venue_id = ${venueId} order by created_at`
+      return rows.map(
+        (r: any): DecisionNote => ({ key: r.key, text: r.text, byId: staffExt(r.by_staff_id), at: new Date(r.created_at).getTime() })
+      )
+    },
+
+    async addDecisionNote(n) {
+      await sql`
+        insert into decision_notes (venue_id, key, text, by_staff_id)
+        values (${venueId}, ${n.key}, ${n.text}, ${staffUuid(n.byId)})
+        on conflict (venue_id, key) do update set text = excluded.text, by_staff_id = excluded.by_staff_id, created_at = now()
+      `
     },
 
     async shiftCheckTotals() {
