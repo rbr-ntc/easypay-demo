@@ -263,7 +263,8 @@ API (всё под `/api/t/:tableId/…`, POST если не сказано ин
 и рождают новые регрессы — это проверено на себе дважды.
 
 Отчёты смен: `docs/prototype/review.md` (первая), `docs/prototype/shift-2-findings.md` (вторая),
-`docs/prototype/shift-3-findings.md` (третья), `docs/prototype/shift-4-findings.md` (четвёртая).
+`docs/prototype/shift-3-findings.md` (третья), `docs/prototype/shift-4-findings.md` (четвёртая),
+`docs/prototype/shift-5-findings.md` (пятая — первая смена кабинета 4.0).
 
 Правило, выстраданное на четвёртом круге: **поле, которое сервер считает, но ни один
 экран не показывает, — незакрытый долг, а не готовая функция.** Соответствие возможностей
