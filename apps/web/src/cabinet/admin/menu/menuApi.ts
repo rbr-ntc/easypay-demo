@@ -93,6 +93,7 @@ export const MENU_ERRORS: Record<string, string> = {
   'bad menu': 'Черновик не сохранился — проверьте поля',
   'too large': 'Фото слишком большое',
   'bad image': 'Не получилось прочитать картинку',
+  'not an image': 'Файл не похож на картинку',
   'photo must be jpeg, webp or png': 'Нужна картинка JPEG, WebP или PNG'
 }
 

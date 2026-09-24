@@ -27,6 +27,14 @@ const PHOTO_LIMIT = 400 * 1024
 const PHOTO_TYPES = new Set(['image/jpeg', 'image/webp', 'image/png'])
 const PHOTO_PATH = /^\/api\/menu\/photo\/([0-9a-f-]{36})$/
 
+/** Заголовок запроса можно подделать — сверяем первые байты файла с заявленным типом. */
+function matchesMime(data: Buffer, mime: string): boolean {
+  if (mime === 'image/jpeg') return data[0] === 0xff && data[1] === 0xd8 && data[2] === 0xff
+  if (mime === 'image/png') return data.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))
+  if (mime === 'image/webp') return data.subarray(0, 4).toString('latin1') === 'RIFF' && data.subarray(8, 12).toString('latin1') === 'WEBP'
+  return false
+}
+
 async function readRaw(req: any, limit: number): Promise<Buffer> {
   const chunks: Buffer[] = []
   let size = 0
@@ -74,7 +82,12 @@ export function createMenuRoutes(deps: MenuDeps) {
         return true
       }
       // Фото по id не меняется никогда: новое фото — новый id
-      res.writeHead(200, { 'Content-Type': found.mime, 'Cache-Control': 'public, max-age=31536000, immutable' })
+      res.writeHead(200, {
+        'Content-Type': found.mime,
+        'Cache-Control': 'public, max-age=31536000, immutable',
+        // Браузер не должен «угадывать» тип: картинка остаётся картинкой
+        'X-Content-Type-Options': 'nosniff'
+      })
       res.end(found.data)
       return true
     }
@@ -153,8 +166,8 @@ export function createMenuRoutes(deps: MenuDeps) {
           return true
         }
         const data = await readRaw(req, PHOTO_LIMIT)
-        if (data.length < 100) {
-          json(res, 400, { error: 'empty photo' })
+        if (data.length < 100 || !matchesMime(data, mime)) {
+          json(res, 400, { error: 'not an image' })
           return true
         }
         const id = await store.savePhoto(mime, data)
@@ -163,7 +176,10 @@ export function createMenuRoutes(deps: MenuDeps) {
       }
     } catch (err: any) {
       if (err?.status === 413) {
+        // Тело дочитано не до конца — соединение повторно использовать нельзя
+        res.setHeader('Connection', 'close')
         json(res, 413, { error: 'too large' })
+        req.destroy()
         return true
       }
       if (err instanceof SyntaxError) {

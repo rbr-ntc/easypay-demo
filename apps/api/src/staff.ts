@@ -49,6 +49,11 @@ export function staffFromConfig(): StaffRecord[] {
 
 let STAFF: StaffRecord[] = staffFromConfig()
 
+/** PIN из переменной окружения главнее базы: это аварийный ключ администратора стенда. */
+export function withPinOverrides(list: StaffRecord[]): StaffRecord[] {
+  return list.map(s => (PIN_OVERRIDES.has(s.id) ? { ...s, pinHash: hashPin(String(PIN_OVERRIDES.get(s.id))) } : s))
+}
+
 /** Заменить список в памяти: при старте из базы и после правки в кабинете. */
 export function applyStaff(list: StaffRecord[]) {
   STAFF = list.map(s => ({ ...s, tables: [...s.tables] }))

@@ -154,3 +154,22 @@ test('фото из чужого адреса в меню не попадёт', 
   await post('/api/menu/discard', {}, { staff: M })
   assert.equal((await get('/api/menu/editor')).draft, null)
 })
+
+test('поля блюда проверяются строго: цех, флаги, надбавки, аллергенные эффекты', async () => {
+  const { published } = await get('/api/menu/editor')
+  const cats = structuredClone(published.categories)
+  const d = cats[0].dishes[0]
+  Object.assign(d, {
+    station: 'moon',
+    stop: 'false',
+    options: [{ id: 'size', name: 'Размер', choices: ['S', 'L'], priceDelta: { S: -999999, L: 100, X: 5 }, effects: { L: { adds: ['лактоза', 'кошки'] } } }]
+  })
+  await post('/api/menu/draft', { categories: cats }, { staff: M })
+  const { draft } = await get('/api/menu/editor')
+  const saved = draft.categories[0].dishes[0]
+  assert.equal(saved.station, undefined, 'незнакомый цех не сохраняется')
+  assert.equal(saved.stop, undefined, 'строка "false" — не стоп')
+  assert.deepEqual(saved.options[0].priceDelta, { S: -saved.price, L: 100 }, 'цена с надбавкой не уходит ниже нуля')
+  assert.deepEqual(saved.options[0].effects, { L: { adds: ['лактоза'] } })
+  await post('/api/menu/discard', {}, { staff: M })
+})

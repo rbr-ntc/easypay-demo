@@ -151,3 +151,42 @@ test('кабинет — только менеджеру', async () => {
   const anon = await fetch(`${base}/api/decisions`)
   assert.equal(anon.status, 401)
 })
+
+test('перенесённый стол не попадает в выручку двух смен; деньги между сменами — в следующую', async () => {
+  // Гость заплатил вечером и остался сидеть — стол переносится
+  const late = await tableWith('espresso', { pay: 'own' }) // 180 ₽ по СБП
+  let state = await get('/api/shift')
+  const closed = await post('/api/shift/close', { cashCounted: state.cash.system }, { staff: M })
+  assert.equal(closed.status, 200)
+  assert.ok((await closed.json()).z.report.byMethod.sbp >= 180, 'вечерние деньги — в Z-отчёте закрытой смены')
+
+  // Пока смены нет, гость дозаказал и заплатил, стол закрыли
+  await post(`/api/t/${late.table}/lines`, { dishId: 'lemonade' }, { guest: late.guest })
+  await post(`/api/t/${late.table}/send`, { scope: 'mine' }, { guest: late.guest })
+  const snap = await get(`/api/t/${late.table}`)
+  const uid = snap.lines.find((l: any) => l.dishId === 'lemonade').uid
+  await post(`/api/t/${late.table}/start`, { uid, sessionId: snap.sessionId }, { staff: M })
+  await post(`/api/t/${late.table}/serve`, { uid, sessionId: snap.sessionId }, { staff: M })
+  const paid = await post(`/api/t/${late.table}/pay`, { scope: 'own', idemKey: `${late.table}-late`, method: 'sbp' }, { guest: late.guest })
+  assert.equal(paid.status, 200)
+  const lemonade = (await paid.json()).amount ?? snap.lines.find((l: any) => l.dishId === 'lemonade').price
+  await post(`/api/t/${late.table}/close`, { sessionId: snap.sessionId }, { staff: M })
+
+  assert.equal((await post('/api/shift/open', {}, { staff: M })).status, 200)
+  state = await get('/api/shift')
+  const sbp = state.report.byMethod.sbp
+  assert.ok(sbp >= lemonade, 'деньги, пришедшие между сменами, не потерялись')
+  assert.ok(sbp < lemonade + 180, 'а вчерашние 180 ₽ второй раз не посчитаны')
+})
+
+test('двойной тап «Взыскано»: долг записывается один раз', async () => {
+  const debtor = await tableWith('borsch')
+  await post(`/api/t/${debtor.table}/close`, { force: true, sessionId: debtor.sessionId }, { staff: M })
+  const both = await Promise.all([
+    post('/api/decisions/settle', { sessionId: debtor.sessionId, kind: 'collected', method: 'cash' }, { staff: M }),
+    post('/api/decisions/settle', { sessionId: debtor.sessionId, kind: 'collected', method: 'cash' }, { staff: M })
+  ])
+  assert.deepEqual(both.map(r => r.status).sort(), [200, 409])
+  const q = await get('/api/decisions')
+  assert.equal(q.done.filter((d: any) => d.tableId === debtor.table).length, 1)
+})

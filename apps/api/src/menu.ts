@@ -228,9 +228,16 @@ export function checkMenuDoc(raw: unknown, strict: boolean): { doc?: Omit<MenuDo
       if (allergens?.some((a: string) => !ALLERGENS.includes(a))) errors.push(`${id}: unknown allergen`)
       if (strict && !d?.hidden && allergens === null) errors.push(`${id}: allergens required`)
       const photoUrl = typeof d?.photoUrl === 'string' && /^\/api\/menu\/photo\/[a-f0-9-]{36}$/.test(d.photoUrl) ? d.photoUrl : undefined
-      const options = Array.isArray(d?.options) ? d.options.map(checkOptionSpec).filter(Boolean) : undefined
+      const base = Number.isFinite(price) ? price : 0
+      const options = Array.isArray(d?.options) ? d.options.map((o: any) => checkOptionSpec(o, base)).filter(Boolean) : undefined
       dishes.push({
-        ...pick(d, ['serving', 'tags', 'photo', 'stop', 'station', 'hidden']),
+        ...pick(d, ['serving', 'tags']),
+        // Флаги — только настоящие булевы: строка "false" иначе означала бы «в стопе»
+        ...(d?.photo === true ? { photo: true } : {}),
+        ...(d?.stop === true ? { stop: true } : {}),
+        ...(d?.hidden === true ? { hidden: true } : {}),
+        // Цех — только известный: иначе блюдо не попало бы ни в одну очередь
+        ...(d?.station === 'kitchen' || d?.station === 'bar' ? { station: d.station } : {}),
         id,
         name: dishName,
         desc: String(d?.desc ?? '').slice(0, 300),
@@ -254,14 +261,31 @@ function pick(obj: any, keys: string[]) {
   return out
 }
 
-/** Группа модификаторов: название и варианты; эффекты и надбавки сохраняем как были. */
-function checkOptionSpec(o: any) {
+/**
+ * Группа модификаторов: название, варианты, надбавки и аллергенные эффекты.
+ * Надбавка не может увести цену позиции ниже нуля, эффекты — только из справочника.
+ */
+function checkOptionSpec(o: any, basePrice: number) {
   const id = String(o?.id ?? '').trim()
   const name = String(o?.name ?? '').trim().slice(0, 40)
   const choices = Array.isArray(o?.choices) ? o.choices.map((c: unknown) => String(c).trim().slice(0, 40)).filter(Boolean) : []
   if (!/^[a-z0-9-]{1,30}$/.test(id) || !name || choices.length < 2) return null
+  const priceDelta: Record<string, number> = {}
+  for (const [choice, delta] of Object.entries(o?.priceDelta ?? {})) {
+    const n = Number(delta)
+    if (choices.includes(choice) && Number.isFinite(n) && n !== 0) priceDelta[choice] = Math.max(-basePrice, Math.round(n * 100) / 100)
+  }
+  const effects: Record<string, { adds?: string[]; removes?: string[] }> = {}
+  for (const [choice, eff] of Object.entries(o?.effects ?? {})) {
+    if (!choices.includes(choice) || !eff || typeof eff !== 'object') continue
+    const clean = (list: unknown) => (Array.isArray(list) ? list.map(String).filter(a => ALLERGENS.includes(a)) : [])
+    const adds = clean((eff as any).adds)
+    const removes = clean((eff as any).removes)
+    if (adds.length || removes.length) effects[choice] = { ...(adds.length ? { adds } : {}), ...(removes.length ? { removes } : {}) }
+  }
   return {
-    ...pick(o, ['effects', 'priceDelta']),
+    ...(Object.keys(priceDelta).length ? { priceDelta } : {}),
+    ...(Object.keys(effects).length ? { effects } : {}),
     id,
     name,
     choices: [...new Set(choices)],

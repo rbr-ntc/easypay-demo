@@ -59,7 +59,7 @@ export function createMemoryStore(): Store {
   // Смена в памяти открыта с запуска: демо и тесты без базы начинают работать
   // сразу, как и раньше. Дальше — явное закрытие и открытие менеджером.
   const newShift = (by: string | null): ShiftInfo => ({
-    id: `shift-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
+    id: crypto.randomUUID(),
     openedAt: Date.now(),
     openedBy: by,
     closedAt: null,
@@ -121,7 +121,7 @@ export function createMemoryStore(): Store {
         guest: p.personaId ? nameOf(p.personaId) : null,
         takenBy: p.takenByName ?? null
       })),
-      tipsList: session.tips.map(t => ({ amount: t.amount, waiter: waiterOfTable(tableId)?.name ?? null })),
+      tipsList: session.tips.map(t => ({ amount: t.amount, waiter: waiterOfTable(tableId)?.name ?? null, at: t.at })),
       refunded: round2((session.refunds ?? []).reduce((a, r) => a + r.amount, 0)),
       firstSentAt: session.lines.reduce<number | null>((m, l) => (l.sentAt && (m === null || l.sentAt < m) ? l.sentAt : m), null),
       lastServedAt: session.lines.reduce<number | null>((m, l) => (l.servedAt && (m === null || l.servedAt > m) ? l.servedAt : m), null),
@@ -256,6 +256,14 @@ export function createMemoryStore(): Store {
       shift.startedAt = current.openedAt
       // Перенесённые столы — те, что остались открытыми, — переходят в новую смену
       for (const t of tables.values()) if (t.status === 'open') t.shiftId = current.id
+      // …и те, что закрылись, пока смены не было: иначе их деньги не попали бы ни в один отчёт
+      const prev = history[0]
+      if (prev?.closedAt) {
+        const moved = closedChecks.map(c =>
+          c.shiftId === prev.id && (c.closedAt ?? 0) > prev.closedAt! ? { ...c, shiftId: current!.id } : c
+        )
+        closedChecks.splice(0, closedChecks.length, ...moved)
+      }
       return current
     },
 
@@ -281,6 +289,7 @@ export function createMemoryStore(): Store {
     },
 
     async addSettlement(s) {
+      if (settled.some(x => x.sessionId === s.sessionId)) return null
       const row: Settlement = { ...s, id: crypto.randomUUID(), at: Date.now() }
       settled.push(row)
       return row

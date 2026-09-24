@@ -8,7 +8,7 @@ import crypto from 'node:crypto'
 import type { Permission } from '@easypay/domain/roles'
 import { buildShiftReport } from '@easypay/domain/shift'
 import { planTables } from './hallplan.ts'
-import { reportOfCheck } from './shiftApi.ts'
+import { reportOfCheck, windowOf } from './shiftApi.ts'
 import {
   activeSessions,
   allStaff,
@@ -17,7 +17,8 @@ import {
   hashPin,
   pinTaken,
   STAFF_ROLES,
-  type StaffRecord
+  type StaffRecord,
+  withPinOverrides
 } from './staff.ts'
 import type { Store } from './store/index.ts'
 import type { Actor } from './types.ts'
@@ -50,7 +51,7 @@ function freshPin(exceptId: string | null): { pin: string; hash: string } {
 /** Сотрудники из базы — при старте сервера. Пусто — работаем по файлу. */
 export async function loadStaff(store: Store) {
   const list = await store.staffList()
-  if (list?.length) applyStaff(list)
+  if (list?.length) applyStaff(withPinOverrides(list))
 }
 
 export function createStaffRoutes(deps: StaffDeps) {
@@ -68,7 +69,8 @@ export function createStaffRoutes(deps: StaffDeps) {
   async function listPayload(store: Store) {
     const online = activeSessions()
     const shift = await store.currentShift()
-    const report = shift ? buildShiftReport((await store.shiftChecks(300)).map(reportOfCheck)) : null
+    const win = shift ? await windowOf(store, shift) : undefined
+    const report = shift ? buildShiftReport((await store.shiftChecks(300)).map(c => reportOfCheck(c, win))) : null
     const tipsOf = (name: string) => report?.tipsByWaiter.find(t => t.name === name)?.amount ?? 0
     return {
       staff: allStaff().map(s => ({

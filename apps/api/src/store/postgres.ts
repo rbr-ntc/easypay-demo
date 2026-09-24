@@ -46,11 +46,14 @@ export async function createPostgresStore(url?: string): Promise<Store> {
     return row?.id ?? null
   }
 
-  async function currentShiftId(tx: any): Promise<string> {
+  /**
+   * Открытая смена или null. Раньше здесь создавалась безымянная смена — и
+   * гость, севший в момент закрытия, молча открывал её без менеджера. Стол без
+   * смены подхватит следующая при открытии (как перенесённый).
+   */
+  async function currentShiftId(tx: any): Promise<string | null> {
     const [open] = await tx`select id from shifts where venue_id = ${venueId} and closed_at is null limit 1`
-    if (open) return open.id
-    const [created] = await tx`insert into shifts (venue_id) values (${venueId}) returning id`
-    return created.id
+    return open?.id ?? null
   }
 
   const msOf = (v: any) => (v ? new Date(v).getTime() : null)
@@ -76,7 +79,7 @@ export async function createPostgresStore(url?: string): Promise<Store> {
           left join guests g on g.id = p.guest_id
           left join staff s on s.id = p.taken_by
           where p.table_session_id = ${row.id} order by p.created_at`,
-      sql`select amount from tips where table_session_id = ${row.id}`,
+      sql`select amount, created_at from tips where table_session_id = ${row.id}`,
       sql`select count(*) as n from guests where table_session_id = ${row.id}`,
       sql`select coalesce(sum(amount), 0) as total from refunds where table_session_id = ${row.id}`
     ])
@@ -124,7 +127,7 @@ export async function createPostgresStore(url?: string): Promise<Store> {
         guest: p.guest_name ?? null,
         takenBy: p.taker_name ?? null
       })),
-      tipsList: tips.map((t: any) => ({ amount: Number(t.amount), waiter })),
+      tipsList: tips.map((t: any) => ({ amount: Number(t.amount), waiter, at: msOf(t.created_at) ?? 0 })),
       refunded: round2(Number(refunds[0].total)),
       firstSentAt: sent.length ? Math.min(...sent) : null,
       lastServedAt: served.length ? Math.max(...served) : null
@@ -602,15 +605,31 @@ export async function createPostgresStore(url?: string): Promise<Store> {
       return sql.begin(async tx => {
         const [open] = await tx`select * from shifts where venue_id = ${venueId} and closed_at is null limit 1 for update`
         if (open) return shiftOfRow(open)
+        // Вторую открытую смену не даёт индекс (0012): проиграв гонку, берём открытую
         const [row] = await tx`
-          insert into shifts (venue_id, opened_by) values (${venueId}, ${staffUuid(byStaffId)}) returning *
+          insert into shifts (venue_id, opened_by) values (${venueId}, ${staffUuid(byStaffId)})
+          on conflict (venue_id) where closed_at is null do nothing
+          returning *
         `
+        if (!row) {
+          const [winner] = await tx`select * from shifts where venue_id = ${venueId} and closed_at is null limit 1`
+          return shiftOfRow(winner)
+        }
         // Перенесённые столы — открытые на момент закрытия прошлой смены —
-        // переходят в новую: их выручка считается здесь
+        // переходят в новую; туда же — закрывшиеся, пока смены не было, иначе
+        // их деньги не попали бы ни в один отчёт
+        const [prev] = await tx`
+          select id, closed_at from shifts
+          where venue_id = ${venueId} and closed_at is not null
+          order by closed_at desc limit 1
+        `
         await tx`
           update table_sessions ts set shift_id = ${row.id}
           from restaurant_tables rt
-          where rt.id = ts.table_id and rt.venue_id = ${venueId} and ts.closed_at is null
+          where rt.id = ts.table_id and rt.venue_id = ${venueId}
+            and (ts.closed_at is null
+              or (ts.shift_id is null and ts.closed_at > coalesce(${prev?.closed_at ?? null}::timestamptz, '-infinity'))
+              or (${prev?.id ?? null}::uuid is not null and ts.shift_id = ${prev?.id ?? null}::uuid and ts.closed_at > ${prev?.closed_at ?? null}::timestamptz))
         `
         return shiftOfRow(row)
       }) as Promise<ShiftInfo>
@@ -679,9 +698,10 @@ export async function createPostgresStore(url?: string): Promise<Store> {
       const [r] = await sql`
         insert into debt_settlements (venue_id, table_session_id, kind, amount, method, reason, by_staff_id)
         values (${venueId}, ${x.sessionId}, ${x.kind}, ${x.amount}, ${x.method}, ${x.reason}, ${staffUuid(x.byId)})
+        on conflict (table_session_id) do nothing
         returning *
       `
-      return { ...x, id: r.id, at: new Date(r.created_at).getTime() }
+      return r ? { ...x, id: r.id, at: new Date(r.created_at).getTime() } : null
     },
 
     async decisionNotes() {

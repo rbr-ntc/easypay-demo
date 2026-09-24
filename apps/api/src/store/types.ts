@@ -50,7 +50,11 @@ export interface Store {
   /** Закрытые с долгом столы за последние `sinceMs` — из них очередь «требует решения». */
   checksWithDebt(sinceMs: number): Promise<ShiftCheck[]>
   settlements(): Promise<Settlement[]>
-  addSettlement(s: Omit<Settlement, 'id' | 'at'>): Promise<Settlement>
+  /**
+   * Решение закрывает весь остаток долга, поэтому на сессию оно одно: второе
+   * (двойной тап, два менеджера) вернёт null, а не удвоит деньги в кассе.
+   */
+  addSettlement(s: Omit<Settlement, 'id' | 'at'>): Promise<Settlement | null>
   /** Решения без денег: «это банкет — нормально» по долго открытому столу. */
   decisionNotes(): Promise<DecisionNote[]>
   addDecisionNote(n: Omit<DecisionNote, 'at'>): Promise<void>
@@ -170,7 +174,8 @@ export interface ShiftCheck {
   shiftId?: string | null
   /** Платежи по отдельности: способ и время нужны отчёту по часам и по кассе. */
   payments?: { amount: number; method: string; at: number; guest: string | null; takenBy: string | null }[]
-  tipsList?: { amount: number; waiter: string | null }[]
+  /** Чаевые по отдельности со временем: отчёт смены берёт только свои по времени. */
+  tipsList?: { amount: number; waiter: string | null; at: number }[]
   /** Уже возвращено гостям. */
   refunded?: number
   firstSentAt?: number | null

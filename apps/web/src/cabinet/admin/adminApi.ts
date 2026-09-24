@@ -174,7 +174,9 @@ export const errorText = (r: StaffResult): string => {
     'no open shift': 'Смена уже закрыта',
     'already settled': 'Этот долг уже решён',
     'debt not found': 'Долг не найден — обновите страницу',
-    'method required': 'Выберите способ взыскания'
+    'method required': 'Выберите способ взыскания',
+    'stale session': 'За столом уже новые гости — верните переплату на кассе и отметьте в журнале',
+    'nothing to refund': 'Переплату уже вернули'
   }
   return map[r.error ?? ''] ?? staffError(r)
 }

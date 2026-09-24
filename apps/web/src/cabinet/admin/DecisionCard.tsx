@@ -33,9 +33,14 @@ export function DecisionCard({ item, onDone, compact = false }: { item: Decision
   const refundKey = useRef(newIdemKey())
   const k = KIND[item.kind]
 
+  // Ref, а не состояние: второй тап приходит раньше перерисовки
+  const inFlight = useRef(false)
   const act = async (fn: () => Promise<StaffResult>, done: string) => {
+    if (inFlight.current) return
+    inFlight.current = true
     setBusy(true)
     const r = await fn()
+    inFlight.current = false
     setBusy(false)
     if (!r.ok) {
       showToast(errorText(r))
@@ -53,7 +58,9 @@ export function DecisionCard({ item, onDone, compact = false }: { item: Decision
     act(() => settleDebt(item.sessionId!, 'written_off', { reason: text.trim() }), `Стол ${item.tableId}: списано на заведение`)
   const refund = () =>
     act(async () => {
-      const r = await tableAction(item.tableId!, 'refund', { amount: item.amount, idemKey: refundKey.current })
+      // sessionId обязателен: за столом могли сесть новые гости, и без него
+      // сервер вернул бы переплату из ИХ счёта
+      const r = await tableAction(item.tableId!, 'refund', { amount: item.amount, sessionId: item.sessionId, idemKey: refundKey.current })
       if (r.ok) refundKey.current = newIdemKey()
       return r
     }, `Стол ${item.tableId}: переплата возвращена`)
@@ -93,7 +100,7 @@ export function DecisionCard({ item, onDone, compact = false }: { item: Decision
                       ['sbp', 'По СБП']
                     ] as const
                   ).map(([m, label]) => (
-                    <button key={m} onClick={() => collect(m)} className="h-10 rounded-lg px-3 text-left text-[14px] hover:bg-c-chip">
+                    <button key={m} onClick={() => collect(m)} disabled={busy} className="h-10 rounded-lg px-3 text-left text-[14px] hover:bg-c-chip disabled:opacity-50">
                       {label}
                     </button>
                   ))}

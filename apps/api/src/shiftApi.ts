@@ -35,7 +35,26 @@ const CHECKS_LIMIT = 300
 
 // ── Чеки для отчёта ─────────────────────────────────────────────────────
 
-export function reportOfCheck(c: ShiftCheck): ReportCheck {
+/** Окно смены по времени: деньги относятся к смене, в которую пришли. */
+export interface ShiftWindow {
+  from: number
+  to: number
+}
+
+/**
+ * От закрытия предыдущей смены до своего закрытия — без щелей между сменами.
+ * Стол, перенесённый в следующую смену, несёт все свои платежи; считать их
+ * по принадлежности стола значило бы посчитать вечерние деньги дважды — в
+ * Z-отчёте вчерашней смены и в кассе сегодняшней.
+ */
+export async function windowOf(store: Store, shift: ShiftInfo): Promise<ShiftWindow> {
+  const prev = (await store.shiftHistory(3)).find(s => s.id !== shift.id && s.closedAt !== null && s.closedAt <= shift.openedAt)
+  return { from: prev?.closedAt ?? 0, to: shift.closedAt ?? Infinity }
+}
+
+const inWindow = (at: number, w?: ShiftWindow) => !w || (at > w.from && at <= w.to)
+
+export function reportOfCheck(c: ShiftCheck, w?: ShiftWindow): ReportCheck {
   return {
     sessionId: c.sessionId,
     tableId: c.tableId,
@@ -49,8 +68,8 @@ export function reportOfCheck(c: ShiftCheck): ReportCheck {
     overpaid: c.overpaid,
     refunded: c.refunded ?? 0,
     cancelledTotal: c.cancelledTotal,
-    payments: (c.payments ?? []).map(p => ({ amount: p.amount, method: p.method, at: p.at })),
-    tips: c.tipsList ?? (c.tips > 0 ? [{ amount: c.tips, waiter: c.waiter }] : []),
+    payments: (c.payments ?? []).filter(p => inWindow(p.at, w)).map(p => ({ amount: p.amount, method: p.method, at: p.at })),
+    tips: (c.tipsList ?? (c.tips > 0 ? [{ amount: c.tips, waiter: c.waiter, at: c.closedAt ?? c.openedAt }] : [])).filter(t => inWindow(t.at, w)),
     lines: c.lines.map(l => ({ name: l.name, qty: l.qty, amount: l.amount, cancelled: l.cancelled }))
   }
 }
@@ -95,7 +114,7 @@ export function checkOfOpen(tableId: string, t: TableSession): ShiftCheck {
       guest: nameOf(p.personaId),
       takenBy: p.takenByName ?? null
     })),
-    tipsList: t.tips.map(x => ({ amount: x.amount, waiter: waiterOfTable(tableId)?.name ?? null })),
+    tipsList: t.tips.map(x => ({ amount: x.amount, waiter: waiterOfTable(tableId)?.name ?? null, at: x.at })),
     refunded: round2((t.refunds ?? []).reduce((a, r) => a + r.amount, 0)),
     firstSentAt: sent.length ? Math.min(...sent) : null,
     lastServedAt: served.length ? Math.max(...served) : null
@@ -141,7 +160,8 @@ export function createShiftRoutes(deps: ShiftDeps) {
       store.settlements()
     ])
     const openChecks = open.map(o => checkOfOpen(o.tableId, o.t))
-    const report = buildShiftReport([...closed, ...openChecks].map(reportOfCheck))
+    const win = shift ? await windowOf(store, shift) : undefined
+    const report = buildShiftReport([...closed, ...openChecks].map(c => reportOfCheck(c, win)))
 
     // Долги этой смены — каждый должен получить решение до закрытия
     const debts = closed
@@ -384,6 +404,10 @@ export function createShiftRoutes(deps: ShiftDeps) {
 
     if (p.startsWith('/api/shifts/') && req.method === 'GET') {
       const id = decodeURIComponent(p.slice('/api/shifts/'.length))
+      if (!/^[0-9a-f-]{36}$/i.test(id)) {
+        json(res, 404, { error: 'shift not found' })
+        return true
+      }
       const current = await store.currentShift()
       if (current && current.id === id) {
         const state = await currentState(store)
@@ -401,6 +425,11 @@ export function createShiftRoutes(deps: ShiftDeps) {
 
     if (p === '/api/checks' && req.method === 'GET') {
       const shiftParam = url.searchParams.get('shift')
+      // Id смены — uuid; иначе Postgres ответит ошибкой синтаксиса, а человек увидит 500
+      if (shiftParam && shiftParam !== 'current' && !/^[0-9a-f-]{36}$/i.test(shiftParam)) {
+        json(res, 404, { error: 'shift not found' })
+        return true
+      }
       const current = await store.currentShift()
       const isCurrent = !shiftParam || shiftParam === 'current' || shiftParam === current?.id
       const closed = await store.shiftChecks(CHECKS_LIMIT, isCurrent ? null : shiftParam)
@@ -445,6 +474,10 @@ export function createShiftRoutes(deps: ShiftDeps) {
         return true
       }
       const s = await store.addSettlement({ sessionId, tableId: check.tableId, kind, amount: left, method, reason, byId: actor.id })
+      if (!s) {
+        json(res, 409, { error: 'already settled' })
+        return true
+      }
       audit(
         actor,
         kind === 'collected' ? 'долг взыскан' : 'долг списан',
