@@ -266,3 +266,41 @@ test('старый ключ оплаты после нового блюда — 
   const tip = await post(`/api/t/${table}/tip`, { amount: 50, method: 'bitcoin', idemKey: fresh() }, { guest: g })
   assert.equal(tip.status, 400)
 })
+
+test('официант добавляет блюдо гостю и на стол — сразу на кухню, с проверкой аллергий', async () => {
+  const table = fresh()
+  await join(table, 'Марина', ['лактоза'])
+  const olya = await (await post('/api/staff/login', { pin: '2222' })).json()
+  const staffSnap = () => fetch(`${base}/api/t/${table}`, { headers: { 'x-staff-token': M } }).then(r => r.json())
+  const s0 = await staffSnap()
+  const marinaId = s0.personas[0].id
+
+  // Чужой стол — нельзя; повару — нельзя
+  const cook = await (await post('/api/staff/login', { pin: '4444' })).json()
+  assert.equal((await post(`/api/t/${table}/addLine`, { dishId: 'espresso', personaId: marinaId }, { staff: cook.token })).status, 403)
+
+  const warned = await post(`/api/t/${table}/addLine`, { dishId: 'bruschetta', personaId: marinaId, idemKey: fresh() }, { staff: M })
+  assert.equal(warned.status, 409)
+  assert.deepEqual((await warned.json()).people.map((p: any) => p.name), ['Марина'])
+
+  const key = fresh()
+  assert.equal((await post(`/api/t/${table}/addLine`, { dishId: 'espresso', personaId: marinaId, idemKey: key }, { staff: M })).status, 200)
+  assert.equal((await post(`/api/t/${table}/addLine`, { dishId: 'espresso', personaId: marinaId, idemKey: key }, { staff: M })).status, 200)
+  await post(`/api/t/${table}/addLine`, { dishId: 'lemonade', idemKey: fresh() }, { staff: M })
+  const s1 = await staffSnap()
+  assert.equal(s1.lines.filter((l: any) => l.dishId === 'espresso').length, 1, 'повтор с тем же ключом не задвоил')
+  assert.ok(s1.lines.every((l: any) => l.sent), 'сразу на кухню')
+  assert.equal(s1.lines.find((l: any) => l.dishId === 'lemonade').shared, true)
+  assert.ok(s1.totals.tableTotal > 0, 'и в счёт')
+  void olya
+})
+
+test('официант принимает заказ за пустым столом — без телефона у гостей', async () => {
+  const table = fresh()
+  const res = await post(`/api/t/${table}/addLine`, { dishId: 'espresso', idemKey: fresh() }, { staff: M })
+  assert.equal(res.status, 200)
+  const snap = await fetch(`${base}/api/t/${table}`, { headers: { 'x-staff-token': M } }).then(r => r.json())
+  assert.equal(snap.status, 'open')
+  assert.equal(snap.personas.length, 1)
+  assert.equal(snap.totals.tableTotal, 180)
+})

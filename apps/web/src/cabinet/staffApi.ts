@@ -74,7 +74,9 @@ export function staffError(r: StaffResult): string {
     'guest has orders': 'У гостя есть заказы — убрать нельзя',
     'guest has payments': 'Гость уже платил — убрать нельзя',
     'last guest': 'Это последний гость за столом',
-    'guest not found': 'Гостя уже нет за столом'
+    'guest not found': 'Гостя уже нет за столом',
+    'dish in stop list': 'Это блюдо в стоп-листе',
+    'shift closed': 'Смена закрыта — сначала откройте смену'
   }
   return map[r.error ?? ''] ?? 'Не получилось — попробуйте ещё раз'
 }

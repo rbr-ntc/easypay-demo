@@ -498,12 +498,12 @@ const NAME_MAX = 30
 const ANIMALS = new Set(['fox', 'bear', 'panda', 'raccoon', 'owl', 'cat'])
 const TABLE_RE = /^[A-Za-z0-9_-]{1,24}$/
 const STAFF_ACTIONS = new Set([
-  'serve', 'ready', 'start', 'close', 'reset', 'ack', 'dismiss', 'clean', 'cash', 'refund', 'removeGuest'
+  'serve', 'ready', 'start', 'close', 'reset', 'ack', 'dismiss', 'clean', 'cash', 'refund', 'removeGuest', 'addLine'
 ])
 const GUEST_ACTIONS = new Set([
   'lines', 'remove', 'send', 'pay', 'tip', 'call', 'cancelMine', 'cashIntent', 'cancelCash', 'leave', 'allergies'
 ])
-const IDEMPOTENT_ACTIONS = new Set(['join', 'lines', 'pay', 'tip', 'refund'])
+const IDEMPOTENT_ACTIONS = new Set(['join', 'lines', 'pay', 'tip', 'refund', 'addLine'])
 const CALL_REASONS = new Set(['help', 'bill', 'water'])
 const PAY_METHODS = new Set(['sbp', 'card', 'cash'])
 // send говорит mine/all, pay — own/full. Принимаем оба словаря, чтобы разница
@@ -1027,6 +1027,71 @@ function staffAction(t: TableSession, tableId: string, action: string, body: any
   // ack — подойти к гостю, а не тронуть его деньги: это можно на любом столе
   if (action !== 'ack' && !ownsTable(actor, tableId)) {
     return fail(403, 'not your table', { waiter: waiterOfTable(tableId)?.name ?? null })
+  }
+
+  if (action === 'addLine') {
+    /**
+     * Блюдо от официанта: гость попросил вслух, а не с телефона, или за столом
+     * вообще нет телефона. Уходит на кухню сразу — официант принял заказ.
+     * Аллергии проверяются так же, как у гостя: у своего блюда — гостя, у
+     * общего — всех за столом; без подтверждения — 409 с именами.
+     */
+    const dish = getDish(asId(body.dishId))
+    if (!dish) return fail(400, 'unknown dish')
+    if (isStopped(dish.id)) return fail(400, 'dish in stop list', { dish: dish.name })
+    const qty = Number(body.qty ?? 1)
+    if (!Number.isInteger(qty) || qty < 1 || qty > MAX_QTY) return fail(400, 'bad qty', { min: 1, max: MAX_QTY })
+    const checked = checkOptions(dish, body.options)
+    if (checked.error) return fail(400, checked.error)
+    if (t.lines.length >= MAX_LINES) return fail(400, 'too many lines')
+
+    // Стол пуст — гости без телефона: сажаем безымянного гостя, его токена нет ни у кого
+    if (t.status !== 'open' || t.personas.length === 0) {
+      if (t.status !== 'open') openSessionInPlace(t)
+      t.personas.push({
+        id: crypto.randomUUID(),
+        name: 'Гость',
+        animal: 'bear',
+        joinedAt: Date.now(),
+        allergies: [],
+        secretHash: hashToken(crypto.randomBytes(18).toString('base64url'))
+      })
+    }
+    const shared = body.personaId == null
+    const persona = shared ? t.personas[0] : t.personas.find(p => p.id === asId(body.personaId))
+    if (!persona) return fail(404, 'guest not found')
+
+    const dishAllergens = allergensOf(dish.id, checked.options ?? {})
+    const eaters = shared ? t.personas : [persona]
+    const people = eaters
+      .map(p => ({ name: p.name, allergens: dishAllergens.filter(a => (p.allergies ?? []).includes(a)) }))
+      .filter(p => p.allergens.length > 0)
+    if (people.length > 0 && body.confirmAllergen !== true) {
+      return fail(409, 'allergen warning', { allergens: [...new Set(people.flatMap(p => p.allergens))], dish: dish.name, people })
+    }
+
+    const now = Date.now()
+    const line = {
+      uid: t.seq++,
+      dishId: dish.id,
+      qty,
+      price: priceWithOptions(dish.id, checked.options ?? {}),
+      options: checked.options ?? {},
+      comment: sanitizeNote(body.comment),
+      shared,
+      // Общее — на всех, кто сейчас за столом: доля фиксируется в момент отправки
+      sharedWith: shared ? t.personas.map(p => p.id) : ([] as string[]),
+      personaId: persona.id,
+      sent: true,
+      served: false,
+      cancelled: false,
+      sentAt: now,
+      startedAt: null,
+      servedAt: null
+    }
+    t.lines.push(line)
+    audit(actor, 'добавил на стол', tableId, `${shared ? 'на стол' : persona.name}: ${dish.name}${qty > 1 ? ` ×${qty}` : ''}`, round2(line.price * qty))
+    return ok({ ok: true, uid: line.uid, line: publicLine(line) })
   }
 
   if (action === 'removeGuest') {
@@ -1569,7 +1634,7 @@ async function handleApi(req: any, res: any, url: URL) {
 
   // Смена закрыта — новые столы не открываются. Уже открытые (перенесённые)
   // работают дальше: гостя за столом не выгоняют посреди ужина.
-  if (action === 'join' && !(await store.currentShift())) {
+  if ((action === 'join' || action === 'addLine') && !(await store.currentShift())) {
     const t = await store.read(tableId)
     if (t.status !== 'open') {
       return json(res, 409, { error: 'shift closed', hint: 'ресторан ещё не открыл смену — позовите официанта' })

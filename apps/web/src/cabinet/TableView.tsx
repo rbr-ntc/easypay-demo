@@ -7,6 +7,7 @@ import { newIdemKey } from '../keys'
 import { fmt, listNames } from '../format'
 import { fmtDur } from '../waiter/duration'
 import { computeMetrics } from '../waiter/tableMetrics'
+import { AddDishDrawer } from './AddDishDrawer'
 import { lineStage, type LineStage } from '../lineStage'
 import { CALL_LABEL } from '@easypay/domain/hall'
 import { Avatar } from '../avatars'
@@ -40,6 +41,7 @@ export function TableView({ id }: { id: string }) {
   const [live, setLive] = useState(false)
   const [ask, setAsk] = useState<{ reasons: string[] } | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
+  const [adding, setAdding] = useState(false)
   // Ключ возврата живёт до успеха: ретрай после обрыва не отдаст деньги дважды
   const refundKey = useRef(newIdemKey())
 
@@ -299,7 +301,17 @@ export function TableView({ id }: { id: string }) {
           </Panel>
 
           <div className="flex flex-col gap-4">
-            <Panel title="Заказ · по времени">
+            <Panel
+              title="Заказ · по времени"
+              action={
+                // Гость попросил официанта, а не телефон — добавить можно и за пустым столом
+                may('addLine') ? (
+                  <button onClick={() => setAdding(true)} className="h-8 rounded-lg bg-c-ink px-3 text-[13px] font-bold text-white">
+                    + Блюдо
+                  </button>
+                ) : undefined
+              }
+            >
               {lines.length === 0 && <div className="px-4.5 py-3.5 text-[15px] text-c-mute">Пока ничего не заказано</div>}
               {lines.map(l => (
                 <LineRow
@@ -356,6 +368,7 @@ export function TableView({ id }: { id: string }) {
           onCancel={() => setAsk(null)}
         />
       )}
+      {adding && <AddDishDrawer tableId={id} snap={snap} onClose={() => setAdding(false)} />}
     </div>
   )
 }
