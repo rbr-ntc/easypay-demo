@@ -180,7 +180,9 @@ function PayForm({
           ? `${fmt(totals.myOwn)} ваше + ${fmt(totals.myShare)} доля общих блюд`
           : 'только ваши блюда — считает сервер'
       : ui.payScope === 'equal'
-        ? `Счёт стола поровну на ${totals.participants}`
+        ? totals.paidTotal > 0.01
+          ? `Остаток ${fmt(totals.remaining)} поровну на ${totals.equalSplit} — кто уже заплатил своё, не в счёт`
+          : `Счёт стола поровну на ${totals.equalSplit}`
         : others.length
           ? `${listNames(others)} ${others.length === 1 ? 'увидит' : 'увидят'}, что стол оплачен`
           : 'Весь счёт стола'

@@ -51,6 +51,8 @@ export interface MoneyTotals {
   paidOf(personaId: string | null): number
   totalOf(personaId: string | null): number
   remainingOf(personaId: string | null): number
+  /** Сколько гостей ещё должны: на них делится «Поровну». */
+  owingCount: number
 }
 
 export type PriceOf = (dishId: string) => number
@@ -198,7 +200,8 @@ export function computeTotals(state: MoneyState | null | undefined, priceOf: Pri
     ownOf,
     paidOf,
     totalOf,
-    remainingOf
+    remainingOf,
+    owingCount: personaIds.filter(id => remainingOf(id) > 0).length
   }
 }
 
@@ -211,9 +214,20 @@ export function amountFor(totals: MoneyTotals, personaId: string | null, scope: 
     scope === 'full'
       ? totals.remaining
       : scope === 'equal'
-        ? Math.min(totals.remaining, totals.tableTotal / totals.participants)
+        ? Math.min(totals.remaining, totals.remaining / equalSplitOf(totals, personaId))
         : Math.min(totals.remainingOf(personaId), totals.remaining)
   return absorbRounding(round2(raw), totals.remaining)
+}
+
+/**
+ * На скольких делится «Поровну»: на тех, кто ещё должен, и на самого
+ * платящего. Раньше делился весь счёт на всех за столом — и после того как
+ * Глеб оплатил своё, Мила «поровну» платила треть всего счёта, а не половину
+ * остатка: недоплачивала и шла платить второй раз.
+ */
+export function equalSplitOf(totals: MoneyTotals, personaId: string | null): number {
+  const payerOwes = personaId !== null && totals.remainingOf(personaId) > 0
+  return Math.max(1, totals.owingCount + (payerOwes ? 0 : 1))
 }
 
 /**

@@ -109,7 +109,11 @@ test('«поровну» не превышает неоплаченный ост
   const t0 = computeTotals(state, priceOf)
   assert.equal(amountFor(t0, 'dima', 'equal'), round2(t0.tableTotal / 3))
   state.payments.push({ personaId: 'anya', amount: t0.tableTotal - 100 })
-  assert.equal(amountFor(computeTotals(state, priceOf), 'dima', 'equal'), 100)
+  // Аня переплатила — долг Димы погашен, должна одна Лена: 100 ₽ делятся
+  // «поровну» между Леной и самим Димой, раз он выбрал этот способ
+  const t1 = computeTotals(state, priceOf)
+  assert.equal(amountFor(t1, 'dima', 'equal'), 50)
+  assert.ok(amountFor(t1, 'dima', 'equal') <= t1.remaining)
 })
 
 test('двойная оплата стола невозможна: второму остаётся ноль', () => {
@@ -224,4 +228,36 @@ test('без переплаты личные остатки не трогают�
   assert.equal(money.remainingOf('a'), 1290)
   assert.equal(money.remainingOf('b'), 690)
   assert.equal(money.remainingOf('a') + money.remainingOf('b'), money.remaining)
+})
+
+test('«поровну» делит остаток на тех, кто ещё должен (смена №5, стол 4)', () => {
+  // Глеб 1510, Мила 1040, Ника 930 — без общих блюд, чтобы числа читались
+  const state = {
+    personas: [persona('gleb'), persona('mila'), persona('nika')],
+    lines: [
+      line('gleb', 'x', { price: 1510 }),
+      line('mila', 'x', { price: 1040 }),
+      line('nika', 'x', { price: 930 })
+    ],
+    payments: [] as { personaId: string; amount: number }[]
+  }
+  const t0 = computeTotals(state, priceOf)
+  assert.equal(amountFor(t0, 'mila', 'equal'), 1160, 'пока никто не платил — весь счёт на троих')
+
+  // Глеб заплатил своё — «поровну» Милы теперь половина остатка, а не треть счёта
+  state.payments.push({ personaId: 'gleb', amount: amountFor(t0, 'gleb', 'own') })
+  const t1 = computeTotals(state, priceOf)
+  assert.equal(t1.remaining, 1970)
+  assert.equal(amountFor(t1, 'mila', 'equal'), 985)
+
+  // Мила внесла половину остатка и ещё должна 55 — «поровну» Ники делится на двоих
+  state.payments.push({ personaId: 'mila', amount: 985 })
+  const t2 = computeTotals(state, priceOf)
+  assert.equal(t2.remainingOf('mila'), 55)
+  assert.equal(amountFor(t2, 'nika', 'equal'), 492.5)
+
+  // Когда должна одна Ника, «поровну» — это её остаток целиком
+  state.payments.push({ personaId: 'mila', amount: 55 })
+  const t3 = computeTotals(state, priceOf)
+  assert.equal(amountFor(t3, 'nika', 'equal'), 930)
 })
