@@ -37,6 +37,11 @@ export interface Store {
    */
   shiftCheckTotals(): Promise<ShiftCheckTotals>
 
+  /** Переопределения стоп-листа поверх menu.json: блюдо → стоп или нет. */
+  stopOverrides(): Promise<Record<string, boolean>>
+  /** Кто и когда выключил или вернул блюдо — пишется вместе со значением. */
+  setStop(dishId: string, stop: boolean, byStaffId: string | null): Promise<void>
+
   close(): Promise<void>
 }
 

@@ -128,6 +128,8 @@ export interface Snapshot {
   limited?: boolean
   /** Сколько гостей уже за открытым столом — видно и постороннему, без имён. */
   occupied?: number
+  /** Что сейчас нельзя заказать — кухня выключает блюда тумблером. */
+  stop?: string[]
   /** Просьба принять наличные: деньги ещё не в счёте, их берёт человек. */
   cashIntent?: { personaId: string; scope: string; amount: number; at: number } | null
   totals: ServerTotals

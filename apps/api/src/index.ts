@@ -13,7 +13,19 @@ import { amountFor, computeTotals, isBillLine, PAY_SCOPES, round2, splitRounded 
 import type { PayScope } from '@easypay/domain/money'
 import { can, ownsTable } from '@easypay/domain/roles'
 import type { Permission } from '@easypay/domain/roles'
-import { allergensOf, checkOptions, dishName, getDish, menuPayload, priceOf, priceWithOptions } from './menu.ts'
+import {
+  allergensOf,
+  applyStopOverrides,
+  checkOptions,
+  dishName,
+  getDish,
+  isStopped,
+  menuPayload,
+  priceOf,
+  priceWithOptions,
+  setStopOverride,
+  stopList
+} from './menu.ts'
 import { ALLERGENS } from '@easypay/domain/allergens'
 import { isKnownTable, seatsOf } from './hallplan.ts'
 import { hallPayload, kitchenPayload } from './feeds.ts'
@@ -38,7 +50,12 @@ const PORT = process.env.PORT || 8787
 
 // --- Хранилище ---
 let storePromise: Promise<Store> | null = null
-const getStore = () => (storePromise ??= createStore())
+// Стоп-лист живёт в памяти процесса — загружаем его из хранилища один раз при старте
+const getStore = () =>
+  (storePromise ??= createStore().then(async store => {
+    applyStopOverrides(await store.stopOverrides())
+    return store
+  }))
 
 /** Для тестов и корректного завершения: закрывает подключение хранилища. */
 export async function closeStore() {
@@ -197,6 +214,8 @@ function snapshot(t: TableSession, id: string) {
     status: t.status,
     openedAt: t.openedAt,
     closedAt: t.closedAt,
+    // Что сейчас нельзя заказать: кухня выключает блюда тумблером
+    stop: stopList(),
     personas: t.personas.map(p => ({
       id: p.id,
       name: p.name,
@@ -289,6 +308,8 @@ function publicStub(t: TableSession, id: string) {
   return {
     tableId: id,
     sessionId: null,
+    // Меню смотрят и до того, как представились: «закончилось» нужно и им
+    stop: stopList(),
     status: t.status,
     openedAt: t.openedAt,
     closedAt: t.closedAt,
@@ -324,6 +345,16 @@ function pushTo(subscribers: Set<any>, payload: unknown) {
     } catch {
       subscribers.delete(res)
     }
+  }
+}
+
+/** Стоп-лист поменялся — он в снимке у каждого стола, где кто-то смотрит меню. */
+async function broadcastEverywhere(store: Store) {
+  for (const id of [...streams.keys()]) if (streams.get(id)?.size) await broadcast(store, id)
+  // Столов без подписчиков нет — зал и кухня всё равно должны узнать
+  if (streams.size === 0 || ![...streams.values()].some(s => s.size)) {
+    if (hallStreams.size > 0) pushTo(hallStreams, hallPayload(await store.activeSessions(), await store.shift()))
+    if (kitchenStreams.size > 0) pushTo(kitchenStreams, kitchenPayload(await store.activeSessions()))
   }
 }
 
@@ -578,7 +609,7 @@ function guestAction(t: TableSession, tableId: string, action: string, body: any
   if (action === 'lines') {
     const dish = getDish(asId(body.dishId))
     if (!dish) return fail(400, 'unknown dish')
-    if (dish.stop) return fail(400, 'dish in stop list')
+    if (isStopped(dish.id)) return fail(400, 'dish in stop list')
 
     const qty = Number(body.qty ?? 1)
     if (!Number.isInteger(qty) || qty < 1 || qty > MAX_QTY) return fail(400, 'bad qty', { min: 1, max: MAX_QTY })
@@ -1253,6 +1284,25 @@ async function handleApi(req: any, res: any, url: URL) {
 
   if (url.pathname === '/api/menu' && req.method === 'GET') {
     return json(res, 200, menuPayload())
+  }
+
+  // Стоп-лист в один тап: кухня и бар выключают блюдо, гость сразу видит «закончилось»
+  if (url.pathname === '/api/menu/stop') {
+    if (req.method !== 'POST') return json(res, 405, { error: 'method' })
+    const actor = actorFrom(req, url)
+    if (!actor) return json(res, 401, staffUnauthorized(req))
+    if (!allowed(actor, 'stop')) return json(res, 403, { error: 'role not allowed' })
+    const body = await readBody(req)
+    const dish = getDish(asId(body.dishId))
+    if (!dish) return json(res, 400, { error: 'unknown dish' })
+    if (typeof body.stop !== 'boolean') return json(res, 400, { error: 'stop must be boolean' })
+
+    await store.setStop(dish.id, body.stop, actor.id)
+    setStopOverride(dish.id, body.stop)
+    audit(actor, 'стоп-лист', null, `${dish.name} — ${body.stop ? 'закончилось' : 'снова в меню'}`)
+    await flushAudit(store)
+    await broadcastEverywhere(store)
+    return json(res, 200, { ok: true, stop: stopList() })
   }
 
   if (url.pathname === '/api/hall' || url.pathname === '/api/hall/stream') {

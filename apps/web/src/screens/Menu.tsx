@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { RESTAURANT, defaultOptions } from '../data'
+import { RESTAURANT, defaultOptions, withStop } from '../data'
 import type { Dish } from '../data'
 import { tableId } from '../api'
 import type { ServerLine } from '../api'
@@ -37,7 +37,13 @@ export function Menu() {
   const season = useMemo(() => currentSeason(), [])
   const colls = useMemo(() => collections(season), [season])
   const [collId, setCollId] = useState(colls[0]?.id ?? 'all')
-  const coll = colls.find(c => c.id === collId) ?? colls[0]
+  // Живой стоп-лист из снимка: кухня выключила блюдо — оно сразу «закончилось»
+  const live = snap?.stop
+  const coll = useMemo(() => {
+    const c = colls.find(x => x.id === collId) ?? colls[0]
+    const ws = (d: Dish) => withStop(d, live)
+    return { ...c, hero: c.hero.map(ws), sections: c.sections.map(s => ({ ...s, dishes: s.dishes.map(ws) })) }
+  }, [colls, collId, live])
 
   const scrollRef = useRef<HTMLDivElement>(null)
   const [collapsed, setCollapsed] = useState(false)

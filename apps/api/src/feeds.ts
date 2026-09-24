@@ -2,7 +2,7 @@
 import { computeTotals, isBillLine, round2 } from '@easypay/domain/money'
 import { summarizeHall } from '@easypay/domain/hall'
 import { sortTickets, summarizeKitchen, ticketUrgency } from '@easypay/domain/kitchen'
-import { dishName, priceOf, stationOf, allergensOf, removedAllergensOf } from './menu.ts'
+import { dishName, priceOf, stationOf, allergensOf, removedAllergensOf, stopList } from './menu.ts'
 import { HALL, metaOf, planTables } from './hallplan.ts'
 import { waiterOfTable } from './staff.ts'
 import type { Call, TableSession } from './types.ts'
@@ -186,6 +186,8 @@ export function kitchenPayload(tables: Map<string, TableSession>) {
       // Сколько тарелок стоит на раздаче и ждёт официанта
       ready: sorted.filter(x => x.readyAt).length
     },
+    // Стоп-лист рядом с очередью: повар выключает блюдо тем же экраном
+    stop: stopList(),
     now
   }
 }

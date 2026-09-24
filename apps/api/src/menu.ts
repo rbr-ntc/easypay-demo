@@ -20,6 +20,32 @@ export function getDish(id: string | null) {
   return id ? DISHES.get(id) ?? null : null
 }
 
+// ── Стоп-лист ───────────────────────────────────────────────────────────
+// В menu.json у блюда может стоять stop — это значение по умолчанию. Кухня
+// выключает и включает блюда тумблером: переопределения хранятся в базе и
+// здесь, в памяти процесса, чтобы проверка заказа не ходила в базу.
+
+const stopOverrides = new Map<string, boolean>()
+
+/** Загрузить переопределения из хранилища — при старте сервера. */
+export function applyStopOverrides(overrides: Record<string, boolean>) {
+  stopOverrides.clear()
+  for (const [id, stop] of Object.entries(overrides)) if (DISHES.has(id)) stopOverrides.set(id, stop)
+}
+
+export function setStopOverride(id: string, stop: boolean) {
+  stopOverrides.set(id, stop)
+}
+
+export function isStopped(id: string): boolean {
+  return stopOverrides.get(id) ?? !!DISHES.get(id)?.stop
+}
+
+/** Что сейчас нельзя заказать — уходит гостям в снимке стола и кухне. */
+export function stopList(): string[] {
+  return [...DISHES.keys()].filter(isStopped)
+}
+
 export function priceOf(id: string) {
   return DISHES.get(id)?.price ?? 0
 }
@@ -101,7 +127,7 @@ export function menuPayload() {
     price: dish.price,
     category: dish.category ?? null,
     station: dish.station ?? 'kitchen',
-    stop: !!dish.stop,
+    stop: isStopped(dish.id),
     options: dish.options ?? [],
     // Надбавки за модификаторы: гость должен видеть цену бутылки до заказа
     priceDeltas: Object.fromEntries(

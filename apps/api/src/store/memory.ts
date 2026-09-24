@@ -48,6 +48,7 @@ export function createMemoryStore(): Store {
   /** Свод по ВСЕМ чекам смены — живёт отдельно от обрезанного списка. */
   const checkTotals = { count: 0, paid: 0, debt: 0, overpaid: 0, cancelledTotal: 0 }
   const auditLog: AuditEntry[] = []
+  const stops = new Map<string, boolean>()
   const shift = freshShift()
   let guestsSeen = 0
 
@@ -210,6 +211,14 @@ export function createMemoryStore(): Store {
       return { ...checkTotals }
     },
 
+
+    async stopOverrides() {
+      return Object.fromEntries(stops)
+    },
+
+    async setStop(dishId, stop) {
+      stops.set(dishId, stop)
+    },
 
     async close() {
       clearInterval(sweeper)

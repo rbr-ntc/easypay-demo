@@ -117,6 +117,16 @@ export function defaultOptions(dish: Dish): LineOptions {
 export const MENU = menuJson as Record<string, Dish[]>
 export const CATEGORIES = Object.keys(MENU)
 
+/**
+ * Блюдо с живым стоп-листом. Сервер присылает актуальный список в снимке
+ * стола (`snap.stop`): кухня выключает блюда тумблером, и флаг в menu.json —
+ * только значение по умолчанию. Пока снимка нет, верим файлу.
+ */
+export function withStop(dish: Dish, live: string[] | null | undefined): Dish {
+  const stop = live ? live.includes(dish.id) : !!dish.stop
+  return stop === !!dish.stop ? dish : { ...dish, stop }
+}
+
 export function findDish(id: string): Dish | undefined {
   for (const cat of CATEGORIES) {
     const d = MENU[cat].find(x => x.id === id)

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { allergenAccusative } from '@easypay/domain/allergens'
-import { allergenTags, defaultOptions, findDish, priceWithOptions } from '../data'
+import { allergenTags, defaultOptions, findDish, priceWithOptions, withStop } from '../data'
 import type { Dish, LineOptions } from '../data'
 import { useStore } from '../store'
 import { newIdemKey } from '../keys'
@@ -30,7 +30,8 @@ function servingLabel(dish: Dish, opts: LineOptions): string | null {
 export function DishSheet() {
   const { ui, patch, me, snap, addLine, toast } = useStore()
   const companyAtTable = (snap?.personas.length ?? 0) > 1
-  const dish = ui.currentDishId ? findDish(ui.currentDishId) : undefined
+  const found = ui.currentDishId ? findDish(ui.currentDishId) : undefined
+  const dish = found ? withStop(found, snap?.stop) : undefined
   const [qty, setQty] = useState(1)
   const [shared, setShared] = useState(false)
   const [opts, setOpts] = useState<LineOptions>(() => (dish ? defaultOptions(dish) : {}))

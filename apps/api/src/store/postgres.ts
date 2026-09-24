@@ -583,6 +583,20 @@ export async function createPostgresStore(url?: string): Promise<Store> {
       }
     },
 
+    async stopOverrides() {
+      const rows = await sql`select dish_id, stop from menu_stop where venue_id = ${venueId}`
+      return Object.fromEntries(rows.map(r => [r.dish_id as string, Boolean(r.stop)]))
+    },
+
+    async setStop(dishId, stop, byStaffId) {
+      await sql`
+        insert into menu_stop (venue_id, dish_id, stop, updated_by)
+        values (${venueId}, ${dishId}, ${stop}, ${staffUuid(byStaffId)})
+        on conflict (venue_id, dish_id)
+        do update set stop = excluded.stop, updated_at = now(), updated_by = excluded.updated_by
+      `
+    },
+
     async close() {
       await sql.end()
     }

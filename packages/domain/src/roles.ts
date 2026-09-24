@@ -20,6 +20,8 @@ export type Permission =
   | 'close'
   | 'reset'
   | 'log'
+  /** Стоп-лист: «закончилось» — первым узнаёт кухня или бар, не менеджер. */
+  | 'stop'
 
 export interface Staff {
   id: string
@@ -50,12 +52,13 @@ export const ROLE_LABEL: Record<RoleName, string> = {
  *  log            — журнал действий смены
  */
 export const PERMISSIONS: Record<RoleName, Permission[]> = {
-  manager: ['hall', 'kitchen', 'table', 'start', 'ready', 'serve', 'dismiss', 'ack', 'close', 'clean', 'cash', 'refund', 'reset', 'log'],
+  manager: ['hall', 'kitchen', 'table', 'start', 'ready', 'serve', 'dismiss', 'ack', 'close', 'clean', 'cash', 'refund', 'reset', 'log', 'stop'],
   // Убрать стол — работа зала: пока это делал таймер, гостей сажали за грязный
-  waiter: ['hall', 'kitchen', 'table', 'start', 'ready', 'serve', 'dismiss', 'ack', 'close', 'clean', 'cash'],
+  // Официант за стойкой — тот же бармен: «кончилось игристое» он узнаёт первым
+  waiter: ['hall', 'kitchen', 'table', 'start', 'ready', 'serve', 'dismiss', 'ack', 'close', 'clean', 'cash', 'stop'],
   // Повар подтверждает отмену сам: снять блюдо с плиты — его работа, не менеджерская
   // Повар доводит блюдо до раздачи; «унёс гостю» отмечает зал
-  cook: ['kitchen', 'start', 'ready', 'serve', 'dismiss']
+  cook: ['kitchen', 'start', 'ready', 'serve', 'dismiss', 'stop']
 }
 
 export function can(role: RoleName | undefined | null, permission: Permission): boolean {
