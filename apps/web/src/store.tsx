@@ -591,7 +591,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     leaveTip: (amount, idemKey) =>
       guard(async () => {
         if (!guestToken() || amount <= 0) return 0
-        const r = await apiTip(guestToken()!, amount, idemKey)
+        // Чаевые — тем же способом, что и оплата: наличные с телефона не уходят
+        const method = ui.payMethod === 'card' ? 'card' : 'sbp'
+        const r = await apiTip(guestToken()!, amount, idemKey, method)
         return r.amount
       }, 0),
     callWaiter: (reason, note) =>

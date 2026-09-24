@@ -164,7 +164,7 @@ export function Done() {
                 <span className="flex-1">
                   {l.name}
                   {l.qty > 1 ? ` ×${l.qty}` : ''}
-                  {optionsLabel(l.options) ? ` · ${optionsLabel(l.options)}` : ''}
+                  {l.optionsText ? ` · ${l.optionsText}` : optionsLabel(l.options) ? ` · ${optionsLabel(l.options)}` : ''}
                   {l.shared ? ' · ваша доля' : ''}
                 </span>
                 <span className="g-num">{fmt(l.shared && l.share !== null ? l.share : l.price * l.qty)}</span>
@@ -179,11 +179,13 @@ export function Done() {
             </div>
             {/* Честно: это чек заказа, а не документ по 54-ФЗ — его пробивает касса */}
             <div className="mt-2 text-[12px] text-g-mute">Это чек заказа. Фискальный чек выдаёт касса ресторана.</div>
-            {(SETTINGS.venue.legal || SETTINGS.venue.address) && (
-              <div className="mt-1.5 text-[12px] leading-snug text-g-mute">
-                {[SETTINGS.venue.legal, SETTINGS.venue.inn && `ИНН ${SETTINGS.venue.inn}`, SETTINGS.venue.address].filter(Boolean).join(' · ')}
-              </div>
-            )}
+            {receipt?.note && <div className="mt-1.5 text-[13px] text-g-tan">{receipt.note}</div>}
+            {(() => {
+              // Реквизиты — из чека (как было в момент оплаты), иначе из настроек
+              const v = receipt?.venue ?? { name: SETTINGS.venue.name, legal: SETTINGS.venue.legal, inn: SETTINGS.venue.inn, address: SETTINGS.venue.address }
+              const parts = [v.name, v.legal, v.inn && `ИНН ${v.inn}`, v.address].filter(Boolean)
+              return parts.length ? <div className="mt-1.5 text-[12px] leading-snug text-g-mute">{parts.join(' · ')}</div> : null
+            })()}
           </div>
         )}
       </div>

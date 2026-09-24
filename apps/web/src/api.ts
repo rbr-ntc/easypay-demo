@@ -229,9 +229,14 @@ export interface Receipt {
     price: number
     /** Модификаторы: чек обязан называть, бутылка это или бокал. */
     options?: Record<string, string>
+    /** «Прожарка: Medium rare · Гарнир: фри» — названия вариантов, а не ключи. */
+    optionsText?: string | null
     shared: boolean
     share: number | null
   }[]
+  /** Почему строки не равны списанному: поровну, доплата, остаток стола. */
+  note?: string | null
+  venue?: { name: string; address: string | null; legal: string | null; inn: string | null }
 }
 
 export const apiPay = (
@@ -266,8 +271,8 @@ export const apiCashIntent = (guest: string, scope: 'own' | 'equal' | 'full') =>
 /** «Передумал»: снять просьбу о наличных, чтобы официант не шёл зря. */
 export const apiCancelCash = (guest: string) => post<{ ok: true }>('cancelCash', {}, { guest })
 
-export const apiTip = (guest: string, amount: number, idemKey: string) =>
-  post<{ ok: true; amount: number }>('tip', { amount, idemKey }, { guest })
+export const apiTip = (guest: string, amount: number, idemKey: string, method?: string) =>
+  post<{ ok: true; amount: number }>('tip', { amount, idemKey, ...(method ? { method } : {}) }, { guest })
 
 export const apiCall = (guest: string, reason: 'help' | 'bill' | 'water', note?: string) =>
   post<{ ok: true; callId: string; repeated: boolean }>('call', { reason, note }, { guest })

@@ -4,3 +4,6 @@
 -- убирал последнюю позицию из корзины и добавлял новую — она получала тот же
 -- номер, и повтор удаления после обрыва связи сносил уже новую (смена №5).
 alter table table_sessions add column if not exists next_seq int;
+
+-- Способ оплаты чаевых: в чеке чаевых было непонятно, с чего списано.
+alter table tips add column if not exists method text not null default 'sbp';

@@ -224,6 +224,7 @@ export async function createPostgresStore(url?: string): Promise<Store> {
         // Номер и состав чека: единственный документ, который гость может предъявить
         receiptNo: p.receipt_no ?? undefined,
         lines: p.receipt_lines ?? [],
+        idemKey: p.idem_key ?? null,
         at: ms(p.created_at) ?? 0
       })),
       tips: tips.map((t: any) => ({
@@ -231,7 +232,9 @@ export async function createPostgresStore(url?: string): Promise<Store> {
         personaId: t.guest_id,
         amount: Number(t.amount),
         at: ms(t.created_at) ?? 0,
-        waiterId: t.waiter_id
+        // Строковый id, как в сессиях: uuid базы здесь расходился с waiter.id снимка
+        waiterId: staffExt(t.waiter_id),
+        method: t.method ?? 'sbp'
       })),
       calls: calls.map((c: any) => ({
         id: c.id,
@@ -370,11 +373,11 @@ export async function createPostgresStore(url?: string): Promise<Store> {
       await tx`
         insert into payments (
           id, table_session_id, guest_id, amount, scope, method, taken_by,
-          receipt_no, receipt_lines, created_at
+          receipt_no, receipt_lines, idem_key, created_at
         ) values (
           ${p.id}, ${sid}, ${p.personaId}, ${p.amount}, ${p.scope},
           ${p.method ?? "sbp"}, ${staffUuid(p.takenBy)},
-          ${p.receiptNo ?? null}, ${tx.json(p.lines ?? [])}, ${new Date(p.at)}
+          ${p.receiptNo ?? null}, ${tx.json(p.lines ?? [])}, ${p.idemKey ?? null}, ${new Date(p.at)}
         )
         on conflict (id) do nothing
       `
@@ -382,8 +385,8 @@ export async function createPostgresStore(url?: string): Promise<Store> {
 
     for (const t of session.tips) {
       await tx`
-        insert into tips (id, table_session_id, guest_id, waiter_id, amount, created_at)
-        values (${t.id}, ${sid}, ${t.personaId}, ${staffUuid(t.waiterId)}, ${t.amount}, ${new Date(t.at)})
+        insert into tips (id, table_session_id, guest_id, waiter_id, amount, method, created_at)
+        values (${t.id}, ${sid}, ${t.personaId}, ${staffUuid(t.waiterId)}, ${t.amount}, ${t.method ?? 'sbp'}, ${new Date(t.at)})
         on conflict (id) do nothing
       `
     }

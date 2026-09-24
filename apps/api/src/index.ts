@@ -9,7 +9,7 @@ import { existsSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import crypto from 'node:crypto'
-import { amountFor, computeTotals, isBillLine, PAY_SCOPES, round2, splitRounded } from '@easypay/domain/money'
+import { amountFor, computeTotals, equalSplitOf, isBillLine, PAY_SCOPES, round2, splitRounded } from '@easypay/domain/money'
 import type { PayScope } from '@easypay/domain/money'
 import { can, ownsTable } from '@easypay/domain/roles'
 import type { Permission } from '@easypay/domain/roles'
@@ -34,6 +34,7 @@ import { createStore, type Store } from './store/index.ts'
 import { createShiftRoutes } from './shiftApi.ts'
 import { createMenuRoutes, loadPublishedMenu } from './menuApi.ts'
 import { createStaffRoutes, loadStaff } from './staffApi.ts'
+import { receiptLines, receiptNoOf, receiptNote, venueOfReceipt } from './receipt.ts'
 import { createSettingsRoutes, loadSettings } from './settingsApi.ts'
 import { currentSettings, phoneMethodAllowed, settingsVersion } from './settings.ts'
 import {
@@ -777,15 +778,35 @@ function guestAction(t: TableSession, tableId: string, action: string, body: any
     const PHONE_METHODS: PayMethod[] = ['sbp', 'card', 'tpay', 'sber', 'mir']
     const method: PayMethod = PHONE_METHODS.includes(body.method) ? body.method : 'sbp'
     if (!phoneMethodAllowed(method)) return fail(409, 'method disabled')
+    // Этот платёж уже был — повтор после обрыва или рестарта сервера. Кэш
+    // ответов живёт в памяти 10 минут; ключ в самом платеже — пока жив стол.
+    // Раньше повтор получал «нечего платить», и гость думал, что оплата не прошла
+    const idem = asId(body.idemKey)
+    const prior = idem ? t.payments.find(p => p.idemKey === idem && p.personaId === persona.id) : undefined
+    if (prior) {
+      return ok({
+        ok: true,
+        amount: prior.amount,
+        remaining: round2(computeTotals(t, priceOf).remaining),
+        repeated: true,
+        receipt: {
+          no: prior.receiptNo,
+          at: prior.at,
+          amount: prior.amount,
+          scope: prior.scope,
+          method: prior.method,
+          guest: persona.name,
+          table: tableId,
+          lines: prior.lines ?? [],
+          venue: venueOfReceipt(),
+          note: null
+        }
+      })
+    }
     const money = computeTotals(t, priceOf)
     const amount = round2(amountFor(money, persona.id, scope))
     if (amount <= 0) return fail(400, 'nothing to pay')
     // Состав чека фиксируем в момент оплаты: за что именно списаны деньги
-    const covered = t.lines.filter(l => {
-      if (!isBillLine(l)) return false
-      if (scope === 'own') return l.personaId === persona.id || (l.shared && (l.sharedWith ?? []).includes(persona.id))
-      return true
-    })
     const payment = {
       id: crypto.randomUUID(),
       personaId: persona.id,
@@ -793,18 +814,9 @@ function guestAction(t: TableSession, tableId: string, action: string, body: any
       scope,
       method,
       at: Date.now(),
-      // Номер, который гость может назвать в споре
-      receiptNo: `${tableId}-${String(t.payments.length + 1).padStart(3, '0')}-${String(Date.now()).slice(-5)}`,
-      lines: covered.map(l => ({
-        name: dishName(l.dishId),
-        qty: l.qty,
-        price: l.price,
-        // Без модификаторов чек за 2 800 ₽ выглядит как чек за бокал вина:
-        // гостю нечем перепроверить, за что именно с него списали
-        options: l.options ?? {},
-        shared: !!l.shared,
-        share: l.shared ? round2((l.price * l.qty) / Math.max(1, (l.sharedWith ?? []).length || t.personas.length)) : null
-      }))
+      receiptNo: receiptNoOf(tableId),
+      lines: receiptLines(t, money, persona, scope),
+      idemKey: idem
     }
     t.payments.push(payment)
     audit(null, 'оплата', tableId, `${persona.name} · ${scope} · ${method}`, amount, persona)
@@ -838,11 +850,13 @@ function guestAction(t: TableSession, tableId: string, action: string, body: any
         guest: persona.name,
         table: tableId,
         lines: payment.lines,
-        // При оплате за стол в чеке лежит весь его состав, поэтому строки
-        // сами по себе не сходятся со списанным. Показываем, почему.
+        venue: venueOfReceipt(),
+        // Строки чека не всегда равны списанному: весь стол, поровну, доплата.
+        // Показываем, почему, — иначе чек выглядит как ошибка кассы
         tableTotal: round2(money.tableTotal),
         paidBefore: round2(money.paidTotal),
-        note: scope === 'full' && money.paidTotal > 0 ? 'оплачен остаток по столу' : null
+        paidBeforeMine: round2(money.paidOf(persona.id)),
+        note: receiptNote(money, persona, scope, amount, equalSplitOf(money, persona.id))
       }
     })
   }
@@ -858,12 +872,17 @@ function guestAction(t: TableSession, tableId: string, action: string, body: any
     if (round2(already + raw) > cap) return fail(400, 'tip too large', { cap, already: round2(already) })
     const amount = round2(raw)
     const waiter = waiterOfTable(tableId)
+    // Чаевые — тоже списание: с чего именно, гость должен видеть в чеке
+    const TIP_METHODS: PayMethod[] = ['sbp', 'card', 'tpay', 'sber', 'mir']
+    const tipMethod: PayMethod = TIP_METHODS.includes(body.method) ? body.method : 'sbp'
+    if (!phoneMethodAllowed(tipMethod)) return fail(409, 'method disabled')
     const tip = {
       id: crypto.randomUUID(),
       personaId: persona.id,
       amount,
       at: Date.now(),
-      waiterId: waiter?.id ?? null
+      waiterId: waiter?.id ?? null,
+      method: tipMethod
     }
     t.tips.push(tip)
     audit(null, 'чаевые', tableId, `${persona.name} → ${waiter?.name ?? 'официанту'}`, amount, persona)
@@ -872,9 +891,11 @@ function guestAction(t: TableSession, tableId: string, action: string, body: any
       amount,
       // Чаевые — тоже списание, и подтверждение по ним гостю тоже нужно
       receipt: {
-        no: `${tableId}-tip-${String(Date.now()).slice(-5)}`,
+        no: receiptNoOf(tableId, 'tip'),
         at: tip.at,
         amount,
+        method: tipMethod,
+        venue: venueOfReceipt(),
         kind: 'tip',
         guest: persona.name,
         table: tableId,
@@ -1093,8 +1114,9 @@ function staffAction(t: TableSession, tableId: string, action: string, body: any
       takenBy: actor.id,
       takenByName: actor.name,
       at: Date.now(),
-      receiptNo: `${tableId}-${String(t.payments.length + 1).padStart(3, '0')}-${String(Date.now()).slice(-5)}`,
-      lines: []
+      receiptNo: receiptNoOf(tableId),
+      // Гость, заплативший наличными, тоже должен видеть, за что: раньше состав был пуст
+      lines: receiptLines(t, money, persona ?? null, persona ? (scope as PayScope) : 'full')
     })
     t.cashIntent = null
     audit(actor, 'принял наличные', tableId, persona ? `от ${persona.name}` : 'за стол', amount)
@@ -1502,7 +1524,10 @@ async function handleApi(req: any, res: any, url: URL) {
     return json(res, 400, { error: 'bad idemKey', max: 64 })
   }
   const idemKey = IDEMPOTENT_ACTIONS.has(action) ? asId(body.idemKey) : null
-  const cacheKey = idemKey && `${tableId}:${action}:${idemKey}`
+  // Ключ — чей-то: сосед по столу с тем же ключом получал чужой ответ, а его
+  // действие молча не выполнялось. Кто спрашивает — часть ключа кэша
+  const who = String(req.headers['x-guest-token'] ?? req.headers['x-staff-token'] ?? 'anon')
+  const cacheKey = idemKey && `${tableId}:${action}:${hashToken(who).slice(0, 16)}:${idemKey}`
   if (cacheKey) {
     const hit = idempotency.get(cacheKey)
     if (hit) return json(res, hit.status, hit.body)

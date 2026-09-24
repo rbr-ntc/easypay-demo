@@ -150,3 +150,33 @@ test('аллергии меняются после посадки и сразу 
   const ticket = (await kitchen()).tickets.find((t: any) => t.tableId === table)
   assert.deepEqual(ticket.guestAllergies, [{ name: 'Вера', allergies: ['орехи'] }])
 })
+
+test('чеки: доплата и «поровну» с пометкой, наличные с составом, номера уникальны, доли сходятся', async () => {
+  const table = fresh()
+  const gleb = (await join(table, 'Глеб')).body.guestToken
+  const mila = (await join(table, 'Мила')).body.guestToken
+  const nika = (await join(table, 'Ника')).body.guestToken
+  // Общий лимонад на троих: 220 / 3 — хвост копеек
+  await post(`/api/t/${table}/lines`, { dishId: 'lemonade', shared: true }, { guest: gleb })
+  for (const g of [gleb, mila, nika]) await post(`/api/t/${table}/lines`, { dishId: 'espresso' }, { guest: g })
+  for (const g of [gleb, mila, nika]) await post(`/api/t/${table}/send`, { scope: 'mine' }, { guest: g })
+
+  const own = await (await post(`/api/t/${table}/pay`, { scope: 'own', method: 'card', idemKey: fresh() }, { guest: gleb })).json()
+  const lineSum = own.receipt.lines.reduce((s: number, l: any) => s + (l.shared ? l.share : l.price * l.qty), 0)
+  assert.equal(Math.round(lineSum * 100) / 100, own.amount, 'строки чека складываются ровно в списанное')
+  assert.ok(own.receipt.venue?.name)
+
+  const eq = await (await post(`/api/t/${table}/pay`, { scope: 'equal', method: 'sbp', idemKey: fresh() }, { guest: mila })).json()
+  assert.match(eq.receipt.note, /поровну/)
+  assert.notEqual(eq.receipt.no, own.receipt.no)
+
+  const snap = await fetch(`${base}/api/t/${table}`, { headers: { 'x-staff-token': M } }).then(r => r.json())
+  const nikaId = snap.personas.find((p: any) => p.name === 'Ника').id
+  await post(`/api/t/${table}/cash`, { personaId: nikaId, scope: 'own', sessionId: snap.sessionId }, { staff: M })
+  const after = await fetch(`${base}/api/t/${table}`, { headers: { 'x-staff-token': M } }).then(r => r.json())
+  const cash = after.payments.find((p: any) => p.method === 'cash')
+  assert.ok(cash.lines.length > 0, 'у наличных есть состав')
+
+  const tip = await (await post(`/api/t/${table}/tip`, { amount: 100, method: 'card', idemKey: fresh() }, { guest: gleb })).json()
+  assert.equal(tip.receipt.method, 'card')
+})

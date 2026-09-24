@@ -63,6 +63,8 @@ export interface Payment {
   receiptNo?: string
   /** За что именно списаны деньги. */
   lines?: ReceiptLine[]
+  /** Ключ намерения гостя: повтор оплаты после рестарта вернёт этот же чек. */
+  idemKey?: string | null
   id: string
   /** Наличные могут приниматься за стол целиком, без привязки к гостю. */
   personaId: string | null
@@ -77,6 +79,8 @@ export interface Tip {
   amount: number
   at: number
   waiterId: string | null
+  /** С чего списаны: СБП, карта. */
+  method?: PayMethod
 }
 
 export interface Call {
