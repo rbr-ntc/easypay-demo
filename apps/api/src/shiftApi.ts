@@ -119,7 +119,7 @@ export function checkOfOpen(tableId: string, t: TableSession): ShiftCheck {
       method: p.method ?? 'sbp',
       at: p.at,
       guest: nameOf(p.personaId),
-      takenBy: p.takenByName ?? null
+      takenBy: p.takenByName ?? staffName(p.takenBy) ?? null
     })),
     tipsList: t.tips.map(x => ({ amount: x.amount, waiter: waiterOfTable(tableId)?.name ?? null, at: x.at })),
     refunded: round2((t.refunds ?? []).reduce((a, r) => a + r.amount, 0)),
