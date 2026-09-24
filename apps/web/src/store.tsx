@@ -31,7 +31,7 @@ import { can } from '@easypay/domain/roles'
 import type { Permission, Staff } from '@easypay/domain/roles'
 import { newIdemKey } from './keys'
 import { ensureMenu, findDish, onMenuChange } from './data'
-import { ensureSettings, onSettingsChange } from './settings'
+import { ensureSettings, onSettingsChange, SETTINGS } from './settings'
 import type { Animal, LineOptions } from './data'
 import { amountFor, computeTotals as computeMoney, equalSplitOf } from '@easypay/domain/money'
 
@@ -183,8 +183,8 @@ export function computeTotals(snap: Snapshot | null, myId: string | null): Total
    * Борис видел «Оплатить · 500 ₽», а списывалось 1 000 ₽.
    */
   // Кто ещё должен — по серверным итогам: на них и делится «Поровну»
-  const owingCount = server?.byPersona ? server.byPersona.filter(p => p.remaining > 0).length : core.owingCount
-  const moneyView = { remaining, tableTotal, participants, owingCount, remainingOf: () => myRemaining } as any
+  const owingCount = server?.byPersona ? server.byPersona.filter(p => p.paid === 0 && p.remaining > 0).length : core.owingCount
+  const moneyView = { remaining, tableTotal, participants, owingCount, remainingOf: () => myRemaining, paidOf: () => myPaid } as any
   const scopeAmount = (scope: PayScope) => (participants > 0 ? amountFor(moneyView, myId, scope) : 0)
   const equalSplit = equalSplitOf(moneyView, myId)
 
@@ -233,6 +233,7 @@ export function humanError(err: ApiError): string {
     // Частая причина — корзина ещё не отправлена: подсказываем, что сделать
     'nothing to pay': 'Оплачивать пока нечего — если в корзине что-то есть, сначала отправьте на кухню',
     'unknown method': 'Такой способ оплаты не поддерживается',
+    'stale key': 'Счёт изменился с прошлой попытки — нажмите «Оплатить» ещё раз',
     'nothing to send': 'Всё уже отправлено на кухню',
     'already cooking': 'Кухня уже готовит это блюдо — отменить не получится',
     'already cancelled': 'Это блюдо уже отменено',
@@ -272,6 +273,8 @@ export interface PayResult {
   paid: number
   error: string | null
   unknown: boolean
+  /** Код ошибки сервера: `stale key` — ключ попытки устарел, нужен новый. */
+  code?: string | null
 }
 
 /** Чем закончилась попытка заказать: успехом, аллергеном или отказом сервера. */
@@ -443,6 +446,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!snap || !identity) return
     if (snap.limited) {
+      // Сервер прямо сказал: вы больше не за этим столом (убрали, стол пересел)
+      if (snap.revoked) {
+        localStorage.removeItem(ID_KEY)
+        setIdentity(null)
+        setStreamKey(k => k + 1)
+        return
+      }
       if (sawFullSnapshot.current) return
     } else {
       sawFullSnapshot.current = true
@@ -598,14 +608,16 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         // Таймаут и обрыв: запрос ушёл, ответа нет. Платёж мог пройти —
         // говорить «деньги не списаны» здесь было бы враньём про чужие деньги.
         const unknown = !api || api.status === 0 || api.status >= 500
-        return { paid: 0, error: api ? humanError(api) : 'Не получилось — проверьте связь', unknown }
+        return { paid: 0, error: api ? humanError(api) : 'Не получилось — проверьте связь', unknown, code: api?.error ?? null }
       }
     },
     leaveTip: (amount, idemKey) =>
       guard(async () => {
         if (!guestToken() || amount <= 0) return 0
-        // Чаевые — тем же способом, что и оплата: наличные с телефона не уходят
-        const method = ui.payMethod === 'card' ? 'card' : 'sbp'
+        // Чаевые — тем же способом, что и оплата; платил наличными — первым
+        // включённым в заведении способом с телефона (СБП могут выключить)
+        const phone = ['sbp', 'card', 'tpay', 'sber', 'mir']
+        const method = phone.includes(ui.payMethod) ? ui.payMethod : SETTINGS.pay.sbp ? 'sbp' : 'card'
         const r = await apiTip(guestToken()!, amount, idemKey, method)
         return r.amount
       }, 0),
@@ -633,6 +645,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         await apiLeave(guestToken()!)
         localStorage.removeItem(ID_KEY)
         setIdentity(null)
+        // Поток был подписан с токеном — переподписываемся как посторонний
+        setStreamKey(k => k + 1)
         setUi(initialUi)
         toast('Вы вышли из-за стола')
         return true

@@ -86,6 +86,13 @@ export function Payment() {
   useEffect(() => () => clearTimeout(doneTimer.current), [])
   // Менеджер выключил способ или делёж посреди ужина — выбор гостя поправляем сами
   const alone = totals.participants <= 1
+  // Ключ, оставшийся от прошлой попытки, которая всё-таки прошла: гость с тех
+  // пор внёс больше, чем до неё, — значит, это уже новая оплата и новый ключ
+  const myPaidNow = me && snap ? paidBy(snap, me.id) : 0
+  useEffect(() => {
+    const cur = readAttempt()
+    if (cur && myPaidNow > cur.base + 0.01) finishAttempt()
+  }, [myPaidNow])
   useEffect(() => {
     const methods = allowedMethods().map(m => m.id)
     const scopes = allowedScopes(alone)
@@ -111,6 +118,9 @@ export function Payment() {
     // Ключ НЕ меняем: повтор идёт тем же — двойного списания не будет.
     // Причину показываем настоящую: «банк не подтвердил» и «связь оборвалась»
     // это разные вещи, и во втором случае деньги могли уйти.
+    // Ключ прошлой попытки устарел (счёт с тех пор изменился) — следующая
+    // попытка пойдёт с новым, иначе старый чек «оплачивал» бы новое блюдо
+    if (res.code === 'stale key') finishAttempt()
     patch({ payStage: 'failed', payError: res.error, payUnknown: res.unknown })
   }
 

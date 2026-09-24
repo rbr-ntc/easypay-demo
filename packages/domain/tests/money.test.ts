@@ -250,14 +250,23 @@ test('«поровну» делит остаток на тех, кто ещё д
   assert.equal(t1.remaining, 1970)
   assert.equal(amountFor(t1, 'mila', 'equal'), 985)
 
-  // Мила внесла половину остатка и ещё должна 55 — «поровну» Ники делится на двоих
+  // Мила внесла свою половину остатка — «поровну» Ники закрывает стол целиком
   state.payments.push({ personaId: 'mila', amount: 985 })
   const t2 = computeTotals(state, priceOf)
-  assert.equal(t2.remainingOf('mila'), 55)
-  assert.equal(amountFor(t2, 'nika', 'equal'), 492.5)
+  assert.equal(amountFor(t2, 'nika', 'equal'), 985)
+  assert.equal(t2.remaining, 985)
+})
 
-  // Когда должна одна Ника, «поровну» — это её остаток целиком
-  state.payments.push({ personaId: 'mila', amount: 55 })
-  const t3 = computeTotals(state, priceOf)
-  assert.equal(amountFor(t3, 'nika', 'equal'), 930)
+test('«поровну» у всех по очереди закрывает стол, в каком бы порядке ни платили', () => {
+  for (const order of [['gleb', 'mila', 'nika'], ['nika', 'mila', 'gleb'], ['mila', 'gleb', 'nika']]) {
+    const state = {
+      personas: [persona('gleb'), persona('mila'), persona('nika')],
+      lines: [line('gleb', 'x', { price: 1510 }), line('mila', 'x', { price: 1040 }), line('nika', 'x', { price: 930 })],
+      payments: [] as { personaId: string; amount: number }[]
+    }
+    for (const who of order) state.payments.push({ personaId: who, amount: amountFor(computeTotals(state, priceOf), who, 'equal') })
+    const end = computeTotals(state, priceOf)
+    assert.equal(end.remaining, 0, order.join(' → '))
+    assert.deepEqual(state.payments.map(p => p.amount), [1160, 1160, 1160])
+  }
 })

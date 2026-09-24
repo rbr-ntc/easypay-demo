@@ -100,7 +100,9 @@ export function hallPayload(tables: Map<string, TableSession>, shift: any) {
       // Снятое с кухни: еду не отдали, ингредиенты потеряли — это не долг гостя
       writtenOff: round2(shift.writtenOff ?? 0),
       tips: round2(Object.values(shift.tipsByStaff ?? {}).reduce((s: number, x: any) => s + Number(x), 0)),
-      // Каждый официант видит свои чаевые за смену в шапке — раньше их видел только менеджер
+      // Каждый официант видит свои чаевые за смену в шапке — раньше их видел
+      // только менеджер. Лента зала общая для персонала, поэтому карта уходит
+      // целиком; интерфейс показывает каждому только его строку
       tipsByStaff: Object.fromEntries(Object.entries(shift.tipsByStaff ?? {}).map(([id, v]) => [id, round2(Number(v))])),
       overpaid: round2(shift.overpaid),
       tablesWithRevenue: shift.tablesWithRevenue,

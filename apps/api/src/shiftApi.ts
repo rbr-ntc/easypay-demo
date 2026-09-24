@@ -70,11 +70,9 @@ export function reportOfCheck(c: ShiftCheck, w?: ShiftWindow): ReportCheck {
     debt: c.debt,
     overpaid: c.overpaid,
     refunded: c.refunded ?? 0,
-    // «Снято с кухни» — потерянный продукт: снятое с плиты. Отмена гостем до
-    // готовки ничего не стоила кухне и раньше путала менеджера
-    cancelledTotal: round2(
-      c.lines.filter(l => l.cancelled && /с плиты/.test(l.cancelReason ?? '')).reduce((a, l) => a + l.amount, 0)
-    ),
+    // «Снято с кухни» — потерянный продукт: отменённое после того, как взяли в
+    // работу. Одно правило во всех хранилищах и витринах (зал, отчёт, сверка)
+    cancelledTotal: c.cancelledTotal,
     payments: (c.payments ?? []).filter(p => inWindow(p.at, w)).map(p => ({ amount: p.amount, method: p.method, at: p.at })),
     tips: (c.tipsList ?? (c.tips > 0 ? [{ amount: c.tips, waiter: c.waiter, at: c.closedAt ?? c.openedAt }] : [])).filter(t => inWindow(t.at, w)),
     lines: c.lines.map(l => ({ name: l.name, qty: l.qty, amount: l.amount, cancelled: l.cancelled }))
@@ -112,7 +110,7 @@ export function checkOfOpen(tableId: string, t: TableSession): ShiftCheck {
     debt: 0,
     overpaid: 0,
     tips: round2(t.tips.reduce((a, x) => a + x.amount, 0)),
-    cancelledTotal: round2(t.lines.filter(l => l.cancelled).reduce((a, l) => a + l.price * l.qty, 0)),
+    cancelledTotal: round2(t.lines.filter(l => l.cancelled && l.startedAt).reduce((a, l) => a + l.price * l.qty, 0)),
     shiftId: t.shiftId ?? null,
     payments: t.payments.map(p => ({
       amount: p.amount,

@@ -117,7 +117,8 @@ export async function createPostgresStore(url?: string): Promise<Store> {
       overpaid: round2(Number(row.overpaid)),
       tips: round2(tips.reduce((a: number, t: any) => a + Number(t.amount), 0)),
       cancelledTotal: round2(
-        lines.filter((l: any) => l.cancelled_at).reduce((a: number, l: any) => a + Number(l.price) * l.qty, 0)
+        // «Снято с кухни» — потерянный продукт: отменённое ПОСЛЕ того, как взяли в работу
+        lines.filter((l: any) => l.cancelled_at && l.started_at).reduce((a: number, l: any) => a + Number(l.price) * l.qty, 0)
       ),
       shiftId: row.shift_id ?? null,
       payments: payments.map((p: any) => ({
@@ -174,7 +175,9 @@ export async function createPostgresStore(url?: string): Promise<Store> {
       tx`select * from calls where table_session_id = ${row.id} and ack_at is null order by created_at`,
       tx`select * from refunds where table_session_id = ${row.id} order by created_at`,
       // Принятые за 15 минут — гость видит «Оля идёт»
-      tx`select * from calls where table_session_id = ${row.id} and ack_at > now() - interval '15 minutes' order by ack_at`
+      // Только принятые человеком: вызов, снятый системой (гость заплатил),
+      // иначе показывал «Официант идёт к вам», когда никто не шёл
+      tx`select * from calls where table_session_id = ${row.id} and ack_by is not null and ack_at > now() - interval '15 minutes' order by ack_at`
     ])
 
     const ms = (v: any) => (v ? new Date(v).getTime() : null)
@@ -516,7 +519,7 @@ export async function createPostgresStore(url?: string): Promise<Store> {
            ) billed)                                                                    as debt,
           (select coalesce(sum(ol.price * ol.qty), 0)
              from order_lines ol join s on s.id = ol.table_session_id
-            where s.closed_at is not null and ol.cancelled_at is not null)              as written_off,
+            where s.closed_at is not null and ol.cancelled_at is not null and ol.started_at is not null) as written_off,
           (select coalesce(sum(overpaid), 0) from s where closed_at is not null)      as overpaid,
           (select coalesce(sum(p.amount), 0) from payments p join s on s.id = p.table_session_id) as revenue,
           (select coalesce(sum(p.amount), 0) from payments p join s on s.id = p.table_session_id
@@ -772,7 +775,7 @@ export async function createPostgresStore(url?: string): Promise<Store> {
             coalesce((select sum(p.amount) from payments p
                        where p.table_session_id = c.id), 0)                        as paid,
             coalesce((select sum(l.price * l.qty) from order_lines l
-                       where l.table_session_id = c.id and l.cancelled_at is not null), 0) as written_off
+                       where l.table_session_id = c.id and l.cancelled_at is not null and l.started_at is not null), 0) as written_off
           from closed c
         )
         select count(*) as n,

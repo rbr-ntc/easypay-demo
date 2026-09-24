@@ -51,7 +51,7 @@ export interface MoneyTotals {
   paidOf(personaId: string | null): number
   totalOf(personaId: string | null): number
   remainingOf(personaId: string | null): number
-  /** Сколько гостей ещё должны: на них делится «Поровну». */
+  /** Сколько гостей ещё не платили и должны: на них делится «Поровну». */
   owingCount: number
 }
 
@@ -201,7 +201,9 @@ export function computeTotals(state: MoneyState | null | undefined, priceOf: Pri
     paidOf,
     totalOf,
     remainingOf,
-    owingCount: personaIds.filter(id => remainingOf(id) > 0).length
+    // Внёсший что-то уже сделал свою часть «поровну»: если считать и его, то
+    // следующий делит на лишнего, и при «все поровну» стол недоплачивал
+    owingCount: personaIds.filter(id => paidOf(id) === 0 && remainingOf(id) > 0).length
   }
 }
 
@@ -226,8 +228,8 @@ export function amountFor(totals: MoneyTotals, personaId: string | null, scope: 
  * остатка: недоплачивала и шла платить второй раз.
  */
 export function equalSplitOf(totals: MoneyTotals, personaId: string | null): number {
-  const payerOwes = personaId !== null && totals.remainingOf(personaId) > 0
-  return Math.max(1, totals.owingCount + (payerOwes ? 0 : 1))
+  const payerCounted = personaId !== null && totals.paidOf(personaId) === 0 && totals.remainingOf(personaId) > 0
+  return Math.max(1, totals.owingCount + (payerCounted ? 0 : 1))
 }
 
 /**

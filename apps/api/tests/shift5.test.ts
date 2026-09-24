@@ -236,3 +236,33 @@ test('мелочи смены №5: теги вырезаются целиком
 
   assert.equal((await kitchen()).shiftOpen, true, 'кухня знает, что смена идёт')
 })
+
+test('одинокое «<» не съедает остаток комментария с аллергией', async () => {
+  const table = fresh()
+  const g = (await join(table, 'Аня')).body.guestToken
+  await post(`/api/t/${table}/lines`, { dishId: 'espresso', comment: 'без лука, соли <5 г, орехи нельзя!' }, { guest: g })
+  await post(`/api/t/${table}/send`, { scope: 'mine' }, { guest: g })
+  const ticket = (await kitchen()).tickets.find((t: any) => t.tableId === table)
+  assert.equal(ticket.comment, 'без лука, соли 5 г, орехи нельзя!')
+})
+
+test('старый ключ оплаты после нового блюда — 409, а не чужой чек без списания', async () => {
+  const table = fresh()
+  const g = (await join(table, 'Аня')).body.guestToken
+  await post(`/api/t/${table}/lines`, { dishId: 'espresso' }, { guest: g })
+  await post(`/api/t/${table}/send`, { scope: 'mine' }, { guest: g })
+  const key = fresh()
+  assert.equal((await post(`/api/t/${table}/pay`, { scope: 'own', method: 'sbp', idemKey: key }, { guest: g })).status, 200)
+  // Тот же ключ сразу — тот же чек
+  const again = await post(`/api/t/${table}/pay`, { scope: 'own', method: 'sbp', idemKey: key }, { guest: g })
+  assert.equal(again.status, 200)
+  // Десерт — и тот же ключ больше не годится
+  await post(`/api/t/${table}/lines`, { dishId: 'espresso' }, { guest: g })
+  await post(`/api/t/${table}/send`, { scope: 'mine' }, { guest: g })
+  const stale = await post(`/api/t/${table}/pay`, { scope: 'own', method: 'sbp', idemKey: key }, { guest: g })
+  assert.equal(stale.status, 409)
+  assert.equal((await stale.json()).error, 'stale key')
+
+  const tip = await post(`/api/t/${table}/tip`, { amount: 50, method: 'bitcoin', idemKey: fresh() }, { guest: g })
+  assert.equal(tip.status, 400)
+})

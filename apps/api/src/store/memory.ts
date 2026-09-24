@@ -136,7 +136,8 @@ export function createMemoryStore(): Store {
       overpaid: round2(session.overpaid ?? 0),
       tips: round2(session.tips.reduce((s, t) => s + t.amount, 0)),
       cancelledTotal: round2(
-        session.lines.filter(l => l.cancelled).reduce((s, l) => s + l.price * l.qty, 0)
+        // «Снято с кухни» — потерянный продукт: отменённое после того, как взяли в работу
+        session.lines.filter(l => l.cancelled && l.startedAt).reduce((s, l) => s + l.price * l.qty, 0)
       )
     }
     closedChecks.unshift(check)

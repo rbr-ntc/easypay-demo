@@ -181,6 +181,8 @@ function openSessionInPlace(t: TableSession) {
   t.payments = []
   t.tips = []
   t.calls = []
+  // Принятые вызовы прошлой посадки новым гостям не показываем
+  t.callAcks = []
   t.seq = 1
   t.overpaid = 0
   if (t.db) t.db.sessionUuid = null // в БД это будет новая строка сессии
@@ -408,7 +410,12 @@ async function broadcast(store: Store, id: string) {
     const stub = publicStub(session, id)
     for (const res of subs) {
       try {
-        res.write(`data: ${JSON.stringify((res as any).epFullView ? full : stub)}\n\n`)
+        const r = res as any
+        const stillFull = r.epFullView && (r.epStaff || !!guestOf(session, r.epGuestToken))
+        // Был своим, перестал (убрали, стол пересел): говорим прямо, чтобы
+        // клиент забыл личность, а не принял это за запоздавший кадр
+        const view = stillFull ? full : r.epFullView ? { ...stub, revoked: true } : stub
+        res.write(`data: ${JSON.stringify(view)}\n\n`)
       } catch {
         subs.delete(res)
       }
@@ -504,8 +511,12 @@ const PAY_METHODS = new Set(['sbp', 'card', 'cash'])
 const PAY_SCOPE_ALIASES: Record<string, PayScope> = { mine: 'own', all: 'full' }
 const MAX_QTY = 9
 
-/** Тег целиком, а не только скобки: «<img src=x onerror=…> без лука» → «без лука». */
-const TAGS = /<[^>]*>?/g
+/**
+ * Тег целиком, а не только скобки: «<img src=x onerror=…> без лука» → «без лука».
+ * Только ЗАКРЫТЫЙ тег: одинокое «<» («соли <5 г, орехи нельзя!») раньше
+ * съедало остаток текста — вместе с предупреждением об аллергии.
+ */
+const TAGS = /<[^<>]*>/g
 
 function sanitizeName(name: unknown): string {
   return String(name ?? '')
@@ -793,19 +804,18 @@ function guestAction(t: TableSession, tableId: string, action: string, body: any
     const scope: PayScope = wanted
     // Делёж счёта выключен в настройках — платят за весь стол целиком
     if (!currentSettings().pay.split && scope !== 'full' && t.personas.length > 1) return fail(409, 'split disabled')
-    // С телефона платят только безналом: наличные принимает официант и подтверждает сам.
-    // Способ берём тот, который гость выбрал на экране: раньше любой выбор
-    // записывался как СБП, и список оплат врал официанту в лицо.
-    const PHONE_METHODS: PayMethod[] = ['sbp', 'card', 'tpay', 'sber', 'mir']
-    // Незнакомый способ — ошибка, а не молчаливое «СБП»: иначе в отчёте осядет не то
-    if (body.method !== undefined && !PHONE_METHODS.includes(body.method)) return fail(400, 'unknown method', { allowed: PHONE_METHODS })
-    const method: PayMethod = PHONE_METHODS.includes(body.method) ? body.method : 'sbp'
-    if (!phoneMethodAllowed(method)) return fail(409, 'method disabled')
     // Этот платёж уже был — повтор после обрыва или рестарта сервера. Кэш
     // ответов живёт в памяти 10 минут; ключ в самом платеже — пока жив стол.
     // Раньше повтор получал «нечего платить», и гость думал, что оплата не прошла
-    const idem = asId(body.idemKey)
-    const prior = idem ? t.payments.find(p => p.idemKey === idem && p.personaId === persona.id) : undefined
+    // Ключ хранится с персоной: два гостя с одинаковым ключом не упрутся в
+    // уникальность (table_session_id, idem_key) в базе
+    const idem = asId(body.idemKey) ? `${persona.id}:${asId(body.idemKey)}` : null
+    const prior = idem ? t.payments.find(p => p.idemKey === idem) : undefined
+    // Повтор честен, только если счёт с тех пор не менялся: ключ, забытый на
+    // клиенте после обрыва, иначе «оплачивал» десерт старым чеком — ничего не списав
+    if (prior && (prior.scope !== scope || t.lines.some(l => isBillLine(l) && (l.sentAt ?? 0) > prior.at))) {
+      return fail(409, 'stale key')
+    }
     if (prior) {
       return ok({
         ok: true,
@@ -826,6 +836,14 @@ function guestAction(t: TableSession, tableId: string, action: string, body: any
         }
       })
     }
+    // С телефона платят только безналом: наличные принимает официант и подтверждает сам.
+    // Способ берём тот, который гость выбрал на экране: раньше любой выбор
+    // записывался как СБП, и список оплат врал официанту в лицо.
+    const PHONE_METHODS: PayMethod[] = ['sbp', 'card', 'tpay', 'sber', 'mir']
+    // Незнакомый способ — ошибка, а не молчаливое «СБП»: иначе в отчёте осядет не то
+    if (body.method !== undefined && !PHONE_METHODS.includes(body.method)) return fail(400, 'unknown method', { allowed: PHONE_METHODS })
+    const method: PayMethod = PHONE_METHODS.includes(body.method) ? body.method : 'sbp'
+    if (!phoneMethodAllowed(method)) return fail(409, 'method disabled')
     const money = computeTotals(t, priceOf)
     const amount = round2(amountFor(money, persona.id, scope))
     if (amount <= 0) return fail(400, 'nothing to pay')
@@ -897,6 +915,7 @@ function guestAction(t: TableSession, tableId: string, action: string, body: any
     const waiter = waiterOfTable(tableId)
     // Чаевые — тоже списание: с чего именно, гость должен видеть в чеке
     const TIP_METHODS: PayMethod[] = ['sbp', 'card', 'tpay', 'sber', 'mir']
+    if (body.method !== undefined && !TIP_METHODS.includes(body.method)) return fail(400, 'unknown method', { allowed: TIP_METHODS })
     const tipMethod: PayMethod = TIP_METHODS.includes(body.method) ? body.method : 'sbp'
     if (!phoneMethodAllowed(tipMethod)) return fail(409, 'method disabled')
     const tip = {
@@ -1506,7 +1525,8 @@ async function handleApi(req: any, res: any, url: URL) {
     const token = req.headers['x-guest-token'] ?? url.searchParams.get('g')
     // Свой видит стол целиком, посторонний — только занят он или нет.
     // Рвать подписку нельзя: гость подключается ещё до того, как представился.
-    const full = !!guestOf(t, token) || allowed(actorFrom(req, url), 'table')
+    const staffFull = allowed(actorFrom(req, url), 'table')
+    const full = !!guestOf(t, token) || staffFull
 
     res.writeHead(200, {
       'Content-Type': 'text/event-stream',
@@ -1519,6 +1539,11 @@ async function handleApi(req: any, res: any, url: URL) {
     const subs = streams.get(tableId)!
     // Помечаем подписку: рассылка выберет по ней, что этому клиенту можно видеть
     ;(res as any).epFullView = full
+    // Право гостя проверяется на КАЖДОЙ рассылке: убранный со стола гость
+    // (removeGuest, «я здесь по ошибке») иначе продолжал получать чужие имена,
+    // блюда, платежи и аллергии до конца подписки
+    ;(res as any).epStaff = staffFull
+    ;(res as any).epGuestToken = staffFull ? null : token ?? null
     if (subs.size >= MAX_STREAMS_PER_TABLE) {
       res.end()
       return
@@ -1563,10 +1588,14 @@ async function handleApi(req: any, res: any, url: URL) {
   const idemKey = IDEMPOTENT_ACTIONS.has(action) ? asId(body.idemKey) : null
   // Ключ — чей-то: сосед по столу с тем же ключом получал чужой ответ, а его
   // действие молча не выполнялось. Кто спрашивает — часть ключа кэша
-  const who = String(req.headers['x-guest-token'] ?? req.headers['x-staff-token'] ?? 'anon')
+  const who = String(req.headers['x-guest-token'] ?? body.guestToken ?? req.headers['x-staff-token'] ?? 'anon')
   const cacheKey = idemKey && `${tableId}:${action}:${hashToken(who).slice(0, 16)}:${idemKey}`
+  // Оплату кэш не отвечает: повтор решает сам платёж (ключ хранится в нём) —
+  // под блокировкой стола и с проверкой, что счёт с тех пор не менялся.
+  // Кэш отдал бы старый чек на десерт, заказанный после первой попытки
+  const cacheable = action !== 'pay'
   if (cacheKey) {
-    const hit = idempotency.get(cacheKey)
+    const hit = cacheable ? idempotency.get(cacheKey) : undefined
     if (hit) return json(res, hit.status, hit.body)
 
     // Тот же ключ уже выполняется — не начинаем второй раз, ждём первый.
@@ -1584,7 +1613,7 @@ async function handleApi(req: any, res: any, url: URL) {
   const work = (async () => {
     const result = await store.withTable(tableId, session => mutate(session, tableId, action, body, actor, req))
     await flushAudit(store)
-    if (cacheKey && result.status === 200) idemRemember(cacheKey, result.status, result.body)
+    if (cacheKey && cacheable && result.status === 200) idemRemember(cacheKey, result.status, result.body)
     return result
   })()
 
