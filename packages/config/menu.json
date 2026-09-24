@@ -72,6 +72,7 @@
       "tags": [
         "веган"
       ],
+      "photo": true,
       "allergens": [
         "кунжут",
         "глютен"
@@ -118,6 +119,7 @@
       "serving": "240 г",
       "kcal": 390,
       "tags": [],
+      "photo": true,
       "allergens": [
         "рыба",
         "кунжут",
@@ -312,6 +314,7 @@
       "serving": "400 г",
       "kcal": 430,
       "tags": [],
+      "photo": true,
       "allergens": [
         "рыба"
       ]
@@ -324,6 +327,7 @@
       "serving": "320 г",
       "kcal": 690,
       "tags": [],
+      "photo": true,
       "allergens": [
         "глютен",
         "лактоза",
@@ -447,6 +451,7 @@
       "serving": "350 г",
       "kcal": 810,
       "tags": [],
+      "photo": true,
       "allergens": [
         "глютен",
         "лактоза",
@@ -532,6 +537,7 @@
       "serving": "160 г",
       "kcal": 420,
       "tags": [],
+      "photo": true,
       "allergens": [
         "глютен",
         "лактоза",
@@ -561,6 +567,7 @@
       "serving": "170 г",
       "kcal": 400,
       "tags": [],
+      "photo": true,
       "allergens": [
         "глютен",
         "лактоза",
@@ -695,6 +702,7 @@
       "serving": "500 мл",
       "kcal": 180,
       "tags": [],
+      "photo": true,
       "allergens": []
     },
     {
@@ -716,6 +724,7 @@
       "serving": "500 мл",
       "kcal": 0,
       "tags": [],
+      "photo": true,
       "options": [
         {
           "id": "gas",

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { StoreProvider, useStore } from './store'
 import { Menu } from './screens/Menu'
 import { Table } from './screens/Table'
@@ -6,7 +6,7 @@ import { Payment } from './screens/Payment'
 import { Done } from './screens/Done'
 import { DishSheet } from './sheets/DishSheet'
 import { NameSheet } from './sheets/NameSheet'
-import { SendSheet } from './sheets/SendSheet'
+import { Welcome } from './screens/Welcome'
 import { CallSheet } from './sheets/CallSheet'
 import { Waiter } from './Waiter'
 import { Hall } from './hall/Hall'
@@ -16,8 +16,8 @@ import { StaffGate } from './staff/StaffGate'
 import { tableId } from './api'
 import { seatsOfTable } from './hallConfig'
 import { QrTent } from './QrTent'
-import { PhotoCredits } from './screens/PhotoCredits'
-import { Toast } from './ui'
+import { currentSeason, seasonVars } from './guest/showcase'
+import { GToast } from './guest/parts'
 
 function ConnBanner() {
   const { connected, snap } = useStore()
@@ -51,7 +51,7 @@ function useAutoNav() {
     // платил — уводить с оплаты некуда, кроме стола
     if (fullyPaid && ui.screen === 'payment' && ui.payStage !== 'processing' && ui.lastPaid === 0) {
       patch({ screen: 'table', payStage: 'form', sheet: null })
-      toast('Стол уже полностью оплачен 🎉')
+      toast('Стол уже полностью оплачен')
       return
     }
     // Кто-то отправил всё на кухню, пока я смотрел меню: на «Столе» это видно
@@ -64,27 +64,34 @@ function useAutoNav() {
 }
 
 function Guest() {
-  const { ui } = useStore()
+  const { ui, connected, snap } = useStore()
   useAutoNav()
-  // Секунда — общий тик для таймеров стадий на экране «Стол»
-  const [now, setNow] = useState(Date.now())
-  useEffect(() => {
-    const t = setInterval(() => setNow(Date.now()), 1000)
-    return () => clearInterval(t)
-  }, [])
+  // Сезон и гамма — переменные корня: фон, акцент и кнопки меняют тон вместе
+  const vars = useMemo(() => seasonVars(currentSeason()), [])
   return (
-    <div className="ep-guest" data-screen={ui.screen}>
+    <div className="ep-guest g4" data-screen={ui.screen} style={vars as React.CSSProperties}>
+      {ui.screen === 'welcome' && <Welcome />}
       {ui.screen === 'menu' && <Menu />}
-      {ui.screen === 'table' && <Table now={now} />}
+      {ui.screen === 'table' && <Table />}
       {ui.screen === 'payment' && <Payment />}
       {ui.screen === 'done' && <Done />}
 
       {ui.sheet === 'dish' && <DishSheet />}
       {ui.sheet === 'name' && <NameSheet />}
-      {ui.sheet === 'send' && <SendSheet />}
       {ui.sheet === 'call' && <CallSheet />}
 
-      {ui.toast && <Toast msg={ui.toast} />}
+      {/* Связь пропала после того, как данные уже были: показываем последнее известное */}
+      {!connected && snap && (
+        <div
+          role="status"
+          className="absolute top-0 right-0 left-0 z-[25] px-4 py-2.5 text-center text-[13px]"
+          style={{ background: '#3A2A22', color: '#FFD9CB' }}
+        >
+          Нет связи — показываем последнее, что знаем. Заказ и оплата подождут.
+        </div>
+      )}
+
+      {ui.toast && <GToast msg={ui.toast} />}
     </div>
   )
 }
@@ -162,8 +169,6 @@ export default function App() {
         )
       ) : route.startsWith('#/qr') ? (
         <QrTent />
-      ) : route.startsWith('#/credits') ? (
-        <PhotoCredits />
       ) : tableId && seatsOfTable(tableId) !== null ? (
         <Guest />
       ) : (

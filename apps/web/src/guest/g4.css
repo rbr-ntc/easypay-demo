@@ -1,0 +1,173 @@
+/**
+ * Гость 4.x — «Времена года», тёмная тёплая тема.
+ *
+ * Цвета — токены, а не hex в компонентах: в 3.0 экраны жили на 77 своих
+ * цветах мимо темы, и дизайн-система до кода не доехала. Здесь каждый цвет
+ * гостевого экрана имеет имя, и экран пишет `bg-g-s1`, а не `#1C1A18`.
+ *
+ * Фон и акцент подкрашены тоном сезона — переменные `--g-paper`, `--g-s1`,
+ * `--g-sand`, `--g-acc`, `--g-ink` ставит корень гостя (`seasonVars`), здесь
+ * только значения по умолчанию (осень, «нежная» гамма).
+ */
+
+@theme inline {
+  --color-g-paper: var(--g-paper);
+  --color-g-s1: var(--g-s1);
+  --color-g-sand: var(--g-sand);
+  --color-g-acc: var(--g-acc);
+  --color-g-ink: var(--g-ink);
+  --color-g-line: rgba(255, 255, 255, 0.1);
+
+  /* Текст. Контраст — на --g-paper (≈ #1B1917) */
+  --color-g-fg: #f3f0ea; /* основной, 15:1 */
+  --color-g-body: #cfc9bf; /* абзацы, 11:1 */
+  --color-g-soft: #c9c2b6; /* подписи на фото, 10:1 */
+  --color-g-mute: #a8a298; /* вторичный, 7:1 */
+  --color-g-dim: #8f897f; /* неактивные вкладки, 5:1 */
+  --color-g-on-acc: #1a1612; /* текст на акценте — всегда тёмный */
+
+  /* Смысловые — не сезонные: аллергия должна выглядеть одинаково круглый год */
+  --color-g-warn: #ff9a7a;
+  --color-g-warn-photo: #ffb9a3; /* то же поверх фото — светлее, чтобы читалось */
+  --color-g-ok: #8fd4a4;
+  --color-g-tan: #e8c9a8;
+  --color-g-cream: #f6ebdd; /* текст на коричневой кнопке */
+
+  --font-g-serif: 'Cormorant Garamond', Georgia, 'Times New Roman', serif;
+  --font-g-sans: 'Manrope', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
+.g4 {
+  --g-paper: oklch(0.17 0.006 68);
+  --g-s1: oklch(0.215 0.007 68);
+  --g-sand: oklch(0.27 0.008 68);
+  --g-acc: oklch(0.8 0.085 68);
+  --g-ink: oklch(0.87 0.068 68);
+
+  background: var(--g-paper);
+  color: #f3f0ea;
+  font-family: var(--font-g-sans);
+  font-weight: 400;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Заголовки-«моменты»: название блюда, стол, «Спасибо» */
+.g4 .g-serif {
+  font-family: var(--font-g-serif);
+  font-weight: 600;
+  line-height: 1;
+}
+
+.g4 .g-num {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Главная кнопка: коричневое стекло. Контраст #F6EBDD на ней ≈ 9:1 */
+.g4 .g-cta {
+  background: rgba(120, 82, 54, 0.42);
+  color: #f6ebdd;
+  font-weight: 700;
+  -webkit-backdrop-filter: blur(14px);
+  backdrop-filter: blur(14px);
+}
+
+/* Тёмное стекло поверх фото: «Официант», «назад», «✕» */
+.g4 .g-glass {
+  background: rgba(20, 18, 16, 0.42);
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  color: #ffffff;
+  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
+}
+
+/* Плавающая панель внизу: «мой стол», количество и цена в карточке блюда */
+.g4 .g-dock {
+  background: rgba(44, 40, 36, 0.9);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 16px 40px -12px rgba(0, 0, 0, 0.7);
+  -webkit-backdrop-filter: blur(16px);
+  backdrop-filter: blur(16px);
+}
+
+.g4 .g-sbp {
+  background: linear-gradient(118deg, #5a1e9b 0%, #8e2a8c 46%, #e5097f 100%);
+  color: #ffffff;
+}
+
+/* Без backdrop-filter стекло становится сплошным — иначе белое по фото */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .g4 .g-glass {
+    background: rgba(20, 18, 16, 0.82);
+  }
+  .g4 .g-cta {
+    background: #4a3a2c;
+  }
+  .g4 .g-dock {
+    background: rgba(44, 40, 36, 0.98);
+  }
+}
+
+.g4 .g-noscroll {
+  scrollbar-width: none;
+}
+
+@keyframes g-up {
+  from {
+    transform: translateY(40px);
+    opacity: 0;
+  }
+  to {
+    transform: none;
+    opacity: 1;
+  }
+}
+
+@keyframes g-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes g-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.g4 .g-anim-up {
+  animation: g-up 0.3s ease both;
+}
+
+.g4 .g-anim-fade {
+  animation: g-fade 0.25s ease both;
+}
+
+.g4 .g-spin {
+  animation: g-spin 0.8s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .g4 *,
+  .g4 *::before,
+  .g4 *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+}
+
+/* Плавное затемнение фото к фону страницы — общее для шапки, приветствия и блюда */
+.g4 .g-photo-fade {
+  background: linear-gradient(
+    to bottom,
+    rgba(14, 13, 12, 0.72) 0%,
+    rgba(14, 13, 12, 0.4) 12%,
+    rgba(14, 13, 12, 0) 24%,
+    rgba(14, 13, 12, 0) 42%,
+    color-mix(in oklch, var(--g-paper) 35%, transparent) 62%,
+    color-mix(in oklch, var(--g-paper) 75%, transparent) 80%,
+    var(--g-paper) 97%
+  );
+}

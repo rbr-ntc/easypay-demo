@@ -1,376 +1,479 @@
-import { useEffect, useRef, useState } from 'react'
-import { CATEGORIES, MENU, HALL_LABEL, dishMark, possibleAllergens } from '../data'
-import { allergenGenitive } from '@easypay/domain/allergens'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { RESTAURANT, defaultOptions } from '../data'
 import type { Dish } from '../data'
 import { tableId } from '../api'
+import type { ServerLine } from '../api'
 import { Avatar } from '../avatars'
 import { useStore } from '../store'
-import { fmt, listNames } from '../format'
+import { fmt, plural } from '../format'
+import { newIdemKey } from '../keys'
+import { sharersOf } from '@easypay/domain/money'
+import { KITCHEN_UNTIL, collections, currentSeason, dishTall, dishThumb } from '../guest/showcase'
+import type { Collection, ShowcaseSection } from '../guest/showcase'
+import { allergyHits, allergyNote } from '../guest/allergy'
+import { AddButton, AvatarStack } from '../guest/parts'
 
 /**
- * Фотография блюда. Настоящее фото лежит в public/dishes; у блюд без фото —
- * полосатая заглушка с названием. Это временное решение под реальные фото,
- * а не приём: заглушка честно выглядит заглушкой и не притворяется дизайном.
+ * Меню 4.x — «Времена года».
+ *
+ * Шапка на 2/3 экрана — заглавное блюдо подборки, кадры сменяются и медленно
+ * наезжают. Прокрутка уводит в меню: фото растворяется в фоне, подборки
+ * прилипают сверху. Крупные карточки листаются вбок, быстрые — плитками.
+ *
+ * Меню 3.0 было одной лентой в 10 000 px из карточек по 280 px; здесь
+ * вертикаль — разделы, а блюда внутри раздела идут вбок.
  */
-function DishPhoto({ dish, className = '' }: { dish: Dish; className?: string }) {
-  if (dish.photo) {
-    return (
-      <img
-        src={`./dishes/${dish.id}.jpg`}
-        alt={dish.name}
-        loading="lazy"
-        className={`absolute inset-0 size-full object-cover ${className}`}
-      />
-    )
-  }
-  return (
-    <div
-      className={`absolute inset-0 flex items-end p-4 ${className}`}
-      style={{
-        background:
-          'repeating-linear-gradient(135deg, #0C2C21 0 14px, #10382A 14px 28px)'
-      }}
-    >
-      <span className="font-mono text-xs tracking-widest uppercase" style={{ color: '#5E7A6C' }}>
-        фото готовится
-      </span>
-    </div>
-  )
-}
 
-export { DishPhoto }
+const HERO_H = 720
+/** Высота прилипшей панели: подборки + якоря разделов. */
+const STICK = 92
+const SLIDE_MS = 5000
 
-/**
- * Ищем по названию, составу, тегам, РАЗДЕЛУ и аллергенам — гость помнит блюдо
- * по-разному. Без раздела запрос «вино» не находил ничего, хотя раздел «Вино и
- * бар» есть; без аллергенов «сельдерей» не находил стейк, в котором он указан.
- */
-function matches(dish: Dish, q: string, category: string): boolean {
-  const needle = q.trim().toLowerCase()
-  if (!needle) return true
-  const hay = [dish.name, dish.desc, category, ...(dish.tags ?? []), ...possibleAllergens(dish)]
-    .join(' ')
-    .toLowerCase()
-  return hay.includes(needle)
-}
-
-/** Подсветка совпадения: гость должен видеть, за что зацепился поиск. */
-function Highlight({ text, q }: { text: string; q: string }) {
-  const needle = q.trim()
-  if (!needle) return <>{text}</>
-  const at = text.toLowerCase().indexOf(needle.toLowerCase())
-  if (at < 0) return <>{text}</>
-  return (
-    <>
-      {text.slice(0, at)}
-      <mark style={{ background: '#D5F94E', color: '#062119' }}>{text.slice(at, at + needle.length)}</mark>
-      {text.slice(at + needle.length)}
-    </>
-  )
-}
+const prefersReducedMotion = () =>
+  typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
 
 export function Menu() {
-  const { ui, patch, me, snap, totals } = useStore()
-  const [query, setQuery] = useState('')
-  const activeCat = useRef<HTMLButtonElement>(null)
+  const { patch, me, snap, totals, addLine, toast } = useStore()
+  const season = useMemo(() => currentSeason(), [])
+  const colls = useMemo(() => collections(season), [season])
+  const [collId, setCollId] = useState(colls[0]?.id ?? 'all')
+  const coll = colls.find(c => c.id === collId) ?? colls[0]
 
-  // Выбранная категория сама подъезжает в поле зрения: иначе после «Вино и бар»
-  // гость возвращается в меню и не видит, где он находится
-  useEffect(() => {
-    activeCat.current?.scrollIntoView({ inline: 'center', block: 'nearest', behavior: 'smooth' })
-  }, [ui.menuCat])
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const [collapsed, setCollapsed] = useState(false)
+  const [active, setActive] = useState(0)
 
-  // Категория из состояния может устареть после правки меню — падаем на первую
-  const cat = MENU[ui.menuCat] ? ui.menuCat : CATEGORIES[0]
-  const searching = query.trim().length > 0
-  // При поиске категории не при чём: гость ищет по всему меню
-  const items = searching
-    ? CATEGORIES.flatMap(c => (MENU[c] ?? []).filter(d => matches(d, query, c)))
-    : (MENU[cat] ?? [])
+  /**
+   * Позиция раздела внутри прокрутки. Не `offsetTop`: он считается от
+   * ближайшего позиционированного предка, а блок разделов нарочно `relative`
+   * (иначе шапка перекрывает первый заголовок) — и якоря съезжали на раздел.
+   */
+  const sectionTops = (el: HTMLElement) => {
+    const base = el.getBoundingClientRect().top - el.scrollTop
+    return Array.from(el.querySelectorAll<HTMLElement>('[data-sec]')).map(s => s.getBoundingClientRect().top - base)
+  }
 
-  // Отменённое не считаем: иначе футер меню говорил «1 блюдо», а экран
-  // «Стол» на тот же вопрос отвечал «Пока пусто»
-  const mine = me ? (snap?.lines ?? []).filter(l => !l.cancelled && (l.personaId === me.id || l.shared)) : []
-  const draftCount = mine.filter(l => !l.sent).length
-  const neighbours = (snap?.personas ?? []).filter(p => p.id !== me?.id)
-  const myAllergies = me?.allergies ?? []
+  // Нажатый якорь держим подсвеченным, пока идёт прокрутка к нему: последние
+  // разделы короткие и не доезжают до верха — иначе подсвечивался соседний
+  const pinned = useRef<{ i: number; until: number } | null>(null)
 
-  /** Блюдо, которое лично этому гостю нельзя: не «возможно», а по его списку. */
-  const forbidden = (dish: Dish) => possibleAllergens(dish).filter(a => myAllergies.includes(a))
+  const scrollRaf = useRef(0)
+  useEffect(() => () => cancelAnimationFrame(scrollRaf.current), [])
+  // Скролл шлёт десятки событий в секунду, а спай разделов читает геометрию —
+  // считаем не чаще одного раза за кадр
+  const onScroll = () => {
+    cancelAnimationFrame(scrollRaf.current)
+    scrollRaf.current = requestAnimationFrame(spy)
+  }
 
-  // Вызов — МОЙ, а не первый в очереди стола: чужая просьба о воде гасила
-  // кнопку у соседа, которому надо сказать про аллергию, и он молча ждал
-  const myCall = (snap?.calls ?? []).some(c => c.personaId === me?.id)
+  const spy = () => {
+    const el = scrollRef.current
+    if (!el) return
+    setCollapsed(el.scrollTop > HERO_H - 170)
+    if (pinned.current && Date.now() < pinned.current.until) return
+    pinned.current = null
+    let idx = 0
+    sectionTops(el).forEach((top, i) => {
+      if (top - STICK - 30 <= el.scrollTop) idx = i
+    })
+    setActive(idx)
+  }
+
+  const goSection = (i: number) => {
+    const el = scrollRef.current
+    const top = el ? sectionTops(el)[i] : undefined
+    if (!el || top === undefined) return
+    setActive(i)
+    pinned.current = { i, until: Date.now() + 900 }
+    el.scrollTo({ top: top - STICK, behavior: 'smooth' })
+  }
+
+  const pickCollection = (id: string) => {
+    setCollId(id)
+    setActive(0)
+    // Подборка сменилась — возвращаемся к её началу, но не к шапке:
+    // человек уже листал меню и хочет видеть блюда, а не заглавное фото
+    const el = scrollRef.current
+    if (el && el.scrollTop > HERO_H - 340) el.scrollTo({ top: HERO_H - 340 })
+  }
+
+  // ── Сколько каждого блюда уже в МОЁМ черновике — «✓ 2» на кнопке ──
+  const myDraftQty = useMemo(() => {
+    const m = new Map<string, number>()
+    if (!me || !snap) return m
+    for (const l of snap.lines) {
+      if (l.personaId === me.id && !l.sent && !l.cancelled) m.set(l.dishId, (m.get(l.dishId) ?? 0) + l.qty)
+    }
+    return m
+  }, [me, snap])
+
+  const quickAdd = async (dish: Dish, e?: React.MouseEvent) => {
+    e?.stopPropagation()
+    const options = defaultOptions(dish)
+    // Выбор или риск — только через карточку: быстрый плюс не должен молча
+    // решать за гостя прожарку или аллерген
+    if (dish.stop || (dish.options ?? []).length > 0 || (me && allergyHits(dish, me.allergies ?? []).length > 0)) {
+      patch({ sheet: 'dish', currentDishId: dish.id })
+      return
+    }
+    if (!me) {
+      patch({ sheet: 'name', pendingAdd: { dishId: dish.id, qty: 1, shared: false, options, idemKey: newIdemKey() } })
+      return
+    }
+    // Каждый тап плюса — осознанная порция: на кнопке сразу видно «✓ 2».
+    // Защита от случайных дублей нужна в карточке блюда, где жмут «В стол».
+    const res = await addLine(dish.id, 1, false, options, undefined, false, newIdemKey())
+    if (res.allergens && res.allergens.length > 0) {
+      patch({ sheet: 'dish', currentDishId: dish.id, pendingAllergens: res.allergens })
+      return
+    }
+    if (res.ok) toast(`${dish.name} — добавлено`)
+  }
+  const openDish = (dish: Dish) => patch({ sheet: 'dish', currentDishId: dish.id })
+
+  // ── Кто за столом: я первым, дальше остальные ──
+  const people =
+    snap?.status === 'open'
+      ? [...snap.personas].sort((a, b) => (a.id === me?.id ? -1 : b.id === me?.id ? 1 : 0))
+      : []
+  const iCalled = !!me && (snap?.calls ?? []).some(c => c.personaId === me.id)
+  const onCall = () => {
+    if (iCalled) return
+    // Звать официанта может только тот, кто представился: иначе он не знает,
+    // к кому идти. После имени шторка вызова откроется сама — не обещаем впустую
+    if (!me) {
+      patch({ sheet: 'name', afterJoin: 'call' })
+      return
+    }
+    patch({ sheet: 'call' })
+  }
+
+  // ── Футер «мой стол» ──
+  const personaIds = (snap?.personas ?? []).map(p => p.id)
+  const isMine = (l: ServerLine) =>
+    !!me &&
+    !l.cancelled &&
+    (l.personaId === me.id || (l.sent && l.shared && sharersOf(l as any, personaIds).includes(me.id)))
+  const myLines = (snap?.lines ?? []).filter(isMine)
+  const count = myLines.reduce((a, l) => a + (l.personaId === me?.id ? l.qty : 1), 0)
+  const draftCount = myLines.filter(l => !l.sent).reduce((a, l) => a + l.qty, 0)
+
+  const mineAllergies = me?.allergies ?? []
 
   return (
-    <div className="ep-screen">
-      {/* Шапка на еловом: кто я, где я, с кем — и как позвать человека */}
-      <div className="ep-forest shrink-0 rounded-b-[26px] px-5 pt-4 pb-4.5">
-        <div className="flex items-center gap-3">
-          {me ? (
-            <div className="shrink-0 rounded-full" style={{ boxShadow: '0 0 0 2px #D5F94E' }}>
-              <Avatar animal={me.animal} size={44} label={me.name} />
+    <div className="absolute inset-0">
+      <div ref={scrollRef} onScroll={onScroll} className="g-noscroll absolute inset-0 overflow-y-auto">
+        <Hero coll={coll} onOpen={openDish} />
+
+        {/* Над шапкой: кто за столом, стол, официант */}
+        <div className="absolute top-4.5 right-4 left-4 z-[3] flex items-center gap-2.5">
+          {people.length > 0 && <AvatarStack personas={people} size={32} />}
+          <div className="min-w-0 flex-1 pl-2.5 text-white" style={{ textShadow: '0 1px 8px rgba(0,0,0,.55)' }}>
+            <div className="truncate text-[15px] font-bold">
+              {RESTAURANT} · стол {tableId}
             </div>
-          ) : (
-            <div className="flex size-11 shrink-0 items-center justify-center rounded-full bg-primary text-xl font-extrabold text-primary-content">
-              e
-            </div>
-          )}
-          <div className="min-w-0 flex-1">
-            <div className="truncate text-[17px] leading-tight font-extrabold tracking-tight">
-              {me ? `${me.name} · стол ${tableId}` : `Стол ${tableId}`}
-            </div>
-            <div className="truncate text-[13px] font-semibold" style={{ color: '#8CA396' }}>
-              {HALL_LABEL}
-              {neighbours.length > 0 ? ` · с вами ${listNames(neighbours.map(p => p.name))}` : ''}
-            </div>
+            {KITCHEN_UNTIL && <div className="text-[13px] text-white">кухня до {KITCHEN_UNTIL}</div>}
           </div>
-          <button
-            aria-label="Позвать официанта"
-            disabled={!me || myCall}
-            onClick={() => patch({ sheet: 'call' })}
-            className="h-11 shrink-0 rounded-full px-4 text-[13px] font-bold disabled:opacity-45"
-            style={{ border: '1px solid rgba(213,249,78,.35)', background: 'rgba(213,249,78,.12)', color: '#D5F94E' }}
-          >
-            {myCall ? 'Идёт ✓' : 'Официант'}
+          <button onClick={onCall} className="g-glass h-11 shrink-0 rounded-full px-4 text-[13px] font-bold">
+            {iCalled ? 'Идёт ✓' : 'Официант'}
           </button>
         </div>
 
-        <label
-          className="mt-3.5 flex h-12 items-center gap-2.5 rounded-field px-4"
-          style={{ background: 'rgba(250,245,234,.1)', border: '1px solid rgba(250,245,234,.14)' }}
-        >
-          <span aria-hidden style={{ color: '#8CA396' }}>
-            ⌕
-          </span>
-          <input
-            value={query}
-            onChange={e => setQuery(e.target.value)}
-            placeholder="Найти блюдо или напиток"
-            className="min-w-0 flex-1 bg-transparent text-[15px] font-semibold outline-none placeholder:text-[#8CA396]"
+        {/* Подборки и якоря — прилипают, фон проявляется, когда шапка ушла */}
+        <nav className="sticky top-0 z-[4] -mt-40 pt-3">
+          <div
+            className="pointer-events-none absolute inset-0 bg-g-paper transition-opacity duration-200"
+            style={{ opacity: collapsed ? 1 : 0, boxShadow: '0 1px 0 rgba(255,255,255,.1)' }}
           />
-          {searching && (
-            <button aria-label="Очистить поиск" onClick={() => setQuery('')} style={{ color: '#8CA396' }}>
-              ✕
-            </button>
-          )}
-        </label>
-
-        {!searching && (
-          <div className="relative mt-3.5">
-            <div className="flex gap-2 overflow-x-auto pb-0.5">
-              {CATEGORIES.map(c => (
-                <button
-                  key={c}
-                  ref={c === cat ? activeCat : undefined}
-                  onClick={() => patch({ menuCat: c })}
-                  className="h-11 shrink-0 rounded-full px-4.5 text-[15px] font-bold whitespace-nowrap"
-                  style={
-                    c === cat
-                      ? { background: '#D5F94E', color: '#062119', fontWeight: 800 }
-                      : { border: '1px solid rgba(250,245,234,.2)', color: '#C6D5CC' }
-                  }
-                >
-                  {c}
-                </button>
-              ))}
-            </div>
-            {/* Ряд шире экрана: без затухания последняя категория выглядит
-                обрезанной, а не «листается дальше» */}
-            <div
-              aria-hidden
-              className="pointer-events-none absolute inset-y-0 right-0 w-5"
-              style={{ background: 'linear-gradient(90deg, rgba(6,33,25,0), rgba(6,33,25,.85))' }}
-            />
-          </div>
-        )}
-      </div>
-
-      <div className="ep-scroll px-5 pt-4 pb-5">
-        {myAllergies.length > 0 && (
-          <div className="mb-3.5 flex flex-wrap items-center gap-2">
-            {myAllergies.map(a => (
-              <span
-                key={a}
-                className="inline-flex h-7.5 items-center rounded-full px-3 text-[13px] font-bold"
-                style={{ background: '#F2E6DE', color: '#9E4225' }}
+          <div className="g-noscroll relative flex gap-5.5 overflow-x-auto px-5">
+            {colls.map(c => (
+              <button
+                key={c.id}
+                onClick={() => pickCollection(c.id)}
+                aria-pressed={c.id === coll.id}
+                className={`h-11 shrink-0 text-[22px] ${c.id === coll.id ? 'text-g-fg' : 'text-g-fg/50'}`}
               >
-                без {allergenGenitive(a)}
-              </span>
+                {c.name}
+              </button>
             ))}
-            <span className="text-[13px] font-semibold text-muted">учитываем вашу аллергию</span>
           </div>
-        )}
-
-        <div className="ep-menu-grid">
-          {items.length === 0 && (
-            <div className="px-5 py-16 text-center">
-              <div className="font-bold">
-                {searching ? `По запросу «${query.trim()}» ничего нет` : 'В этой категории пока пусто'}
-              </div>
-              <div className="mt-1 text-sm text-muted">
-                {searching ? 'Спросите официанта — он подскажет' : 'Загляните в другие разделы меню'}
-              </div>
-            </div>
-          )}
-
-          {items.map(it => {
-            const bad = forbidden(it)
-
-            // Стоп-блюдо не притворяется доступным: карточка-пунктир и прямая
-            // подпись вместо кнопки, по которой всё равно ничего не выйдет
-            if (it.stop) {
-              return (
-                <div
-                  key={it.id}
-                  className="flex min-w-0 items-center gap-3 rounded-box p-3"
-                  style={{ border: '1px dashed #DFD6C3', background: 'transparent' }}
-                >
-                  <div className="relative size-18 shrink-0 overflow-hidden rounded-field grayscale">
-                    <DishPhoto dish={it} />
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="text-[16px] font-extrabold">{it.name}</div>
-                    <div className="mt-0.5 text-[13px] font-semibold text-muted">Закончилась сегодня</div>
-                  </div>
-                  <span className="ep-sum text-[15px] font-bold text-muted-soft">{fmt(it.price)}</span>
-                </div>
-              )
-            }
-
-            if (!it.photo) {
-              return (
-                <div
-                  key={it.id}
-                  className="ep-forest flex min-w-0 items-center gap-3.5 rounded-[24px] p-3.5"
-                  style={{ boxShadow: '0 10px 26px -18px rgba(6,33,25,.7)' }}
-                >
-                  <div className="relative size-18 shrink-0 overflow-hidden rounded-[16px]">
-                    <DishPhoto dish={it} />
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="text-[17px] leading-tight font-extrabold">
-                      <Highlight text={it.name} q={query} />
-                      {dishMark(it)}
-                    </div>
-                    <div className="mt-0.5 truncate text-[13px] font-semibold" style={{ color: '#8CA396' }}>
-                      {[it.serving, possibleAllergens(it).join(' · ')].filter(Boolean).join(' · ')}
-                    </div>
-                    {bad.length > 0 && (
-                      <div className="mt-1 text-[12px] font-bold" style={{ color: '#FF8A63' }}>
-                        вам нельзя: {bad.join(' · ')}
-                      </div>
-                    )}
-                    <div className="ep-sum mt-1.5 text-[18px] font-extrabold">{fmt(it.price)}</div>
-                  </div>
-                  <button
-                    aria-label={bad.length > 0 ? `Состав ${it.name}` : `Добавить ${it.name}`}
-                    onClick={() => patch({ sheet: 'dish', currentDishId: it.id })}
-                    className="flex size-13 shrink-0 items-center justify-center rounded-full text-[24px] font-extrabold"
-                    style={
-                      bad.length > 0
-                        ? { background: 'rgba(250,245,234,.14)', color: '#FFF1EC', fontSize: 13, fontWeight: 700 }
-                        : { background: '#D5F94E', color: '#062119' }
-                    }
-                  >
-                    {bad.length > 0 ? 'Состав' : '+'}
-                  </button>
-                </div>
-              )
-            }
-
-            return (
-              <div
-                key={it.id}
-                className="relative h-70 min-w-0 overflow-hidden rounded-[24px]"
-                style={{ boxShadow: '0 10px 26px -18px rgba(6,33,25,.7)' }}
+          <div className="g-noscroll relative flex gap-4.5 overflow-x-auto px-5 pb-2">
+            {coll.sections.map((s, i) => (
+              <button
+                key={s.title}
+                onClick={() => goSection(i)}
+                className={`h-8 shrink-0 text-[13px] ${i === active ? 'font-bold text-g-fg' : 'text-g-mute'}`}
               >
-                <DishPhoto dish={it} />
-                {/* Скрим лежит на фото и попадает под backdrop-filter стекла:
-                    затемнять надо фотографию, а не саму карточку */}
-                <div className="ep-scrim absolute inset-0" />
+                {s.title}
+              </button>
+            ))}
+          </div>
+        </nav>
 
-                {bad.length > 0 && (
-                  <span
-                    className="absolute top-3.5 left-3.5 inline-flex h-7.5 items-center rounded-full px-3 text-[12px] font-bold"
-                    style={{ background: '#9E3517', color: '#FFF1EC' }}
-                  >
-                    вам нельзя: {bad.join(' · ')}
-                  </span>
-                )}
-
-                <div className="ep-glass absolute right-3 bottom-3 left-3 flex items-center gap-3 rounded-[20px] py-3.5 pr-3.5 pl-4">
-                  <div className="min-w-0 flex-1">
-                    <div className="text-[19px] leading-tight font-extrabold tracking-tight text-white">
-                      <Highlight text={it.name} q={query} />
-                      {dishMark(it)}
-                    </div>
-                    {/* Короткая строка: порция, выбор и аллергены. Полное
-                        описание живёт в карточке блюда — здесь оно раздувало
-                        плашку на три строки и закрывало собой фотографию. */}
-                    <div className="mt-0.5 truncate text-[13px] font-semibold text-white/95">
-                      {[
-                        it.serving,
-                        (it.options ?? []).length > 0 ? `${it.options![0].name.toLowerCase()} на выбор` : null,
-                        possibleAllergens(it).length > 0 ? possibleAllergens(it).join(' · ') : null
-                      ]
-                        .filter(Boolean)
-                        .join(' · ')}
-                    </div>
-                    <div className="ep-sum mt-2 text-[20px] font-extrabold text-white">{fmt(it.price)}</div>
-                  </div>
-                  <button
-                    aria-label={bad.length > 0 ? `Состав ${it.name}` : `Добавить ${it.name}`}
-                    onClick={() => patch({ sheet: 'dish', currentDishId: it.id })}
-                    className="flex size-14 shrink-0 items-center justify-center rounded-full text-[26px] font-extrabold"
-                    style={
-                      bad.length > 0
-                        ? { background: 'rgba(255,255,255,.16)', color: '#FFF1EC', fontSize: 13, fontWeight: 700 }
-                        : { background: '#D5F94E', color: '#062119', boxShadow: '0 8px 18px -8px rgba(6,33,25,.8)' }
-                    }
-                  >
-                    {bad.length > 0 ? 'Состав' : '+'}
-                  </button>
-                </div>
-              </div>
-            )
-          })}
+        {/* relative — обязательно: шапка собрана из позиционированных слоёв и
+            иначе рисуется ПОВЕРХ заголовка первого раздела, который заходит на
+            её низ. В макете от заголовка «осень пришла» торчала одна чёрточка. */}
+        <div className="relative pt-1 pb-[calc(7.5rem+env(safe-area-inset-bottom))]">
+          {coll.sections.map(s => (
+            <Section
+              key={`${coll.id}-${s.title}`}
+              section={s}
+              qtyOf={id => myDraftQty.get(id) ?? 0}
+              noteOf={d => allergyNote(d, mineAllergies)}
+              onOpen={openDish}
+              onAdd={quickAdd}
+            />
+          ))}
         </div>
-
-        {/* CC BY требует назвать автора там, где показан снимок */}
-        <a href="#/credits" className="mt-6 block py-3 text-center text-[13px] font-semibold text-muted underline">
-          Фотографии блюд: авторы и лицензии
-        </a>
       </div>
 
-      {/* Футер — единая кнопка стола: сколько блюд, сколько ещё не ушло на кухню */}
-      {me && mine.length > 0 && (
-        <div className="shrink-0 px-5 pt-3 pb-[calc(1.375rem+env(safe-area-inset-bottom))]">
+      {me && count > 0 && (
+        <div className="g-anim-up absolute right-3 bottom-[calc(0.875rem+env(safe-area-inset-bottom))] left-3 z-[6]">
           <button
             onClick={() => patch({ screen: 'table' })}
-            className="ep-forest flex h-15 w-full items-center gap-3 rounded-field px-3.5"
-            style={{ boxShadow: '0 12px 26px -14px rgba(6,33,25,.9)' }}
+            className="g-dock flex h-16 w-full items-center gap-3 rounded-full pr-2 pl-2.5 text-g-fg"
           >
-            <Avatar animal={me.animal} size={34} label={me.name} />
-            <div className="min-w-0 flex-1 text-left">
-              <div className="text-[15px] font-extrabold">
-                Ваш стол · {mine.length} {mine.length === 1 ? 'блюдо' : mine.length < 5 ? 'блюда' : 'блюд'}
-              </div>
-              {draftCount > 0 && (
-                <div className="text-[13px] font-semibold" style={{ color: '#FFC9B6' }}>
-                  {draftCount} ещё не отправлено
-                </div>
-              )}
-            </div>
-            <span
-              className="ep-sum inline-flex h-9 items-center rounded-full px-3.5 text-[15px] font-extrabold"
-              style={{ background: '#D5F94E', color: '#062119' }}
-            >
-              {fmt(totals.myTotal + totals.myDraft)}
+            <Avatar animal={me.animal} size={44} label={me.name} />
+            <span className="min-w-0 flex-1 text-left">
+              <span className="block text-[15px] font-bold">
+                мой стол · {count} {plural(count, 'блюдо', 'блюда', 'блюд')}
+              </span>
+              <span className="block text-[13px] text-g-mute">
+                {draftCount > 0 ? `${draftCount} ещё не на кухне` : 'всё на кухне'}
+              </span>
+            </span>
+            <span className="g-cta g-num flex h-12 items-center rounded-full px-4.5 text-[15px]">
+              {/* «0 ₽» после оплаты читается как «ничего не заказано» */}
+              {totals.myRemaining + totals.myDraft <= 0.01 && totals.myPaid > 0
+                ? 'оплачено'
+                : fmt(totals.myRemaining + totals.myDraft)}
             </span>
           </button>
         </div>
       )}
+    </div>
+  )
+}
+
+/** Заглавное блюдо подборки: кадры сменяются, внизу — полоски прогресса. */
+function Hero({ coll, onOpen }: { coll: Collection; onOpen: (d: Dish) => void }) {
+  const slides = coll.hero
+  const [i, setI] = useState(0)
+  const [fill, setFill] = useState(false)
+
+  // Подборка сменилась — начинаем с её первого блюда
+  useEffect(() => setI(0), [coll.id])
+
+  useEffect(() => {
+    // «Меньше движения» — кадры не листаются сами: CSS гасит переходы, а смену
+    // кадров делает JS, и без этой проверки карусель крутилась бы всё равно
+    if (slides.length < 2 || prefersReducedMotion()) return
+    setFill(false)
+    // Полоска заполняется CSS-переходом: сброс в 0 и старт через кадр
+    let inner = 0
+    const outer = requestAnimationFrame(() => {
+      inner = requestAnimationFrame(() => setFill(true))
+    })
+    const t = setTimeout(() => setI(x => (x + 1) % slides.length), SLIDE_MS)
+    return () => {
+      cancelAnimationFrame(outer)
+      cancelAnimationFrame(inner)
+      clearTimeout(t)
+    }
+  }, [i, slides.length, coll.id])
+
+  const d = slides[i % Math.max(1, slides.length)]
+  if (!d) return <div style={{ height: HERO_H }} />
+
+  return (
+    <div
+      role="button"
+      tabIndex={0}
+      aria-label={`${d.name} — открыть`}
+      onClick={() => onOpen(d)}
+      onKeyDown={e => e.key === 'Enter' && onOpen(d)}
+      className="relative cursor-pointer overflow-hidden"
+      style={{ height: HERO_H, background: '#0E0D0C' }}
+    >
+      {slides.map((s, k) => (
+        <img
+          key={s.id}
+          src={dishTall(s.id)}
+          alt=""
+          loading={k === 0 ? 'eager' : 'lazy'}
+          className="absolute inset-0 size-full object-cover"
+          style={{
+            opacity: k === i ? 1 : 0,
+            transform: k === i ? 'scale(1.08)' : 'scale(1)',
+            transition: 'opacity 1s ease, transform 6s linear'
+          }}
+        />
+      ))}
+      <div className="g-photo-fade absolute inset-0" />
+
+      <div className="absolute right-6 bottom-47.5 left-6 z-[2] text-center text-white">
+        <div className="g-serif text-[44px] text-balance" style={{ textShadow: '0 2px 24px rgba(0,0,0,.35)' }}>
+          {d.name}
+        </div>
+        <div className="g-num mt-2.5 text-[13px] text-white/90">
+          {[d.kcal ? `${d.kcal} ккал` : null, d.serving, fmt(d.price)].filter(Boolean).join(' · ')}
+        </div>
+        {slides.length > 1 && (
+          <div className="mx-auto mt-3.5 flex justify-center gap-1">
+            {slides.map((s, k) => (
+              <span key={s.id} className="h-0.5 w-6 overflow-hidden rounded-[1px] bg-white/30">
+                <span
+                  className="block h-full bg-white"
+                  style={{
+                    width: k < i ? '100%' : k === i && fill ? '100%' : '0%',
+                    transition: k === i && fill ? `width ${SLIDE_MS}ms linear` : 'none'
+                  }}
+                />
+              </span>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function Section({
+  section,
+  qtyOf,
+  noteOf,
+  onOpen,
+  onAdd
+}: {
+  section: ShowcaseSection
+  qtyOf: (id: string) => number
+  noteOf: (d: Dish) => string
+  onOpen: (d: Dish) => void
+  onAdd: (d: Dish, e?: React.MouseEvent) => void
+}) {
+  const live = section.dishes.filter(d => !d.stop)
+  const stopped = section.dishes.filter(d => d.stop)
+
+  return (
+    <section data-sec className="pt-6.5">
+      <h2 className="g-serif px-5 pb-3.5 text-[34px] text-g-fg">{section.title}</h2>
+
+      {section.kind === 'small' ? (
+        <div className="g-noscroll flex gap-2.5 overflow-x-auto px-5">
+          {section.dishes.map(d => (
+            <SmallTile key={d.id} dish={d} qty={qtyOf(d.id)} note={noteOf(d)} onOpen={onOpen} onAdd={onAdd} />
+          ))}
+        </div>
+      ) : (
+        live.length > 0 && (
+          <div className="g-noscroll flex snap-x snap-mandatory gap-3 overflow-x-auto px-5">
+            {live.map(d => (
+              <TallCard key={d.id} dish={d} qty={qtyOf(d.id)} note={noteOf(d)} onOpen={onOpen} onAdd={onAdd} />
+            ))}
+          </div>
+        )
+      )}
+
+      {/* Стоп-лист не прячем: гость искал это блюдо и должен узнать, что его нет сегодня */}
+      {section.kind !== 'small' && stopped.length > 0 && (
+        <div className="mx-5 mt-3 flex flex-col gap-2">
+          {stopped.map(d => (
+            <StopRow key={d.id} dish={d} onOpen={onOpen} />
+          ))}
+        </div>
+      )}
+    </section>
+  )
+}
+
+interface CardProps {
+  dish: Dish
+  qty: number
+  note: string
+  onOpen: (d: Dish) => void
+  onAdd: (d: Dish, e?: React.MouseEvent) => void
+}
+
+function TallCard({ dish, qty, note, onOpen, onAdd }: CardProps) {
+  return (
+    <div className="relative h-93 w-73 shrink-0 snap-start overflow-hidden rounded-[28px] bg-g-s1">
+      <img src={dishTall(dish.id)} alt="" loading="lazy" className="size-full object-cover object-top" />
+      <div
+        className="absolute inset-0"
+        style={{ background: 'linear-gradient(to top, rgba(10,9,8,.82) 0%, rgba(10,9,8,.3) 34%, rgba(10,9,8,0) 55%)' }}
+      />
+      <OpenOverlay dish={dish} onOpen={onOpen} />
+      <div className="pointer-events-none absolute right-19 bottom-5 left-5 text-white">
+        <div className="text-[17px] leading-tight font-bold">{dish.name}</div>
+        {note && (
+          <div
+            className="mt-1.5 inline-block rounded-lg px-2 py-0.5 text-[13px] font-bold text-g-warn"
+            style={{ background: 'rgba(20,18,16,.85)' }}
+          >
+            {note}
+          </div>
+        )}
+        <div className="g-num mt-2 text-[15px]">{fmt(dish.price)}</div>
+      </div>
+      <div className="absolute right-4 bottom-4 z-[1]">
+        <AddButton qty={qty} size={48} label={dish.name} onPhoto onClick={e => onAdd(dish, e)} />
+      </div>
+    </div>
+  )
+}
+
+function SmallTile({ dish, qty, note, onOpen, onAdd }: CardProps) {
+  return (
+    <div className="relative flex w-68 shrink-0 items-center gap-3 rounded-[22px] bg-g-s1 p-3">
+      <OpenOverlay dish={dish} onOpen={onOpen} />
+      <div className="pointer-events-none size-19 shrink-0 overflow-hidden rounded-2xl bg-g-sand">
+        <img src={dishThumb(dish.id)} alt="" loading="lazy" className="size-full object-cover" />
+      </div>
+      <div className="pointer-events-none min-w-0 flex-1">
+        <div className="line-clamp-2 text-[15px] leading-snug text-g-fg">{dish.name}</div>
+        {note && <div className="truncate text-[12px] font-bold text-g-warn">{note}</div>}
+        {dish.stop ? (
+          <div className="mt-1.5 text-[13px] text-g-mute">закончилось</div>
+        ) : (
+          <div className="g-num mt-1.5 text-[15px] text-g-fg">{fmt(dish.price)}</div>
+        )}
+      </div>
+      {!dish.stop && (
+        <span className="relative">
+          <AddButton qty={qty} size={40} label={dish.name} onClick={e => onAdd(dish, e)} />
+        </span>
+      )}
+    </div>
+  )
+}
+
+/**
+ * Открыть карточку — отдельная кнопка на всю плитку под текстом. Раньше это
+ * был div с onClick: с клавиатуры блюдо не открывалось, стоп-лист был
+ * недостижим. Вложить «+» в элемент с ролью кнопки нельзя — поэтому так.
+ */
+function OpenOverlay({ dish, onOpen }: { dish: Dish; onOpen: (d: Dish) => void }) {
+  return (
+    <button
+      aria-label={`${dish.name}${dish.stop ? ', закончилось' : ''} — подробнее`}
+      onClick={() => onOpen(dish)}
+      className="absolute inset-0 z-0 rounded-[inherit] focus-visible:outline-2 focus-visible:outline-offset-[-4px] focus-visible:outline-g-acc"
+    />
+  )
+}
+
+function StopRow({ dish, onOpen }: { dish: Dish; onOpen: (d: Dish) => void }) {
+  return (
+    <div className="relative flex items-center gap-3 rounded-[20px] bg-g-s1 p-3">
+      <OpenOverlay dish={dish} onOpen={onOpen} />
+      <div className="pointer-events-none size-16 shrink-0 overflow-hidden rounded-[14px] bg-g-sand opacity-50">
+        <img src={dishThumb(dish.id)} alt="" loading="lazy" className="size-full object-cover grayscale" />
+      </div>
+      <div className="pointer-events-none min-w-0 flex-1">
+        <div className="text-[15px] text-g-fg">{dish.name}</div>
+        <div className="mt-0.5 truncate text-[13px] text-g-mute">{dish.desc}</div>
+        <div className="mt-1 text-[13px] text-g-mute">закончилось на сегодня</div>
+      </div>
     </div>
   )
 }

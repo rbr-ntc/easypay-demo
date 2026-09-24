@@ -28,19 +28,20 @@ import { clearSignedOut, clearStaff, getCachedStaff, markSignedOut, setCachedSta
 import { can } from '@easypay/domain/roles'
 import type { Permission, Staff } from '@easypay/domain/roles'
 import { newIdemKey } from './keys'
-import { CATEGORIES, findDish } from './data'
+import { findDish } from './data'
 import type { Animal, LineOptions } from './data'
 import { amountFor, computeTotals as computeMoney } from '@easypay/domain/money'
 
 /**
- * Четыре экрана вместо семи.
+ * Пять экранов гостя.
  *
  * `cart` и `status` слились в `table`: гость не понимал, что уже ушло на
  * кухню, а что ещё нет, потому что ответ был размазан по двум экранам.
- * `welcome` убран — вход по QR ведёт сразу в меню. `tips` стали частью `done`.
+ * `welcome` вернулся в 4.x — но только для того, кто за столом ещё никто;
+ * вернувшийся гость идёт сразу в меню. `tips` — часть `done`.
  */
-export type Screen = 'menu' | 'table' | 'payment' | 'done'
-export type Sheet = null | 'dish' | 'name' | 'send' | 'call' | 'allergen'
+export type Screen = 'welcome' | 'menu' | 'table' | 'payment' | 'done'
+export type Sheet = null | 'dish' | 'name' | 'call'
 /** `failed` — банк не подтвердил: деньги не списаны, повтор идёт тем же ключом. */
 export type PayStage = 'form' | 'qr' | 'processing' | 'failed'
 export type PayScope = 'own' | 'equal' | 'full'
@@ -54,6 +55,8 @@ export interface PendingAdd {
   qty: number
   shared: boolean
   options: LineOptions
+  /** Ключ намерения: блюдо, добавленное после ввода имени, не должно задвоиться при повторе. */
+  idemKey?: string
 }
 
 export interface UiState {
@@ -67,7 +70,10 @@ export interface UiState {
    * заново и сразу показывает предупреждение — проглотить его нельзя.
    */
   pendingAllergens: string[] | null
-  menuCat: string
+  /** Ключ намерения, с которым карточку блюда открыли заново после сбоя. */
+  resumeKey: string | null
+  /** Что сделать сразу после «Как вас зовут?»: например, позвать официанта. */
+  afterJoin: 'call' | null
   payScope: PayScope
   payMethod: PayMethod
   payStage: PayStage
@@ -77,16 +83,11 @@ export interface UiState {
   payUnknown: boolean
   /** Сегмент на экране «Стол»: свой заказ или весь стол. */
   tableTab: 'mine' | 'all'
-  /** Апселл показывается один раз после первой подачи, а не во время ожидания. */
-  upsellShown: boolean
   lastPaid: number
   /** Чек последней оплаты: номер, время и состав — то, что гость может предъявить. */
   lastReceipt: import('./api').Receipt | null
-  tip: '0' | '5' | '10' | '15' | 'custom'
-  tipCustom: number
-  rating: number
-  sendScope: 'mine' | 'all'
-  sendChecked: boolean
+  /** Чаевые в рублях: гость решает про деньги, а не про проценты. */
+  tip: number
   toast: string | null
 }
 
@@ -96,21 +97,17 @@ const initialUi: UiState = {
   currentDishId: null,
   pendingAdd: null,
   pendingAllergens: null,
-  menuCat: CATEGORIES[0] ?? '',
+  resumeKey: null,
+  afterJoin: null,
   payScope: 'own',
   payMethod: 'sbp',
   payStage: 'form',
   payError: null,
   payUnknown: false,
   tableTab: 'mine',
-  upsellShown: false,
   lastPaid: 0,
   lastReceipt: null,
-  tip: '10',
-  tipCustom: 0,
-  rating: 0,
-  sendScope: 'mine',
-  sendChecked: false,
+  tip: 200,
   toast: null
 }
 
@@ -172,12 +169,16 @@ export function computeTotals(snap: Snapshot | null, myId: string | null): Total
   const myPaid = mine?.paid ?? core.paidOf(myId)
   const myRemaining = mine?.remaining ?? core.remainingOf(myId)
 
-  const scopeAmount = (scope: PayScope) => {
-    if (scope === 'full') return remaining
-    // Делим то, что ещё не оплачено: сосед мог заплатить свою часть раньше
-    if (scope === 'equal') return Math.min(remaining, remaining / participants || 0)
-    return Math.min(myRemaining, remaining)
-  }
+  /**
+   * Сумма списания — ТОЙ ЖЕ функцией, что и на сервере (`amountFor`), на
+   * серверных итогах. Своя формула здесь уже расходилась: «поровну» делила
+   * остаток, а сервер делит счёт — Анна внесла половину из 3 000 на троих,
+   * Борис видел «Оплатить · 500 ₽», а списывалось 1 000 ₽.
+   */
+  const scopeAmount = (scope: PayScope) =>
+    participants > 0
+      ? amountFor({ remaining, tableTotal, participants, remainingOf: () => myRemaining } as any, myId, scope)
+      : 0
 
   return {
     participants,
@@ -214,6 +215,7 @@ export function humanError(err: ApiError): string {
     'scope required': 'Выберите, за что платите: за себя или за весь стол',
     'already sent to kitchen': 'Это блюдо уже на кухне — его снимет официант',
     'already closed': 'Стол уже закрыт',
+    'cash request pending': 'Официант уже идёт за наличными — дождитесь его или отмените просьбу',
     'kitchen pending': 'На кухне ещё готовятся блюда этого стола',
     'unknown allergen': 'Такой аллергии нет в списке — выберите из предложенных',
     'unknown table': 'Такого стола нет в зале — проверьте QR на столе',
@@ -244,9 +246,7 @@ export function humanError(err: ApiError): string {
 }
 
 export function tipAmount(ui: UiState): number {
-  if (ui.tip === 'custom') return ui.tipCustom
-  if (ui.tip === '0') return 0
-  return Math.round((ui.lastPaid * Number(ui.tip)) / 100)
+  return Math.max(0, Math.round(ui.tip))
 }
 
 /**
@@ -328,7 +328,10 @@ interface Ctx {
 const StoreCtx = createContext<Ctx | null>(null)
 
 export function StoreProvider({ children }: { children: ReactNode }) {
-  const [ui, setUi] = useState<UiState>(initialUi)
+  // Приветствие видит тот, кто за этим столом ещё никто. Вернувшийся гость
+  // (личность в localStorage) сразу попадает в меню — второй раз «добро
+  // пожаловать» после каждой перезагрузки только мешает.
+  const [ui, setUi] = useState<UiState>(() => ({ ...initialUi, screen: loadIdentity() ? 'menu' : 'welcome' }))
   const [snap, setSnap] = useState<Snapshot | null>(null)
   const [connected, setConnected] = useState(false)
   const [identity, setIdentity] = useState<Identity | null>(loadIdentity)
@@ -414,14 +417,16 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   // начало. Раньше смотрели только на статус, а `reset` открывает новую сессию
   // со статусом open: гость терял личность и оставался на экране «Стол», где
   // без личности не рендерится вообще ничего — пустой белый лист до перезагрузки.
-  const lostMyself = !!snap && snap.status === 'open' && !me && ui.screen !== 'menu'
+  const lostMyself = !!snap && snap.status === 'open' && !me && ui.screen !== 'menu' && ui.screen !== 'welcome'
   useEffect(() => {
     if (lostMyself) {
       setUi(prev => ({ ...initialUi, toast: prev.toast }))
       toastRef.current?.('Стол начали заново — можно заказывать')
       return
     }
-    if (snap?.status === 'closed' && ui.screen !== 'menu' && ui.screen !== 'done') {
+    // Закрытый стол для нового гостя — нормальное начало, а не «вас выгнали»:
+    // приветствие показывается именно на таком столе, его сбрасывать нельзя
+    if (snap?.status === 'closed' && ui.screen !== 'menu' && ui.screen !== 'done' && ui.screen !== 'welcome') {
       setUi(prev => ({ ...initialUi, toast: prev.toast }))
       toastRef.current?.('Стол закрыт. Спасибо, что были с нами!')
     }
@@ -565,7 +570,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       guard(async () => {
         if (!guestToken()) return
         await apiCall(guestToken()!, reason, note)
-        toast('Официант уже идёт 👋')
+        toast(snap?.waiter?.name ? `${snap.waiter.name} подойдёт через пару минут` : 'Официант подойдёт через пару минут')
       }, undefined),
     forgetMe: () => {
       localStorage.removeItem(ID_KEY)

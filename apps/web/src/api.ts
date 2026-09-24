@@ -126,6 +126,8 @@ export interface Snapshot {
   seats: number
   /** Заглушка для постороннего: состав и деньги вырезаны, это не пустой стол. */
   limited?: boolean
+  /** Сколько гостей уже за открытым столом — видно и постороннему, без имён. */
+  occupied?: number
   /** Просьба принять наличные: деньги ещё не в счёте, их берёт человек. */
   cashIntent?: { personaId: string; scope: string; amount: number; at: number } | null
   totals: ServerTotals

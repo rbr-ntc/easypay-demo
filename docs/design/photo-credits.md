@@ -1,60 +1,37 @@
-# Фотографии блюд — происхождение и лицензии
+# Фотографии блюд и обложки
 
-**Источник истины — `packages/config/photo-credits.json`.** Его читает интерфейс:
-подпись «Фото: автор, лицензия» в карточке блюда и страница `#/credits`, на которую
-ведёт ссылка внизу меню. CC BY требует называть автора в самом продукте, поэтому
-данные живут в конфиге, а не только здесь. Тест `packages/config/tests/photos.test.js`
-не даст добавить снимок без записи об авторе, флаг `photo` без файла или файл без флага.
+С редизайна 4.0 все картинки гостевого потока **сгенерированы** генератором
+изображений в Claude Design (серии от 2026-09-23: 42 фото блюд 4:5,
+18 вертикальных кадров 9:16, 12 обложек приветствия и сезонов). Промпты,
+размеры и контрольные суммы оригиналов лежали в архиве редизайна
+(`manifest.json`, `prompts.json`).
 
-Снимки подобраны через [Openverse](https://openverse.org) и Викисклад с фильтром
-по лицензиям, разрешающим коммерческое использование и переработку (CC0, CC BY,
-CC BY-SA). Кадрированы под 4:3, ужаты до 900×675, метаданные вычищены.
+Сторонних авторов у них нет, поэтому атрибуция CC, которую требовали фото
+из Openverse и Викисклада в 3.0, больше не нужна — страница «авторы и
+лицензии» и `photo-credits.json` удалены вместе с этими фото. Условия
+использования сгенерированных изображений — по правилам сервиса, в котором
+они сделаны.
 
-Шесть снимков, которые лежали в репозитории раньше (`duck`, `margarita`, `padthai`,
-`springrolls`, `steak`, `tomyam`), были взяты с Викисклада без записи, какие именно
-файлы, — восстановить авторов было нельзя. Они **заменены** снимками с известной лицензией.
+Оговорка из README серии: блюда показаны по названиям, фактическая
+рецептура ресторана генератору не передавалась (спринг-роллы — хрустящие
+овощные, пад тай и том ям — с креветками). Для настоящего заведения
+фото заменяются его собственной съёмкой.
 
-Утка — под CC BY-SA 2.0: обрезанный кадр распространяется на тех же условиях.
+## Где лежат и как собраны
 
-Блюда без фотографии показываются компактной строкой без картинки — это предусмотрено
-макетом, а не поломка: хумус, салат с тунцом, дорадо, котлета по-киевски, наполеон,
-медовик, лазанья, вода, облепиховый чай.
+| Что | Где | Размер |
+|---|---|---|
+| Фото блюда 4:5 | `apps/web/public/dishes/<id>.jpg` | 720×900, ~77 КБ |
+| Миниатюра | `apps/web/public/dishes/thumb/<id>.jpg` | 240×300, ~14 КБ |
+| Вертикальный кадр | `apps/web/public/hero/<id>.jpg` | 720×1280, ~67 КБ |
+| Обложки | `apps/web/public/art/*.jpg` | 720×1280, ~83 КБ |
 
-Для публичного запуска этого мало: свободная съёмка разнородна по качеству. Нужна
-либо собственная съёмка заведения, либо покупная (Shutterstock, Depositphotos).
+Прогрессивный JPEG, метаданные вычищены. Исходники — 1080×1350 и 1080×1920,
+около 44 МБ вместе с PNG-обложками; в приложение они не кладутся.
 
-| Блюдо | Автор | Лицензия | Источник |
-|---|---|---|---|
-| Белое полусухое | Paris Lodron Universität Salzburg (PLUS) | [CC BY 2.0](https://creativecommons.org/licenses/by/2.0/) | [flickr](https://www.flickr.com/photos/82751750@N02/14567866505) |
-| Борщ с говядиной | неизвестен | [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/) | [rawpixel](https://www.rawpixel.com/image/5927756/photo-image-public-domain-food-free) |
-| Брускетта с томатами | sarahstierch | [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/) | [flickr](https://www.flickr.com/photos/7633518@N08/54051484391) |
-| Бургер с говядиной | Eaters Collective | [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/) | [stocksnap](https://stocksnap.io/photo/food-burger-WYL5KWIPUD) |
-| Греческий | неизвестен | [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/) | [rawpixel](https://www.rawpixel.com/image/5968295/photo-image-public-domain-plant-red) |
-| Домашний лимонад | Homedust | [CC BY 2.0](https://creativecommons.org/licenses/by/2.0/) | [flickr](https://www.flickr.com/photos/159630537@N08/42033707304) |
-| Игристое брют | The Urban Botanist Images | [CC BY 2.0](https://creativecommons.org/licenses/by/2.0/) | [flickr](https://www.flickr.com/photos/193653073@N07/51442988494) |
-| Капучино | joyosity | [CC BY 2.0](https://creativecommons.org/licenses/by/2.0/) | [flickr](https://www.flickr.com/photos/33993074@N00/8078218357) |
-| Карбонара | неизвестен | [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/) | [rawpixel](https://www.rawpixel.com/image/6033676/photo-image-public-domain-food-free) |
-| Картофель фри | sarahstierch | [CC BY 2.0](https://creativecommons.org/licenses/by/2.0/) | [flickr](https://www.flickr.com/photos/7633518@N08/52327287679) |
-| Картофельное пюре | sarahstierch | [CC BY 2.0](https://creativecommons.org/licenses/by/2.0/) | [flickr](https://www.flickr.com/photos/7633518@N08/51960420703) |
-| Красное сухое | неизвестен | [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/) | [rawpixel](https://www.rawpixel.com/image/5922530/photo-image-background-christmas-public-domain) |
-| Крафтовый лагер | неизвестен | [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/) | [rawpixel](https://www.rawpixel.com/image/5925051/photo-image-background-christmas-public-domain) |
-| Креветки в темпуре | неизвестен | [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/) | [rawpixel](https://www.rawpixel.com/image/5901281/photo-image-public-domain-nature-food) |
-| Крем-суп из тыквы | неизвестен | [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/) | [rawpixel](https://www.rawpixel.com/image/5922901/photo-image-public-domain-leaf-fruit) |
-| Мороженое | David Jackmanson | [CC BY 2.0](https://creativecommons.org/licenses/by/2.0/) | [flickr](https://www.flickr.com/photos/58301516@N00/52593139486) |
-| Морс клюквенный | неизвестен | [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/) | [rawpixel](https://www.rawpixel.com/image/3299387/free-photo-image-ice-juice-cream-soda) |
-| Негрони | Bex.Walton | [CC BY 2.0](https://creativecommons.org/licenses/by/2.0/) | [flickr](https://www.flickr.com/photos/7831824@N04/52399830723) |
-| Овощи гриль | jijokini | [CC BY 2.0](https://creativecommons.org/licenses/by/2.0/) | [flickr](https://www.flickr.com/photos/194978137@N04/51913552725) |
-| Пад тай | loustejskal.com | [CC BY 2.0](https://creativecommons.org/licenses/by/2.0/) | [flickr](https://www.flickr.com/photos/63311602@N08/52403902319) |
-| Пицца «Маргарита» | midnightbreakfastcafe | [CC BY 2.0](https://creativecommons.org/licenses/by/2.0/) | [flickr](https://www.flickr.com/photos/193353181@N06/51969167207) |
-| Пицца «Пепперони» | bshamblen | [CC BY 2.0](https://creativecommons.org/licenses/by/2.0/) | [flickr](https://www.flickr.com/photos/23972840@N04/27566605040) |
-| Ризотто с белыми грибами | kurmanstaff | [CC BY 2.0](https://creativecommons.org/licenses/by/2.0/) | [flickr](https://www.flickr.com/photos/62558987@N07/51294061602) |
-| Свёкла с козьим сыром | sarahstierch | [CC BY 2.0](https://creativecommons.org/licenses/by/2.0/) | [flickr](https://www.flickr.com/photos/7633518@N08/51696059054) |
-| Спринг-роллы | chooyutshing | [CC BY 2.0](https://creativecommons.org/licenses/by/2.0/) | [flickr](https://www.flickr.com/photos/25802865@N08/54538849838) |
-| Стейк рибай | Missvain | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0) | [wikimedia](https://commons.wikimedia.org/wiki/File:Rock_Sea%27s_steak_frites_-_February_2023_-_Sarah_Stierch_08.jpg) |
-| Тар-тар из говядины | ResonantFelicity | [CC BY 2.0](https://creativecommons.org/licenses/by/2.0/) | [flickr](https://www.flickr.com/photos/9445979@N03/47328179461) |
-| Том ям | неизвестен | [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/) | [rawpixel](https://www.rawpixel.com/image/5905843/photo-image-background-public-domain-food) |
-| Утка по-пекински | Mr Wabu | [CC BY-SA 2.0](https://creativecommons.org/licenses/by-sa/2.0) | [wikimedia](https://commons.wikimedia.org/wiki/File:Peking_duck_by_Mr_Wabu_in_Beijing.jpg) |
-| Уха из трёх рыб | comedy_nose | [CC BY 2.0](https://creativecommons.org/licenses/by/2.0/) | [flickr](https://www.flickr.com/photos/23408922@N07/52690978908) |
-| Цезарь с курицей | Thank You (23 Millions+) views | [CC BY 2.0](https://creativecommons.org/licenses/by/2.0/) | [flickr](https://www.flickr.com/photos/34128007@N04/51141932019) |
-| Чизкейк Нью-Йорк | неизвестен | [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/) | [rawpixel](https://www.rawpixel.com/image/5924639/photo-image-public-domain-illustration-fruit) |
-| Эспрессо | неизвестен | [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/) | [rawpixel](https://www.rawpixel.com/image/5927734/photo-image-public-domain-wooden-coffee) |
+Адреса картинок экраны получают через `apps/web/src/guest/showcase.ts`
+(`dishPhoto`, `dishThumb`, `dishTall`, `artSet`) — когда фото переедут в
+базу и загрузку из кабинета, поменяется только этот модуль. Какие блюда
+имеют вертикальный кадр и какие обложки где показываются —
+`packages/config/showcase.json`. Связку конфига и файлов стережёт
+`packages/config/tests/photos.test.js`.

@@ -1,401 +1,300 @@
 import { useEffect, useRef, useState } from 'react'
 import { allergenAccusative } from '@easypay/domain/allergens'
-import { allergenTags, defaultOptions, dietTags, findDish, priceWithOptions } from '../data'
+import { allergenTags, defaultOptions, findDish, priceWithOptions } from '../data'
 import type { Dish, LineOptions } from '../data'
-import { BottomSheet, WarnBanner } from '../ui'
-import { Avatar } from '../avatars'
-import { DishPhoto } from '../screens/Menu'
 import { useStore } from '../store'
 import { newIdemKey } from '../keys'
 import { fmt } from '../format'
-import { authorLabel, creditOf } from '../credits'
+import { dishTall } from '../guest/showcase'
+import { allergyHits, rescues } from '../guest/allergy'
 
 const MAX_QTY = 9 // столько же принимает сервер
-
-/**
- * Варианты, которые снимают заявленный аллерген. Меню это уже описывает
- * (`effects.removes`) — кухня видит «Без сметаны — снимает лактозу», а гость
- * до сих пор нет.
- */
-function rescues(dish: Dish, blocked: string[] | null, mine: string[]) {
-  if (!blocked || blocked.length === 0) return []
-  const hits: { optionId: string; choice: string; removes: string[] }[] = []
-  for (const opt of dish.options ?? []) {
-    for (const choice of opt.choices ?? []) {
-      const removes = (opt.effects?.[choice]?.removes ?? []).filter(a => blocked.includes(a))
-      const adds = opt.effects?.[choice]?.adds ?? []
-      // Спасение — то, что снимает заявленный аллерген и не приносит другой
-      // из СПИСКА ЭТОГО ГОСТЯ. Овсяное молоко добавляет глютен: человеку с
-      // непереносимостью лактозы оно подходит, человеку с целиакией — нет.
-      const dangerous = adds.some(a => mine.includes(a))
-      if (removes.length > 0 && !dangerous) hits.push({ optionId: opt.id, choice, removes })
-    }
-  }
-  return hits
-}
 
 /**
  * Что именно гость получит с учётом выбора. Модификатор объёма меняет порцию,
  * и подпись «150 мл» рядом с выбранной бутылкой — прямой обман.
  */
-function servingLabel(dish: { serving?: string; options?: { id: string; name: string }[] }, opts: LineOptions): string | null {
+function servingLabel(dish: Dish, opts: LineOptions): string | null {
   const volume = dish.options?.find(o => /объ[её]м|порци|размер/i.test(o.name))
   const chosen = volume ? opts[volume.id] : null
   return chosen || dish.serving || null
 }
 
+/**
+ * Карточка блюда — на весь экран, внизу цена одной кнопкой.
+ *
+ * Аллергия: предупреждение видно сразу, а не после нажатия, и кнопка
+ * неактивна, пока гость не отметит «понимаю». Сервер проверяет то же самое
+ * сам — если клиент чего-то не знал, ответ 409 покажет то же предупреждение.
+ */
 export function DishSheet() {
-  const { ui, patch, me, snap, totals, addLine, toast } = useStore()
-  // За столом есть кто-то ещё — только тогда есть смысл в общем блюде
+  const { ui, patch, me, snap, addLine, toast } = useStore()
   const companyAtTable = (snap?.personas.length ?? 0) > 1
   const dish = ui.currentDishId ? findDish(ui.currentDishId) : undefined
   const [qty, setQty] = useState(1)
-  const [target, setTarget] = useState<'me' | 'table'>('me')
+  const [shared, setShared] = useState(false)
   const [opts, setOpts] = useState<LineOptions>(() => (dish ? defaultOptions(dish) : {}))
   // Сервер остановил заказ: в блюде есть то, на что гость указал аллергию
   const [blocked, setBlocked] = useState<string[] | null>(ui.pendingAllergens)
+  /**
+   * Что именно гость подтвердил — НАБОР аллергенов, а не флаг. Флаг переживал
+   * смену варианта: подтвердил лактозу в мороженом, выбрал «Фисташку» — и
+   * орехи уходили на кухню как уже подтверждённые.
+   */
+  const [confirmedFor, setConfirmedFor] = useState<string | null>(null)
+  const [details, setDetails] = useState(false)
   // Одно открытие карточки — одно намерение заказать. Повторные нажатия
-  // «Добавить» приходят на сервер с тем же ключом и не создают вторую порцию:
+  // приходят на сервер с тем же ключом и не создают вторую порцию:
   // количество выбирается плюсиком, а не частотой тапов.
-  const addKey = useRef(newIdemKey())
+  // После обрыва в шторке имени карточку открывают заново с ТЕМ ЖЕ ключом:
+  // если сервер успел добавить блюдо, повтор не создаст вторую порцию
+  const addKey = useRef(ui.resumeKey ?? newIdemKey())
   const [busy, setBusy] = useState(false)
   // Защёлка синхронная: setState применяется к следующему рендеру, и семь
   // тапов внутри одного тика проскакивали мимо флага busy все семь раз
   const sending = useRef(false)
 
   // Карточка переиспользуется под разные блюда, и состояние обязано ехать за
-  // блюдом. Раньше модификаторы и ключ намерения создавались один раз на
-  // монтирование: капучино уходил с «volume» от вина и получал 400, а второе
-  // блюдо наследовало чужой ключ идемпотентности.
+  // блюдом — сбрасываем СИНХРОННО, а не эффектом: эффект отставал на рендер,
+  // и первый кадр нового блюда считал цену по опциям предыдущего.
   const [shownDish, setShownDish] = useState<string | null>(dish?.id ?? null)
   if (dish && shownDish !== dish.id) {
-    // Сбрасываем СИНХРОННО, а не эффектом: эффект отставал на один рендер, и
-    // первый кадр нового блюда считал цену, порцию и «спасательные» варианты
-    // по опциям предыдущего. Пока шторка размонтируется между блюдами, это
-    // было только миганием цены, но держаться на этом нельзя.
     setShownDish(dish.id)
-    addKey.current = newIdemKey()
+    addKey.current = ui.resumeKey ?? newIdemKey()
     setOpts(defaultOptions(dish))
     setQty(1)
-    setTarget('me')
+    setShared(false)
     setBlocked(ui.pendingAllergens)
+    setConfirmedFor(null)
+    setDetails(false)
   }
   // Предупреждение, доставшееся от шторки с именем, показано — гасим его в UI
   useEffect(() => {
-    if (ui.pendingAllergens) patch({ pendingAllergens: null })
-  }, [ui.pendingAllergens])
+    if (ui.pendingAllergens || ui.resumeKey) patch({ pendingAllergens: null, resumeKey: null })
+  }, [ui.pendingAllergens, ui.resumeKey])
 
   if (!dish) return null
+
+  const mine = me?.allergies ?? []
+  // Риск считаем по ТЕКУЩЕМУ выбору: «без сметаны» снимает лактозу — и
+  // предупреждение уходит само, без галочки
+  const risk = Array.from(new Set([...allergyHits(dish, mine, opts), ...(blocked ?? []).filter(a => allergenTags(dish, opts).includes(a))]))
+  const fixes = rescues(dish, risk, mine)
+  const riskKey = [...risk].sort().join('|')
+  const confirmed = risk.length > 0 && confirmedFor === riskKey
+  const needOk = risk.length > 0 && !confirmed
+  const price = priceWithOptions(dish, opts) * qty
+  const allAllergens = allergenTags(dish, opts)
 
   const close = () => patch({ sheet: null, currentDishId: null, pendingAdd: null })
 
   const add = async () => {
-    if (sending.current) return
-    const shared = companyAtTable && target === 'table'
+    if (sending.current || dish.stop || needOk) return
+    const asShared = companyAtTable && shared
     if (!me) {
       // Имя спрашиваем ровно в момент первой надобности; блюдо НЕ теряется
-      patch({ sheet: 'name', pendingAdd: { dishId: dish.id, qty, shared, options: opts } })
+      patch({ sheet: 'name', pendingAdd: { dishId: dish.id, qty, shared: asShared, options: opts, idemKey: addKey.current } })
       return
     }
     sending.current = true
     setBusy(true)
-    const res = await addLine(dish.id, qty, shared, opts, undefined, false, addKey.current)
+    const res = await addLine(dish.id, qty, asShared, opts, undefined, confirmed, addKey.current)
     sending.current = false
     setBusy(false)
     if (res.allergens && res.allergens.length > 0) {
-      // Не добавляем молча и не прячем за тостом: это здоровье, а не удобство
+      // Сервер знает то, чего не знал клиент: показываем, а не проглатываем
       setBlocked(res.allergens)
+      setConfirmedFor(null)
       return
     }
-    // Сервер отказал — карточка остаётся открытой, а тоста об успехе нет:
-    // «Капучино → Глеб» при пустом заказе врал гостю в лицо
+    // Сервер отказал — карточка остаётся открытой, тоста об успехе нет
     if (!res.ok) return
     patch({ sheet: null, currentDishId: null })
-    toast(shared ? `${dish.name} → общее на стол` : `${dish.name} → ${me.name}`)
+    toast(asShared ? `${dish.name} — на всех` : `${dish.name} — добавлено`)
   }
 
-  /** Гость увидел предупреждение и всё равно заказывает — это его осознанный выбор. */
-  const addAnyway = async () => {
-    const shared = companyAtTable && target === 'table'
-    setBlocked(null)
-    const res = await addLine(dish.id, qty, shared, opts, undefined, true, addKey.current)
-    if (!res.ok) return
-    patch({ sheet: null, currentDishId: null })
-    toast(`${dish.name} → ${me?.name ?? 'вам'}`)
-  }
-
-  const bad = allergenTags(dish, opts).filter(a => (me?.allergies ?? []).includes(a))
-  const credit = dish.photo ? creditOf(dish.id) : null
+  const stats: [string, string][] = [
+    [dish.kcal ? String(dish.kcal) : '—', 'ккал'],
+    [servingLabel(dish, opts) ?? '—', 'порция'],
+    [allAllergens.length ? String(allAllergens.length) : 'нет', 'аллергены']
+  ]
+  const alreadyShared = shared && (snap?.lines ?? []).some(l => l.shared && l.dishId === dish.id && !l.cancelled)
 
   return (
-    <BottomSheet onClose={close}>
-      <div className="ep-scroll">
-        {/* Фото во всю ширину, название и чипы поверх него — карточка блюда
-            начинается с еды, а не с заголовка */}
-        <div className="relative h-90">
-          <DishPhoto dish={dish} />
-          <div
-            className="absolute inset-0"
-            style={{
-              // Второй слой — под кнопкой «назад»: стекло одно не вытягивает
-              // стрелку 18px до AA на светлом кадре (белая тарелка, пена)
-              background:
-                'linear-gradient(to top, rgba(6,33,25,.7) 0%, rgba(6,33,25,0) 50%), radial-gradient(circle at 38px 38px, rgba(6,33,25,.55) 0, rgba(6,33,25,0) 64px)'
-            }}
-          />
+    <div className="g-anim-up absolute inset-0 z-[21] bg-g-paper" role="dialog" aria-modal="true" aria-label={dish.name}>
+      <div className="g-noscroll absolute inset-0 overflow-y-auto pb-[calc(7.5rem+env(safe-area-inset-bottom))]">
+        <div className="relative h-145 bg-g-s1">
+          <img src={dishTall(dish.id)} alt="" className="size-full object-cover object-top" />
+          <div className="g-photo-fade absolute inset-0" />
+        </div>
+
+        <div className="relative -mt-37.5 px-5 text-center">
+          <h2 className="g-serif text-[44px] text-balance text-g-fg">{dish.name}</h2>
+          <div className="mt-4.5 grid grid-cols-3">
+            {stats.map(([v, l]) => (
+              <div key={l}>
+                <div className="text-[17px] font-bold text-g-fg">{v}</div>
+                <div className="text-[13px] text-g-mute">{l}</div>
+              </div>
+            ))}
+          </div>
           <button
-            aria-label="Назад"
-            onClick={close}
-            className="ep-glass absolute top-4 left-4 size-11 rounded-full text-lg font-extrabold"
-            style={{ color: '#FFFFFF', textShadow: '0 1px 2px rgba(0,0,0,.55)' }}
+            onClick={() => setDetails(x => !x)}
+            aria-expanded={details}
+            className="mt-3.5 h-9 rounded-full bg-g-s1 px-4 text-[13px] text-g-fg"
           >
-            ←
+            {details ? 'скрыть' : 'подробнее'}
           </button>
-          <div className="absolute right-5 bottom-4.5 left-5">
-            <div className="text-[30px] leading-[1.1] font-extrabold tracking-tight text-white">{dish.name}</div>
-            <div className="mt-2 flex flex-wrap gap-2">
-              {[servingLabel(dish, opts), dish.kcal ? `${dish.kcal} ккал` : null]
-                .filter(Boolean)
-                .map(chip => (
-                  <span
-                    key={chip as string}
-                    className="ep-glass inline-flex h-8 items-center rounded-full px-3 text-[13px] font-bold text-white"
-                  >
-                    {chip}
-                  </span>
-                ))}
-              {dietTags(dish).map(t => (
-                <span
-                  key={t}
-                  className="ep-glass inline-flex h-8 items-center rounded-full px-3 text-[13px] font-bold text-white"
-                >
-                  {t === 'острое' ? '🌶 острое' : t}
-                </span>
-              ))}
-              {(me?.allergies ?? []).length > 0 && (
-                <span
-                  className="inline-flex h-8 items-center rounded-full px-3 text-[13px] font-bold"
-                  style={
-                    bad.length > 0
-                      ? { background: '#9E3517', color: '#FFF1EC' }
-                      : { background: 'rgba(213,249,78,.9)', color: '#062119' }
-                  }
-                >
-                  {bad.length > 0 ? `здесь есть ${bad.join(' и ')}` : 'без ваших аллергенов'}
-                </span>
-              )}
+          {details && (
+            <div className="mt-3.5 rounded-[20px] bg-g-s1 p-4 text-left">
+              <div className="text-[15px] leading-normal text-g-body">{dish.desc}</div>
+              <div className="mt-3 text-[13px] font-bold text-g-mute">аллергены</div>
+              <div className="mt-0.5 text-[15px] text-g-fg">
+                {allAllergens.length ? allAllergens.join(' · ') : 'нет'}
+                {(dish.options ?? []).some(o => o.effects) ? ' · зависит от выбора ниже' : ''}
+              </div>
             </div>
-          </div>
+          )}
         </div>
 
-        {credit && (
-          <div className="px-5 pt-2 text-right text-[12px] font-semibold text-muted-soft">
-            Фото:{' '}
-            <a className="underline" href={credit.page} target="_blank" rel="noreferrer noopener">
-              {authorLabel(credit)}
-            </a>
-            ,{' '}
-            <a className="underline" href={credit.licenseUrl} target="_blank" rel="noreferrer noopener">
-              {credit.license}
-            </a>
-          </div>
-        )}
-
-        <div className="px-5 pt-3">
-          <p className="text-[15px] leading-relaxed font-medium text-muted">{dish.desc}</p>
-        </div>
-
-        {allergenTags(dish, opts).length > 0 && (
-          <div className="px-5 pt-3">
-            <div className="text-[13px] font-bold text-warning">
-              Аллергены: {allergenTags(dish, opts).join(' · ')}
-              {(dish.options ?? []).some(o => o.effects) ? ' · зависит от выбора ниже' : ''}
+        <div className="px-5">
+          {dish.stop && (
+            <div className="mt-4 rounded-[20px] bg-g-s1 px-4 py-3.5 text-[15px] text-g-body">
+              Закончилось на сегодня — кухня не сможет его приготовить.
             </div>
-          </div>
-        )}
+          )}
 
-        {/* Кому блюдо — витрина УТП: привязка к персоне в момент заказа.
-            В одиночку выбора нет: делить не с кем, и «÷1» только путает. */}
-        {companyAtTable && (
-          <div className="px-5 pt-5">
-            <div className="ep-brow mb-2.5">За кем записать</div>
-            <div className="flex gap-2.5">
-              <button
-                onClick={() => setTarget('me')}
-                className="flex h-16 flex-1 items-center gap-2.5 rounded-[18px] px-3.5"
-                style={target === 'me' ? { background: '#062119' } : { border: '1.5px solid #DFD6C3' }}
-              >
-                {me && <Avatar animal={me.animal} size={36} label={me.name} />}
-                <span className="text-left">
-                  <span
-                    className="block text-[15px] font-extrabold"
-                    style={{ color: target === 'me' ? '#FAF5EA' : '#062119' }}
-                  >
-                    Мне
-                  </span>
-                  <span
-                    className="block text-[12px] font-semibold"
-                    style={{ color: target === 'me' ? '#8CA396' : '#4A5B51' }}
-                  >
-                    {me?.name}
-                  </span>
-                </span>
-              </button>
-              <button
-                onClick={() => setTarget('table')}
-                className="flex h-16 flex-1 items-center gap-2 rounded-[18px] px-3.5"
-                style={target === 'table' ? { background: '#062119' } : { border: '1.5px solid #DFD6C3' }}
-              >
-                <span className="flex">
-                  {(snap?.personas ?? []).slice(0, 2).map((p, i) => (
-                    <span
-                      key={p.id}
-                      className="flex size-7.5 items-center justify-center rounded-full"
-                      style={{
-                        border: `2px solid ${target === 'table' ? '#062119' : '#FAF5EA'}`,
-                        marginLeft: i === 0 ? 0 : -10
-                      }}
-                    >
-                      <Avatar animal={p.animal} size={26} label={p.name} />
-                    </span>
-                  ))}
-                </span>
-                <span className="text-left">
-                  <span
-                    className="block text-[15px] font-extrabold"
-                    style={{ color: target === 'table' ? '#FAF5EA' : '#062119' }}
-                  >
-                    На всех
-                  </span>
-                  <span
-                    className="block text-[12px] font-semibold"
-                    style={{ color: target === 'table' ? '#8CA396' : '#4A5B51' }}
-                  >
-                    поровну ÷{totals.participants}
-                  </span>
-                </span>
-              </button>
-            </div>
-          </div>
-        )}
-
-        {blocked && (
-          <div className="px-5 pt-5">
-            <div className="rounded-box p-4" style={{ background: '#F6E3DA' }}>
-              <div className="text-[16px] font-extrabold" style={{ color: '#7A2A12' }}>
-                Здесь есть {blocked.join(' и ')}
-              </div>
-              <div className="mt-1.5 text-[13px] leading-snug font-semibold" style={{ color: '#7A2A12' }}>
-                Вы указали это в аллергиях. Кухня увидит выбор как запрет, а не как пожелание.
-              </div>
-
-              {/* Приложение знает, какой модификатор снимает аллерген, — кухне оно
-                  это уже говорит. Гостю не сказать об этом было прямой потерей. */}
-              {rescues(dish, blocked, me?.allergies ?? []).map(r => (
+          {risk.length > 0 && (
+            <div className="mt-4 rounded-[20px] px-4 py-3.5" style={{ border: '1.5px solid #FF9A7A' }}>
+              <div className="text-[15px] font-bold text-g-warn">Есть {risk.join(', ')} — у вас аллергия</div>
+              <div className="mt-1 text-[13px] text-g-body">Кухня увидит ваш выбор как запрет, а не как пожелание.</div>
+              {/* Приложение знает, какой вариант снимает аллерген, — кухне оно
+                  это говорит. Гостю не сказать было прямой потерей. */}
+              {fixes.map(f => (
                 <button
-                  key={`${r.optionId}-${r.choice}`}
-                  onClick={() => {
-                    setOpts(prev => ({ ...prev, [r.optionId]: r.choice }))
-                    setBlocked(null)
-                  }}
-                  className="mt-3 flex min-h-12 w-full items-center rounded-field px-3.5 py-2.5 text-left text-[13.5px] font-semibold"
-                  style={{ border: '2px solid #15603F', background: '#FFFFFF', color: '#0E3F2B' }}
+                  key={`${f.optionId}-${f.choice}`}
+                  onClick={() => setOpts(prev => ({ ...prev, [f.optionId]: f.choice }))}
+                  className="mt-2.5 flex min-h-11 w-full items-center rounded-2xl px-3.5 text-left text-[14px] font-bold text-g-ok"
+                  style={{ border: '1px solid rgba(143,212,164,.45)' }}
                 >
-                  Взять «{r.choice}» — снимет {r.removes.map(allergenAccusative).join(' и ')} · цена не меняется
+                  Взять «{f.choice}» — снимет {f.removes.map(allergenAccusative).join(' и ')}
                 </button>
               ))}
-
-              <div className="mt-3 flex gap-2">
-                <button
-                  onClick={() => setBlocked(null)}
-                  className="h-12 flex-1 rounded-field text-[15px] font-bold"
-                  style={{ background: '#9E3517', color: '#FFF1EC' }}
+              <button
+                onClick={() => setConfirmedFor(confirmed ? null : riskKey)}
+                aria-pressed={confirmed}
+                className="mt-2.5 flex min-h-11 items-center gap-2.5 text-[15px] text-g-fg"
+              >
+                <span
+                  className="flex size-6 items-center justify-center rounded-md text-[15px] text-g-on-acc"
+                  style={confirmed ? { background: '#FF9A7A' } : { border: '1.5px solid #FF9A7A' }}
                 >
-                  Не буду
-                </button>
-                <button
-                  onClick={() => void addAnyway()}
-                  className="h-12 flex-1 rounded-field text-[15px] font-bold"
-                  style={{ border: '1.5px solid #DFD6C3' }}
-                >
-                  Всё равно заказать
-                </button>
-              </div>
+                  {confirmed ? '✓' : ''}
+                </span>
+                понимаю, всё равно заказать
+              </button>
             </div>
-          </div>
-        )}
+          )}
 
-        {target === 'table' && (snap?.lines ?? []).some(l => l.shared && l.dishId === dish.id) && (
-          <div className="px-5 pt-4">
-            <WarnBanner>
-              <span className="text-sm leading-snug">
-                {dish.name} уже есть в общих блюдах стола — вы добавите <b>ещё одну порцию</b>.
+          {(dish.options ?? []).map(opt => {
+            const chosen = opts[opt.id]
+            const removes = chosen ? opt.effects?.[chosen]?.removes ?? [] : []
+            return (
+              <div key={opt.id} className="mt-5">
+                <div className="text-[13px] text-g-mute">{opt.name}</div>
+                <div className="g-noscroll mt-2 flex gap-2 overflow-x-auto">
+                  {opt.choices.map(choice => {
+                    const on = chosen === choice
+                    return (
+                      <button
+                        key={choice}
+                        onClick={() => setOpts(prev => ({ ...prev, [opt.id]: choice }))}
+                        aria-pressed={on}
+                        className="h-18 min-w-24 shrink-0 rounded-[20px] px-3.5 text-[15px]"
+                        style={
+                          on
+                            ? { background: '#F3F0EA', color: '#1A1612', border: '1px solid #F3F0EA' }
+                            : { background: 'var(--g-s1)', color: '#F3F0EA', border: '1px solid rgba(255,255,255,.1)' }
+                        }
+                      >
+                        {choice}
+                      </button>
+                    )
+                  })}
+                </div>
+                {removes.length > 0 && (
+                  <div className="mt-2 text-[13px] font-bold text-g-ok">
+                    {chosen} — снимает {removes.map(allergenAccusative).join(' и ')}
+                  </div>
+                )}
+              </div>
+            )
+          })}
+
+          {/* Общее блюдо — только когда за столом есть с кем делить */}
+          {companyAtTable && (
+            <button
+              onClick={() => setShared(x => !x)}
+              aria-pressed={shared}
+              className="mt-5 flex w-full items-center gap-3 rounded-[20px] bg-g-s1 p-4 text-left text-g-fg"
+            >
+              <span className="flex-1">
+                <span className="block text-[15px] font-bold">на всех за столом</span>
+                <span className="block text-[13px] text-g-mute">разделим на тех, кто за столом при отправке</span>
               </span>
-            </WarnBanner>
-          </div>
-        )}
-
-        {/* Модификаторы блюда — реальные: уходят на кухню вместе с позицией */}
-        {(dish.options ?? []).map(opt => (
-          <div key={opt.id} className="px-5 pt-5">
-            <div className="ep-brow mb-2.5">{opt.name}</div>
-            <div className="flex flex-wrap gap-2">
-              {opt.choices.map(choice => {
-                const on = opts[opt.id] === choice
-                return (
-                  <button
-                    key={choice}
-                    onClick={() => setOpts(prev => ({ ...prev, [opt.id]: choice }))}
-                    className="h-11.5 rounded-[14px] px-4 text-[14px] font-bold"
-                    style={
-                      on
-                        ? { background: '#D5F94E', color: '#062119' }
-                        : { border: '1.5px solid #DFD6C3', color: '#26382F' }
-                    }
-                  >
-                    {choice}
-                  </button>
-                )
-              })}
+              <span
+                className="relative h-8 w-13 shrink-0 rounded-full transition-colors"
+                style={{ background: shared ? 'var(--g-acc)' : 'rgba(255,255,255,.1)' }}
+              >
+                <span
+                  className="absolute top-0.75 size-6.5 rounded-full bg-white transition-[left]"
+                  style={{ left: shared ? 23 : 3 }}
+                />
+              </span>
+            </button>
+          )}
+          {alreadyShared && (
+            <div className="mt-2 px-1 text-[13px] text-g-tan">
+              {dish.name} уже есть в общих блюдах стола — это будет ещё одна порция.
             </div>
-          </div>
-        ))}
-
-        <div className="h-5" />
+          )}
+        </div>
       </div>
 
-      <div
-        className="flex shrink-0 items-center gap-3.5 px-5 pt-3 pb-[calc(1.375rem+env(safe-area-inset-bottom))]"
-        style={{ borderTop: '1px solid #E3DCCB' }}
-      >
-        <div className="flex items-center gap-1" style={{ border: '1.5px solid #DFD6C3', borderRadius: 16, padding: 4 }}>
+      <div className="absolute top-4 left-4 z-[2]">
+        <button aria-label="Закрыть" onClick={close} className="g-glass size-11 rounded-full text-[17px]">
+          ✕
+        </button>
+      </div>
+
+      <div className="g-dock absolute right-3 bottom-[calc(0.875rem+env(safe-area-inset-bottom))] left-3 flex gap-2 rounded-[32px] p-2">
+        <div className="flex h-14 items-center rounded-full bg-g-s1">
           <button
             aria-label="Меньше"
             disabled={qty <= 1}
-            onClick={() => setQty(Math.max(1, qty - 1))}
-            className="size-10 rounded-xl text-xl font-bold disabled:opacity-35"
+            onClick={() => setQty(q => Math.max(1, q - 1))}
+            className="h-14 w-12 text-xl text-g-fg disabled:opacity-35"
           >
             −
           </button>
-          <span className="ep-sum w-6 text-center text-[16px] font-extrabold">{qty}</span>
+          <span className="g-num min-w-4.5 text-center text-[17px] font-bold text-g-fg">{qty}</span>
           <button
             aria-label="Больше"
             disabled={qty >= MAX_QTY}
-            onClick={() => setQty(Math.min(MAX_QTY, qty + 1))}
-            className="size-10 rounded-xl text-xl font-bold disabled:opacity-35"
+            onClick={() => setQty(q => Math.min(MAX_QTY, q + 1))}
+            className="h-14 w-12 text-xl text-g-fg disabled:opacity-35"
           >
             +
           </button>
         </div>
         <button
           onClick={() => void add()}
-          disabled={busy}
-          className="ep-sum h-15 flex-1 rounded-field text-[16px] font-extrabold disabled:opacity-45"
-          style={{ background: '#D5F94E', color: '#062119', boxShadow: '0 12px 26px -14px rgba(6,33,25,.9)' }}
+          disabled={busy || dish.stop || needOk}
+          className="g-cta g-num h-14 flex-1 rounded-full text-[20px] disabled:opacity-40"
         >
-          Добавить · {fmt(priceWithOptions(dish, opts) * qty)}
+          {dish.stop ? 'Закончилось' : busy ? 'Секунду…' : `+ ${fmt(price)}`}
         </button>
       </div>
-    </BottomSheet>
+    </div>
   )
 }

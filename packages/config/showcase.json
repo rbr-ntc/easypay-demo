@@ -1,0 +1,100 @@
+{
+  "palette": "soft",
+  "season": "auto",
+  "kitchenUntil": "23:00",
+  "tall": [
+    "beetroot",
+    "borsch",
+    "caesar",
+    "cappuccino",
+    "cheesecake",
+    "greek",
+    "lemonade",
+    "margarita",
+    "negroni",
+    "pumpkin",
+    "risotto",
+    "sparkling",
+    "springrolls",
+    "steak",
+    "tartare",
+    "tempura",
+    "ukha",
+    "wine-red"
+  ],
+  "art": {
+    "welcome": [
+      "welcome-italian-table",
+      "welcome-med-sun",
+      "welcome-aperitivo",
+      "welcome-evening",
+      "welcome-autumn-soup",
+      "welcome-table",
+      "welcome-chef",
+      "welcome-wine"
+    ],
+    "table": ["welcome-chef", "welcome-table", "welcome-wine"],
+    "done": ["welcome-evening", "welcome-aperitivo", "welcome-italian-table"]
+  },
+  "seasons": {
+    "winter": {
+      "title": "пришла зима",
+      "slides": ["borsch", "ukha", "steak", "cappuccino"],
+      "bye": "До встречи — зимой будет теплее"
+    },
+    "spring": {
+      "title": "пришла весна",
+      "slides": ["greek", "springrolls", "bruschetta", "lemonade"],
+      "bye": "До встречи весной"
+    },
+    "summer": {
+      "title": "пришло лето",
+      "slides": ["lemonade", "tartare", "tempura", "negroni"],
+      "bye": "До встречи на веранде"
+    },
+    "autumn": {
+      "title": "осень пришла",
+      "slides": ["pumpkin", "beetroot", "risotto", "borsch"],
+      "bye": "Приходите за тыквой ещё"
+    }
+  },
+  "collections": [
+    {
+      "id": "foryou",
+      "name": "к столу",
+      "hero": ["tartare", "tempura", "cheesecake"],
+      "sections": [
+        { "title": "$season", "kind": "tall", "dishes": "$season" },
+        { "title": "к столу — быстро", "kind": "small", "dishes": ["bruschetta", "springrolls", "fries", "hummus"] },
+        { "title": "стоит попробовать", "kind": "small", "dishes": ["tartare", "tempura", "ukha", "padthai"] },
+        { "title": "на десерт", "kind": "tall", "dishes": ["cheesecake", "icecream", "cappuccino"] }
+      ]
+    },
+    {
+      "id": "season",
+      "name": "$season",
+      "hero": "$season",
+      "sections": [
+        { "title": "сезонное меню", "kind": "tall", "dishes": "$season" },
+        { "title": "с огня", "kind": "tall", "dishes": ["steak", "risotto", "duck"] },
+        { "title": "к супу", "kind": "small", "dishes": ["bruschetta", "hummus", "mash"] }
+      ]
+    },
+    {
+      "id": "bar",
+      "name": "бар",
+      "hero": ["wine-red", "sparkling", "negroni"],
+      "sections": [
+        { "title": "вино", "kind": "tall", "dishes": ["wine-red", "wine-white", "sparkling"] },
+        { "title": "коктейли и пиво", "kind": "small", "dishes": ["negroni", "craft-beer", "lemonade", "mors"] },
+        { "title": "кофе", "kind": "small", "dishes": ["espresso", "cappuccino"] }
+      ]
+    },
+    {
+      "id": "all",
+      "name": "всё меню",
+      "hero": ["steak", "margarita", "caesar"],
+      "sections": "$categories"
+    }
+  ]
+}
