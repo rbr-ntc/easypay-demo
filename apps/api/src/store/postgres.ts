@@ -781,6 +781,61 @@ export async function createPostgresStore(url?: string): Promise<Store> {
       return row ? { mime: row.mime as string, data: Buffer.from(row.data) } : null
     },
 
+    async staffList() {
+      const rows = await sql`
+        select s.ext_id, s.name, s.role, s.pin_hash, s.phone,
+               (s.active_to is null or s.active_to > now()) as active,
+               coalesce(array_agg(t.number order by t.number) filter (where t.number is not null), '{}') as tables
+          from staff s
+          left join staff_tables st on st.staff_id = s.id
+          left join restaurant_tables t on t.id = st.table_id
+         where s.ext_id is not null and (s.venue_id = ${venueId} or s.venue_id is null)
+         group by s.id
+         order by s.created_at
+      `
+      if (!rows.length) return null
+      return rows.map(r => ({
+        id: r.ext_id as string,
+        name: r.name as string,
+        role: r.role as string,
+        pinHash: r.pin_hash as string,
+        phone: (r.phone as string | null) ?? null,
+        active: Boolean(r.active),
+        tables: (r.tables as string[]).map(String)
+      }))
+    },
+
+    async saveStaff(rec) {
+      await sql.begin(async tx => {
+        const [found] = await tx`select id from staff where ext_id = ${rec.id} limit 1`
+        let id: string
+        if (found) {
+          id = found.id
+          await tx`
+            update staff set name = ${rec.name}, role = ${rec.role}, pin_hash = ${rec.pinHash}, phone = ${rec.phone},
+                   active_to = ${rec.active ? null : sql`coalesce(active_to, now())`}
+             where id = ${id}
+          `
+        } else {
+          const [created] = await tx`
+            insert into staff (org_id, venue_id, name, role, pin_hash, ext_id, phone, active_to)
+            select org_id, ${venueId}, ${rec.name}, ${rec.role}, ${rec.pinHash}, ${rec.id}, ${rec.phone}, ${rec.active ? null : new Date()}
+              from venues where id = ${venueId}
+            returning id
+          `
+          id = created.id
+        }
+        await tx`delete from staff_tables where staff_id = ${id}`
+        if (rec.tables.length) {
+          await tx`
+            insert into staff_tables (staff_id, table_id)
+            select ${id}, t.id from restaurant_tables t where t.venue_id = ${venueId} and t.number in ${sql(rec.tables)}
+          `
+        }
+      })
+      await refreshStaff()
+    },
+
     async close() {
       await sql.end()
     }

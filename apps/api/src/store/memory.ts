@@ -2,7 +2,7 @@
 // Поведение обязано совпадать с Postgres-реализацией — на обеих гоняется один набор тестов.
 import { computeTotals, isBillLine, round2 } from '@easypay/domain/money'
 import { dishName, priceOf } from '../menu.ts'
-import { waiterOfTable } from '../staff.ts'
+import { staffFromConfig, waiterOfTable, type StaffRecord } from '../staff.ts'
 import type { AuditEntry, MutationResult, Shift, TableSession } from '../types.ts'
 import type { DecisionNote, MenuDocKind, MenuDocRow, Settlement, ShiftCheck, ShiftInfo, Store } from './types.ts'
 
@@ -51,6 +51,7 @@ export function createMemoryStore(): Store {
   const stops = new Map<string, boolean>()
   const menuDocs = new Map<MenuDocKind, MenuDocRow>()
   const photos = new Map<string, { mime: string; data: Buffer }>()
+  let staff: StaffRecord[] | null = null
   const shift = freshShift()
   let guestsSeen = 0
 
@@ -326,6 +327,16 @@ export function createMemoryStore(): Store {
 
     async photo(id) {
       return photos.get(id) ?? null
+    },
+
+    async staffList() {
+      return staff ? structuredClone(staff) : null
+    },
+
+    async saveStaff(rec) {
+      const list = staff ?? staffFromConfig()
+      const i = list.findIndex(s => s.id === rec.id)
+      staff = i >= 0 ? list.map((s, j) => (j === i ? structuredClone(rec) : s)) : [...list, structuredClone(rec)]
     },
 
     async close() {

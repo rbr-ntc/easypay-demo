@@ -1,6 +1,10 @@
 // Персонал смены: вход по PIN, сессии, закрепление столов за официантами.
-// Демо-хранилище: список в src/staff.json, сессии в памяти. В проде это БД,
-// хеши PIN-кодов и общий SSO — здесь важна форма, а не хранилище.
+//
+// Список сотрудников живёт в базе и правится из кабинета («Персонал»); в
+// памяти процесса — его копия, чтобы вход по PIN не ходил в базу. Файл
+// packages/config/staff.json — только начальное наполнение. PIN хранится
+// хешем: тот же scrypt, что в packages/db/src/seed.js, иначе засеянные
+// сотрудники не смогли бы войти.
 import crypto from 'node:crypto'
 import { staff as RAW } from '@easypay/config'
 
@@ -12,13 +16,56 @@ const PIN_OVERRIDES = new Map(
     .filter(([id, pin]) => id && pin)
 )
 
-const STAFF = RAW.staff.map(s => ({
-  id: String(s.id),
-  name: String(s.name),
-  role: String(s.role),
-  tables: (s.tables ?? []).map(String),
-  pin: String(PIN_OVERRIDES.get(String(s.id)) ?? s.pin)
-}))
+export const STAFF_ROLES = ['manager', 'waiter', 'cook'] as const
+export type StaffRole = (typeof STAFF_ROLES)[number]
+
+export interface StaffRecord {
+  id: string
+  name: string
+  role: string
+  tables: string[]
+  pinHash: string
+  /** Уволенный не входит и не значится в зале, но остаётся в журнале и чеках. */
+  active: boolean
+  phone: string | null
+}
+
+export function hashPin(pin: string): string {
+  return crypto.scryptSync(String(pin), 'easypay', 32).toString('base64')
+}
+
+/** Персонал из файла — пока в базе никого нет (запуск без базы, тесты). */
+export function staffFromConfig(): StaffRecord[] {
+  return RAW.staff.map((s: any) => ({
+    id: String(s.id),
+    name: String(s.name),
+    role: String(s.role),
+    tables: (s.tables ?? []).map(String),
+    pinHash: hashPin(String(PIN_OVERRIDES.get(String(s.id)) ?? s.pin)),
+    active: true,
+    phone: s.phone ? String(s.phone) : null
+  }))
+}
+
+let STAFF: StaffRecord[] = staffFromConfig()
+
+/** Заменить список в памяти: при старте из базы и после правки в кабинете. */
+export function applyStaff(list: StaffRecord[]) {
+  STAFF = list.map(s => ({ ...s, tables: [...s.tables] }))
+  // Уволенного выкидываем из смены сразу, а не через двенадцать часов
+  const fired = new Set(STAFF.filter(s => !s.active).map(s => s.id))
+  for (const [token, sess] of sessions) {
+    if (fired.has(sess.staffId)) {
+      sessions.delete(token)
+      revoked.set(token, Date.now())
+    }
+  }
+}
+
+export const allStaff = (): StaffRecord[] => STAFF
+export const findStaff = (id: string) => STAFF.find(s => s.id === id) ?? null
+/** PIN занят другим работающим сотрудником — вход по PIN не различил бы их. */
+export const pinTaken = (hash: string, exceptId: string | null) => STAFF.some(s => s.active && s.pinHash === hash && s.id !== exceptId)
 
 /** Публичная карточка сотрудника: без PIN-кода. */
 function publicStaff(s: any) {
@@ -26,7 +73,7 @@ function publicStaff(s: any) {
 }
 
 export function staffRoster() {
-  return STAFF.map(publicStaff)
+  return STAFF.filter(s => s.active).map(publicStaff)
 }
 
 /** Имя сотрудника по его id: чек и журнал должны называть человека, а не код. */
@@ -36,7 +83,7 @@ export function staffName(id: string | null | undefined) {
 }
 
 export function waiterOfTable(tableId: string) {
-  const found = STAFF.find(s => s.role === 'waiter' && s.tables.includes(String(tableId)))
+  const found = STAFF.find(s => s.active && s.role === 'waiter' && s.tables.includes(String(tableId)))
   return found ? { id: found.id, name: found.name } : null
 }
 
@@ -79,8 +126,11 @@ export function sessionStaff(token: unknown) {
     sessions.delete(String(token))
     return null
   }
+  // Роль и столы — текущие: менеджер мог переназначить их посреди смены
+  const rec = findStaff(found.staffId)
+  const staff = rec ? publicStaff(rec) : found.staff
   // Действие в журнале должно отвечать не только «под каким аккаунтом», но и «с какого устройства»
-  return { ...found.staff, sessionId: found.id, device: found.device }
+  return { ...staff, sessionId: found.id, device: found.device }
 }
 
 /** Активные сессии сотрудника — менеджеру видно, кто сейчас в смене и с чего. */
@@ -153,10 +203,10 @@ function noteFailure(ip: string, device: string | null = null) {
   }
 }
 
-/** Сравнение PIN без утечки времени: одинаковая длина обязательна. */
-function pinMatches(given: unknown, want: unknown) {
-  const a = Buffer.from(String(given))
-  const b = Buffer.from(String(want))
+/** Сравнение хешей без утечки времени: одинаковая длина обязательна. */
+function pinMatches(given: string, want: string) {
+  const a = Buffer.from(given)
+  const b = Buffer.from(want)
   return a.length === b.length && crypto.timingSafeEqual(a, b)
 }
 
@@ -167,7 +217,8 @@ export function loginByPin(pin: unknown, ip: string, device: unknown = null) {
     noteFailure(ip, label)
     return null
   }
-  const found = STAFF.find(s => pinMatches(clean, s.pin))
+  const hash = hashPin(clean)
+  const found = STAFF.find(s => s.active && pinMatches(hash, s.pinHash))
   if (!found) {
     noteFailure(ip, label)
     return null

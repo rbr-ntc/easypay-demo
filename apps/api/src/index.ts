@@ -33,6 +33,7 @@ import { hallPayload, kitchenPayload } from './feeds.ts'
 import { createStore, type Store } from './store/index.ts'
 import { createShiftRoutes } from './shiftApi.ts'
 import { createMenuRoutes, loadPublishedMenu } from './menuApi.ts'
+import { createStaffRoutes, loadStaff } from './staffApi.ts'
 import {
   dropSession,
   wasRevoked,
@@ -57,6 +58,7 @@ let storePromise: Promise<Store> | null = null
 const getStore = () =>
   (storePromise ??= createStore().then(async store => {
     await loadPublishedMenu(store)
+    await loadStaff(store)
     applyStopOverrides(await store.stopOverrides())
     return store
   }))
@@ -1225,6 +1227,9 @@ async function handleApi(req: any, res: any, url: URL) {
     return json(res, 200, { ok: true })
   }
 
+  // Персонал из кабинета: список, новый сотрудник, PIN, увольнение
+  if (await staffRoutes(req, res, url, store)) return
+
   if (url.pathname === '/api/staff/roster') {
     const actor = actorFrom(req, url)
     if (!allowed(actor, 'log')) return json(res, 403, { error: 'role not allowed' })
@@ -1445,6 +1450,17 @@ async function handleApi(req: any, res: any, url: URL) {
   if (out.status === 200) await broadcast(store, tableId)
   return json(res, out.status, out.body)
 }
+
+const staffRoutes = createStaffRoutes({
+  json,
+  readBody,
+  actorFrom,
+  allowed,
+  staffUnauthorized,
+  audit,
+  flushAudit,
+  broadcastEverywhere
+})
 
 const menuRoutes = createMenuRoutes({
   json,

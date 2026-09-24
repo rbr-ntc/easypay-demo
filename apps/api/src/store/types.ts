@@ -1,4 +1,5 @@
 import type { AuditEntry, MutationResult, Shift, TableSession } from '../types.ts'
+import type { StaffRecord } from '../staff.ts'
 
 /**
  * Хранилище состояния зала. Две реализации: память (быстрые тесты и демо без БД)
@@ -75,6 +76,12 @@ export interface Store {
   /** Фото блюда: хранится в базе, отдаётся по id — переживает редеплой. */
   savePhoto(mime: string, data: Buffer): Promise<string>
   photo(id: string): Promise<{ mime: string; data: Buffer } | null>
+
+  // ── Персонал из кабинета ──────────────────────────────────────────────
+  /** Сотрудники из базы; null — ещё никого не заводили, работаем по файлу. */
+  staffList(): Promise<StaffRecord[] | null>
+  /** Создать или обновить сотрудника вместе с закреплёнными столами. */
+  saveStaff(rec: StaffRecord): Promise<void>
 
   close(): Promise<void>
 }
