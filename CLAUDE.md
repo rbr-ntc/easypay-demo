@@ -12,10 +12,11 @@ EasyPay — заказ и оплата в ресторане по QR с прив
 ```
 apps/api        — HTTP + SSE сервер на TypeScript: столы, смена, кухня, зал
 apps/web        — клиент: гостевой поток по QR (screens/, sheets/) и экраны
-                  персонала (hall/, kitchen/, waiter/, staff/)
+                  персонала — кабинет 4.0 (cabinet/, вход по PIN — staff/)
 packages/domain — правила без ввода-вывода (TS): money, hall, kitchen, roles, allergens
 packages/db     — Postgres: схема, миграции, наполнение из packages/config
-packages/config — данные заведения: menu.json, hall.json, staff.json
+packages/config — начальные данные заведения: menu.json, hall.json, staff.json
+                  (дальше меню, персонал и настройки правятся из кабинета и живут в БД)
 docs/           — продуктовая часть: PRD, архитектура, план перехода на БД
 infra/          — окружение (docker-compose появится на этапе БД)
 ```
@@ -57,17 +58,21 @@ npm test
 Линтера нет. **Сервер и домен на TypeScript**: Node 22 исполняет `.ts` напрямую (тесты
 гоняются без сборки), для VPS с Node 18 собираем в JS через `npm run build`.
 
-Маршруты (hash-роутинг, роутера нет): `/` — гость, `/#/hall` — зал ресторана,
-`/#/kitchen` — очередь кухни, `/#/waiter` — экран одного стола, `/#/qr` — QR-тент стола
-(без `?t=` — лист тентов на все столы).
+Маршруты (hash-роутинг, роутера нет, разбор — `apps/web/src/cabinet/route.ts`): `/` — гость,
+`/#/admin/<раздел>` — кабинет менеджера (`overview`, `shifts[/<id>]`, `checks[/<смена>]`, `debts`,
+`menu`, `staff`, `log`, `settings`, `close`), `/#/hall[/<стол>]` — зал и стол, `/#/kitchen` и
+`/#/bar` — очереди цехов, `/#/qr` — QR-тент стола (без `?t=` — лист тентов на все столы).
+Старый `?t=6#/waiter` ведёт на `#/hall/6`.
 
 **Стол берётся только из `?t=…`, дефолта нет** (раньше молча подставлялся стол 12): без
 параметра гость видит экран выбора стола `apps/web/src/screens/TablePicker.tsx`, неизвестный стол —
 понятную ошибку. Стол считается известным, если он есть в `packages/config/hall.json`. Одинаковый `t`
 в двух вкладках = мультиплеер за одним столом.
 
-Экраны персонала закрыты **входом в смену по PIN** (`packages/config/staff.json` — демо-персонал,
-PIN-коды перекрываются переменной `EASYPAY_STAFF_PINS="max=4821,boss=7390"`). Роли и права —
+Экраны персонала закрыты **входом в смену по PIN**. Сотрудники живут в БД и правятся в
+кабинете («Персонал»: PIN придумывает сервер и показывает один раз, хранится хеш; увольнение
+гасит сессии сразу); `packages/config/staff.json` — только начальное наполнение, его PIN-коды
+перекрываются переменной `EASYPAY_STAFF_PINS="max=4821,boss=7390"`. Роли и права —
 в `packages/domain/roles.js`, один список для сервера и клиента: повар видит только кухню, официант —
 зал/стол/кухню и свои закреплённые столы, менеджер — всё плюс журнал смены. Сессия живёт
 12 часов, попытки подбора PIN ограничены.
@@ -87,8 +92,12 @@ localStorage. Им же удобно проверять деплой curl-ом.
 Редеплой из корня после `npm run build`:
 
 ```bash
-tar czf /tmp/e.tgz apps/api/dist apps/api/package.json apps/web/dist packages/domain/dist packages/domain/package.json packages/config package.json && scp /tmp/e.tgz root@77.221.141.238:/tmp/ && ssh root@77.221.141.238 'tar xzf /tmp/e.tgz -C /opt/easypay && systemctl restart easypay'
+tar czf /tmp/e.tgz apps/api/dist apps/api/package.json apps/web/dist packages/domain/dist packages/domain/package.json packages/config packages/db package.json && scp /tmp/e.tgz root@77.221.141.238:/tmp/ && ssh root@77.221.141.238 'tar xzf /tmp/e.tgz -C /opt/easypay && systemctl restart easypay'
 ```
+
+Новые миграции (`packages/db/migrations/*.sql`) применяются на стенде до рестарта:
+`cd /opt/easypay/packages/db && DATABASE_URL=… node src/migrate.js` (адрес базы — в окружении
+службы `easypay`).
 
 Деплой статики через GitHub Pages удалён: живая версия требует Node-сервера, а workflow
 публиковал устаревшую мок-версию.
@@ -193,32 +202,44 @@ API (всё под `/api/t/:tableId/…`, POST если не сказано ин
 стол / отправил всё на кухню), чтобы никто не завис на потерявшем смысл экране. Это частая
 причина «странных» переходов при отладке.
 
-**Зал** — `apps/web/src/hall/Hall.tsx` (+ `TableCard`, `HallSummary`, стили `apps/web/src/hall.css`). План зала
-описан в `packages/config/hall.json` (зоны, столы, посадка) — этот же файл читает сервер, из него же
-берётся зона стола для гостевых экранов (`zoneOfTable` в `apps/web/src/hallConfig.ts`).
-Данные приходят одним payload'ом с `GET /api/hall` и живут по SSE `GET /api/hall/stream?token=…`
-(EventSource не умеет заголовки, поэтому для стрима токен в query — компромисс демо).
-Сервер отдаёт **компактные карточки столов**, а статусы, таймеры, алерты и сводку считает
-`packages/domain/hall.js` — одинаково на сервере и клиенте, поэтому «сели и не заказали 8 минут»
-обновляется каждую секунду без запросов. Пороги алертов — `THRESHOLDS` там же.
+**Кабинет 4.0** — `apps/web/src/cabinet/`: светлая тема `c-*` (`cab.css`), каркас `Shell.tsx`
+(рабочие места «Кабинет · Зал · Кухня · Бар» по правам роли, боковое меню кабинета), зал
+`HallPage.tsx`, стол `TableView.tsx`, кухня и бар `KitchenPage.tsx`, разделы менеджера в
+`cabinet/admin/` (обзор с X-отчётом, мастер закрытия смены, долги и решения, смены с Z-отчётами,
+реестр чеков, журнал, конструктор меню `admin/menu/`, персонал, настройки). Менеджер после входа
+попадает в `#/admin/overview`.
 
-**Кухня** — `apps/web/src/kitchen/Kitchen.tsx` (+ `Ticket`, стили `apps/web/src/kitchen.css`), данные с
-`GET /api/kitchen` и SSE `/api/kitchen/stream?token=…`. Тикет = отправленная и ещё не
-поданная позиция любого стола; правила очереди и срочности — в `packages/domain/kitchen.js`
-(жёлтый после 10 минут, красный после 20). Путь позиции: черновик → `send` → очередь →
-`start` (кухня взяла) → `serve` (подано). `start` и `serve` — менеджерские действия.
+План зала — `packages/config/hall.json` (зоны, столы, посадка); его читает и сервер. Данные зала —
+`GET /api/hall` и SSE `/api/hall/stream?token=…` (EventSource не умеет заголовки — токен в query).
+Сервер отдаёт компактные карточки, а статусы, таймеры и алерты считает `packages/domain/hall.ts` —
+одинаково на сервере и клиенте. Кухня — `GET /api/kitchen` и `/api/kitchen/stream`; правила очереди
+и срочности — `packages/domain/kitchen.ts`.
 
-**Экран ресторана** — `apps/web/src/Waiter.tsx` только собирает шапку и две колонки; содержимое
-разнесено по `apps/web/src/waiter/*` (`GuestList`, `OrderFeed`, `PaymentsList`, `Metrics`,
-`ManagerLogin`, чистые `tableMetrics.ts` и `duration.ts`), стили — в `apps/web/src/waiter.css`
-(классы `.ep-w-*`). Гостевые экраны пока остались на инлайн-стилях.
+**Смена — событие.** Менеджер открывает смену (`POST /api/shift/open`) и закрывает мастером
+(`POST /api/shift/close`: долги решены, касса пересчитана, расхождение с комментарием) — Z-отчёт
+замораживается в `shifts.report`. Без открытой смены новые столы не открываются (`join` → 409
+`shift closed`); открытые при закрытии столы переносятся в следующую. Отчёт считает
+`packages/domain/shift.ts` (часы — по поясу заведения). Долги решаются в `/api/decisions/*`:
+«взыскано» (наличными/переводом/СБП) или «списано на заведение»; удержание с официанта не делаем
+до юриста (ТК РФ ст. 137, 138, 241).
+
+**Меню, персонал, настройки — в БД, правятся из кабинета.** Меню: черновик и публикация
+(`/api/menu/editor|draft|publish|discard`), фото блюд — в `menu_photos` (`/api/menu/photo/<id>`),
+гость берёт меню с `/api/menu/live` до первого кадра и перечитывает, когда в снимке меняется
+`menuVersion`. Снятое блюдо заказать нельзя, но в открытом счёте оно называется по имени.
+Настройки заведения — одна схема `packages/domain/settings.ts` (`venues.settings`), читают все
+(`GET /api/settings`), меняет менеджер; снимки несут `settingsVersion`. Каждая настройка
+что-то делает: выключенный способ оплаты, делёж или чаевые сервер не примет (409), пороги
+красят зал и кухню, правила смены решают, можно ли закрыть с долгом.
 
 **Стили** — `apps/web/src/styles.css` с CSS-переменными `--ep-*` и переключателем темы через
 `document.documentElement.dataset.theme` (инлайн-скрипт в `index.html`). Активна одна тема
 `classic`; тема `seasons` была реализована и откачена (`3c3df70`) — архитектура переменных
 осталась, новая тема подключается заменой блока переменных. Компоненты используют
 инлайн-стили поверх этих переменных; общие примитивы — `apps/web/src/ui.tsx`, аватары-звери
-(SVG, не эмодзи) — `apps/web/src/avatars.tsx`.
+(SVG, не эмодзи) — `apps/web/src/avatars.tsx`. Гость 4.x живёт на токенах `g-*`
+(`apps/web/src/guest/g4.css`), кабинет — на `c-*` (`apps/web/src/cabinet/cab.css`); оба файла
+подключены в `theme.css` после `tailwindcss` — иначе токены `@theme` не превратятся в классы.
 
 ## Продуктовые инварианты (нарушать только осознанно)
 
