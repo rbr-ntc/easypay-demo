@@ -35,12 +35,33 @@ export function lookOf(card: Card, now: number): Look {
   const guests = `${card.guests} ${plural(card.guests, 'гость', 'гостя', 'гостей')}`
   const dur = card.openedAt ? fmtDur(now - card.openedAt) : ''
   const tail = [guests, dur].filter(Boolean).join(' · ')
+  const labelOf = (id: string) => alerts.find(a => a.id === id)?.label
 
-  if (card.call) return { color: C.call, state: `Зовут официанта · ${tail}`, alert: 'зовут', alertColor: C.call }
-  if (card.cashIntent) return { color: C.warn, state: `Наличные в пути · ${tail}`, alert: '₽ в пути', alertColor: C.warn }
+  // Вызов — текстом гостя: «хлеб и бокал» или «сдачи с 1100», официант идёт не вслепую
+  if (card.call) {
+    const more = (card.calls ?? 1) > 1 ? ` · ещё ${(card.calls ?? 1) - 1}` : ''
+    return { color: C.call, state: `${labelOf('call-waiter') ?? 'Зовут официанта'}${more}`, alert: 'зовут', alertColor: C.call }
+  }
+  // Гость сидит с деньгами и ждёт — это срочно, и видно кто и сколько
+  if (card.cashIntent) {
+    return {
+      color: C.call,
+      state: `${labelOf('cash-wanted') ?? `${card.cashIntent.name} платит наличными`} · ${fmt(card.cashIntent.amount)}`,
+      alert: 'наличные',
+      alertColor: C.call
+    }
+  }
+  // Тарелка на раздаче остывает: это видно в зале, а не только на кухне
+  const ready = card.readyCount ?? 0
+  if (ready > 0) {
+    return { color: C.warn, state: `Готово на раздаче: ${ready} — унести · ${tail}`, alert: `унести ${ready}`, alertColor: '#9A6A0B' }
+  }
   if (status === TABLE_STATUS.PAID) return { color: C.paid, state: `Оплачен, гости сидят · ${tail}`, alert: '', alertColor: '' }
   const hot = alerts.find(a => a.severity === 'danger' || a.severity === 'warn')
   if (hot) return { color: C.warn, state: `${hot.label} · ${tail}`, alert: 'внимание', alertColor: '#9A6A0B' }
+  const paidAhead = card.tableTotal > 0 && card.remaining <= 0.01 && card.kitchenPending > 0
+  if (paidAhead) return { color: C.busy, state: `Оплачен, еда готовится · ${tail}`, alert: '', alertColor: '' }
+  if (status === TABLE_STATUS.COOKING) return { color: C.busy, state: `На кухне: ${card.kitchenPending} · ${tail}`, alert: '', alertColor: '' }
   return { color: C.busy, state: `Гости за столом · ${tail}`, alert: '', alertColor: '' }
 }
 

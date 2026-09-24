@@ -37,6 +37,8 @@ export interface HallCard {
   kitchenPending: number
   /** Готово и ждёт официанта: тарелка стоит на раздаче. */
   readyCount?: number
+  /** Корзина гостей, ещё не отправленная на кухню. */
+  draftTotal?: number
   oldestPendingSentAt: number | null
   lastSentAt: number | null
   lastServedAt: number | null
@@ -146,7 +148,10 @@ export function tableStatus(card: HallCard, now: number): TableStatus {
     return justClosed ? TABLE_STATUS.DIRTY : TABLE_STATUS.FREE
   }
   // «Оплачен» = были платежи и остатка нет (одного нулевого остатка мало: пустой стол тоже нулевой)
-  if (card.tableTotal > 0 && card.paidTotal > 0 && card.remaining <= 0.01) return TABLE_STATUS.PAID
+  // Оплачен вперёд, а еда ещё готовится — стол на кухне, а не «закрыть»:
+  // зал звал закрыть, сервер отвечал 409, а «кухня задерживает» пряталось
+  if (card.tableTotal > 0 && card.paidTotal > 0 && card.remaining <= 0.01 && card.kitchenPending === 0) return TABLE_STATUS.PAID
+  if (card.tableTotal > 0 && card.paidTotal > 0 && card.remaining <= 0.01) return TABLE_STATUS.COOKING
   if (card.paidTotal > 0) return TABLE_STATUS.PAYING
   if (card.kitchenPending > 0) return TABLE_STATUS.COOKING
   if (card.sentCount > 0) return TABLE_STATUS.SERVED
@@ -201,7 +206,13 @@ export function tableAlerts(card: HallCard, now: number): HallAlert[] {
   }
 
   if (status === TABLE_STATUS.SEATED && card.openedAt && now - card.openedAt > THRESHOLDS.noOrderMs) {
-    alerts.push({ id: 'no-order', label: 'Сели и не заказали', severity: 'warn' })
+    // Полная корзина — это «собирают заказ», а не «не заказали»: аллергик
+    // может выбирать долго, и тревога тут подгоняла бы не того
+    alerts.push({
+      id: 'no-order',
+      label: (card.draftTotal ?? 0) > 0 ? 'Собирают заказ, не отправили' : 'Сели и не заказали',
+      severity: 'warn'
+    })
   }
   if (card.oldestPendingSentAt && now - card.oldestPendingSentAt > THRESHOLDS.kitchenSlowMs) {
     alerts.push({ id: 'kitchen-slow', label: 'Кухня задерживает', severity: 'danger' })

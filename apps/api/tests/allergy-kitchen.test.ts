@@ -86,3 +86,23 @@ test('общее блюдо проверяется на аллергии сос�
   assert.deepEqual(shared.guestAllergies, [{ name: 'Марина', allergies: ['лактоза'] }])
   assert.deepEqual(shared.allergyHits, ['лактоза'])
 })
+
+test('расплатился наличными — его вызов «счёт» снят, соседский остаётся', async () => {
+  const table = fresh()
+  const nika = (await join(table, 'Ника')).body.guestToken
+  const gleb = (await join(table, 'Глеб')).body.guestToken
+  for (const g of [nika, gleb]) {
+    await post(`/api/t/${table}/lines`, { dishId: 'espresso' }, { guest: g })
+    await post(`/api/t/${table}/send`, { scope: 'mine' }, { guest: g })
+    await post(`/api/t/${table}/call`, { reason: 'bill' }, { guest: g })
+  }
+  await post(`/api/t/${table}/cashIntent`, { scope: 'own' }, { guest: nika })
+  const snap = await fetch(`${base}/api/t/${table}`, { headers: { 'x-staff-token': M } }).then(r => r.json())
+  const nikaId = snap.personas.find((p: any) => p.name === 'Ника').id
+  assert.equal(snap.calls.length, 2)
+  const cash = await post(`/api/t/${table}/cash`, { personaId: nikaId, scope: 'own', sessionId: snap.sessionId }, { staff: M })
+  assert.equal(cash.status, 200)
+  const after = await fetch(`${base}/api/t/${table}`, { headers: { 'x-staff-token': M } }).then(r => r.json())
+  assert.equal(after.calls.length, 1)
+  assert.notEqual(after.calls[0].personaId, nikaId)
+})

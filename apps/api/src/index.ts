@@ -771,7 +771,12 @@ function guestAction(t: TableSession, tableId: string, action: string, body: any
     t.payments.push(payment)
     audit(null, 'оплата', tableId, `${persona.name} · ${scope} · ${method}`, amount, persona)
 
-    const left = round2(computeTotals(t, priceOf).remaining)
+    const paidNow = computeTotals(t, priceOf)
+    const left = round2(paidNow.remaining)
+    // Гость расплатился за себя — его «счёт» снимаем сразу, не дожидаясь всего стола
+    if (paidNow.remainingOf(persona.id) <= 0.01) {
+      t.calls = t.calls.filter(c => !(c.reason === 'bill' && c.personaId === persona.id))
+    }
     // Причина вызова исчезла — снимаем его сам, иначе официант идёт с папкой
     // к гостю, который уже расплатился, а красный чип приучает игнорировать зал
     if (left <= 0.01) {
@@ -1046,8 +1051,13 @@ function staffAction(t: TableSession, tableId: string, action: string, body: any
     t.cashIntent = null
     audit(actor, 'принял наличные', tableId, persona ? `от ${persona.name}` : 'за стол', amount)
 
-    const left = round2(computeTotals(t, priceOf).remaining)
-    if (left <= 0.01) t.calls = t.calls.filter(c => c.reason !== 'bill')
+    const after = computeTotals(t, priceOf)
+    const left = round2(after.remaining)
+    // Вызов «счёт» снимается у того, кто расплатился, а не только когда оплачен
+    // весь стол: Ника заплатила наличными, а её красный вызов висел до конца
+    t.calls = t.calls.filter(
+      c => c.reason !== 'bill' || (left > 0.01 && !(persona && c.personaId === persona.id && after.remainingOf(persona.id) <= 0.01))
+    )
     return ok({ ok: true, amount, remaining: left })
   }
 

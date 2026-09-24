@@ -4,6 +4,7 @@ import { subscribeHall } from '../hallApi'
 import type { HallPayload } from '../hallApi'
 import { ROLE_LABEL } from '@easypay/domain/roles'
 import { RESTAURANT } from '../data'
+import { fmt } from '../format'
 import { ensureSettings, SETTINGS } from '../settings'
 import { Icon } from './icons'
 import { ADMIN_PAGES, go, href, type CabRoute, type Workspace } from './route'
@@ -171,7 +172,12 @@ export function Shell({ route, title, children }: { route: CabRoute; title: Reac
               </button>
             )}
             {!admin && (
-              <UserChip name={staff?.name} role={staff ? ROLE_LABEL[staff.role] : ''} onOut={signOutStaff} />
+              <UserChip
+                name={staff?.name}
+                role={staff ? ROLE_LABEL[staff.role] : ''}
+                tips={staff?.role === 'waiter' && shiftOpen ? (hall?.shift?.tipsByStaff?.[staff.id] ?? 0) : null}
+                onOut={signOutStaff}
+              />
             )}
           </header>
 
@@ -243,9 +249,14 @@ function UserBlock({ compact, name, role, onOut }: { compact: boolean; name?: st
   )
 }
 
-function UserChip({ name, role, onOut }: { name?: string; role: string; onOut: () => void }) {
+function UserChip({ name, role, tips, onOut }: { name?: string; role: string; tips: number | null; onOut: () => void }) {
   return (
     <div className="flex shrink-0 items-center gap-2.5">
+      {tips !== null && (
+        <span className="c-num flex h-9 items-center rounded-full bg-c-ok-bg px-3 text-[13px] font-bold whitespace-nowrap text-c-ok-fg">
+          чаевые {fmt(tips)}
+        </span>
+      )}
       <div className="hidden text-right md:block">
         <div className="text-[14px] font-bold">{name}</div>
         <div className="text-[12px] text-c-mute">{role.toLowerCase()}</div>

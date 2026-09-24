@@ -6,7 +6,7 @@ export interface HallPayload {
   restaurant: string
   zones: { id: string; name: string }[]
   tables: HallCard[]
-  shift: HallShift & { startedAt: number; open?: boolean }
+  shift: HallShift & { startedAt: number; open?: boolean; tipsByStaff?: Record<string, number> }
   summary: HallSummary
   /** Версия настроек заведения: пороги тревог, напоминание о смене. */
   settingsVersion?: number
