@@ -7,6 +7,7 @@ export interface KitchenPayload {
   summary: KitchenSummary & { bar: number; kitchen: number; cancelled: number; warn: number; ready: number }
   /** Что сейчас в стопе — с учётом тумблеров кухни, а не только menu.json. */
   stop?: string[]
+  menuVersion?: number
   now: number
 }
 

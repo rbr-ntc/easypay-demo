@@ -130,6 +130,8 @@ export interface Snapshot {
   occupied?: number
   /** Что сейчас нельзя заказать — кухня выключает блюда тумблером. */
   stop?: string[]
+  /** Версия опубликованного меню: сменилась — перечитываем меню. */
+  menuVersion?: number
   /** Просьба принять наличные: деньги ещё не в счёте, их берёт человек. */
   cashIntent?: { personaId: string; scope: string; amount: number; at: number } | null
   totals: ServerTotals

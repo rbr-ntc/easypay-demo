@@ -752,6 +752,35 @@ export async function createPostgresStore(url?: string): Promise<Store> {
       `
     },
 
+    async menuDoc(kind) {
+      const [row] = await sql`select doc, updated_at, updated_by from menu_docs where venue_id = ${venueId} and kind = ${kind}`
+      return row ? { doc: row.doc, updatedAt: msOf(row.updated_at)!, updatedBy: staffExt(row.updated_by) } : null
+    },
+
+    async saveMenuDoc(kind, doc, byStaffId) {
+      if (doc === null) {
+        await sql`delete from menu_docs where venue_id = ${venueId} and kind = ${kind}`
+        return
+      }
+      await sql`
+        insert into menu_docs (venue_id, kind, doc, updated_by)
+        values (${venueId}, ${kind}, ${sql.json(doc as any)}, ${staffUuid(byStaffId)})
+        on conflict (venue_id, kind)
+        do update set doc = excluded.doc, updated_at = now(), updated_by = excluded.updated_by
+      `
+    },
+
+    async savePhoto(mime, data) {
+      const [row] = await sql`insert into menu_photos (venue_id, mime, data) values (${venueId}, ${mime}, ${data}) returning id`
+      return row.id as string
+    },
+
+    async photo(id) {
+      if (!/^[0-9a-f-]{36}$/.test(id)) return null
+      const [row] = await sql`select mime, data from menu_photos where id = ${id} and venue_id = ${venueId}`
+      return row ? { mime: row.mime as string, data: Buffer.from(row.data) } : null
+    },
+
     async close() {
       await sql.end()
     }

@@ -4,7 +4,7 @@ import { computeTotals, isBillLine, round2 } from '@easypay/domain/money'
 import { dishName, priceOf } from '../menu.ts'
 import { waiterOfTable } from '../staff.ts'
 import type { AuditEntry, MutationResult, Shift, TableSession } from '../types.ts'
-import type { DecisionNote, Settlement, ShiftCheck, ShiftInfo, Store } from './types.ts'
+import type { DecisionNote, MenuDocKind, MenuDocRow, Settlement, ShiftCheck, ShiftInfo, Store } from './types.ts'
 
 const MAX_TABLES = 500
 const AUDIT_MAX = 400
@@ -49,6 +49,8 @@ export function createMemoryStore(): Store {
   const checkTotals = { count: 0, paid: 0, debt: 0, overpaid: 0, cancelledTotal: 0 }
   const auditLog: AuditEntry[] = []
   const stops = new Map<string, boolean>()
+  const menuDocs = new Map<MenuDocKind, MenuDocRow>()
+  const photos = new Map<string, { mime: string; data: Buffer }>()
   const shift = freshShift()
   let guestsSeen = 0
 
@@ -305,6 +307,25 @@ export function createMemoryStore(): Store {
 
     async setStop(dishId, stop) {
       stops.set(dishId, stop)
+    },
+
+    async menuDoc(kind) {
+      return menuDocs.get(kind) ?? null
+    },
+
+    async saveMenuDoc(kind, doc, byStaffId) {
+      if (doc === null) menuDocs.delete(kind)
+      else menuDocs.set(kind, { doc: structuredClone(doc), updatedAt: Date.now(), updatedBy: byStaffId })
+    },
+
+    async savePhoto(mime, data) {
+      const id = crypto.randomUUID()
+      photos.set(id, { mime, data })
+      return id
+    },
+
+    async photo(id) {
+      return photos.get(id) ?? null
     },
 
     async close() {

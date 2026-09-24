@@ -28,7 +28,7 @@ import { clearSignedOut, clearStaff, getCachedStaff, markSignedOut, setCachedSta
 import { can } from '@easypay/domain/roles'
 import type { Permission, Staff } from '@easypay/domain/roles'
 import { newIdemKey } from './keys'
-import { findDish } from './data'
+import { ensureMenu, findDish, onMenuChange } from './data'
 import type { Animal, LineOptions } from './data'
 import { amountFor, computeTotals as computeMoney } from '@easypay/domain/money'
 
@@ -269,6 +269,8 @@ export interface AddResult {
 interface Ctx {
   ui: UiState
   patch: (p: Partial<UiState>) => void
+  /** Растёт с каждой сменой меню: ключ для useMemo над MENU. */
+  menuRev: number
   snap: Snapshot | null
   connected: boolean
   me: ServerPersona | null
@@ -339,6 +341,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [staff, setStaff] = useState<Staff | null>(getCachedStaff)
   const [staffChecked, setStaffChecked] = useState(false)
   const [shiftTips, setShiftTips] = useState(0)
+  // Меню опубликовали — перерисовываем всех, кто читает MENU при отрисовке
+  const [menuRev, setMenuRev] = useState(0)
+  useEffect(() => onMenuChange(() => setMenuRev(r => r + 1)), [])
+  useEffect(() => ensureMenu(snap?.menuVersion), [snap?.menuVersion])
   const personaId = identity?.personaId ?? null
   // Токен читаем через ref: действие сразу после join не должно видеть старое замыкание
   const identityRef = useRef<Identity | null>(identity)
@@ -480,6 +486,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const ctx: Ctx = {
     ui,
     patch,
+    menuRev,
     snap,
     connected,
     me,

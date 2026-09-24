@@ -33,9 +33,11 @@ const prefersReducedMotion = () =>
   typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
 
 export function Menu() {
-  const { patch, me, snap, totals, addLine, toast } = useStore()
+  const { patch, me, snap, totals, addLine, toast, menuRev } = useStore()
   const season = useMemo(() => currentSeason(), [])
-  const colls = useMemo(() => collections(season), [season])
+  // menuRev — меню опубликовали заново: подборки собираются из нового
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const colls = useMemo(() => collections(season), [season, menuRev])
   const [collId, setCollId] = useState(colls[0]?.id ?? 'all')
   // Живой стоп-лист из снимка: кухня выключила блюдо — оно сразу «закончилось»
   const live = snap?.stop

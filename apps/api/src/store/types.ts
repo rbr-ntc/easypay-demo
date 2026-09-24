@@ -67,7 +67,25 @@ export interface Store {
   /** Кто и когда выключил или вернул блюдо — пишется вместе со значением. */
   setStop(dishId: string, stop: boolean, byStaffId: string | null): Promise<void>
 
+  // ── Меню из кабинета ──────────────────────────────────────────────────
+  /** Опубликованное меню или черновик менеджера; null — ещё не было. */
+  menuDoc(kind: MenuDocKind): Promise<MenuDocRow | null>
+  /** Сохранить документ; null удаляет (отменить черновик). */
+  saveMenuDoc(kind: MenuDocKind, doc: unknown | null, byStaffId: string | null): Promise<void>
+  /** Фото блюда: хранится в базе, отдаётся по id — переживает редеплой. */
+  savePhoto(mime: string, data: Buffer): Promise<string>
+  photo(id: string): Promise<{ mime: string; data: Buffer } | null>
+
   close(): Promise<void>
+}
+
+export type MenuDocKind = 'draft' | 'published'
+
+export interface MenuDocRow {
+  doc: any
+  updatedAt: number
+  /** Строковый id сотрудника, как в сессиях и журнале. */
+  updatedBy: string | null
 }
 
 export interface ShiftCheckLine {

@@ -102,24 +102,46 @@ export function seasonVars(season: SeasonKey, palette: PaletteKey = SHOWCASE.pal
 }
 
 // ── Картинки ─────────────────────────────────────────────────────────────
-// Одна точка, через которую экраны получают адреса картинок. Когда фото
-// переедут в базу и загрузку из кабинета, поменяется только она.
+// Одна точка, через которую экраны получают адреса картинок: загруженное
+// из кабинета фото (лежит в базе), фото из сборки или буква-заглушка.
 
 const TALL = new Set(SHOWCASE.tall)
 
+/**
+ * Своё фото блюда: загруженное из кабинета или из сборки. Новое блюдо без
+ * фото получает букву названия на тёплом фоне — так договорились в макете.
+ */
+function ownPhoto(id: string): string | null {
+  const dish = findDish(id)
+  if (dish?.photoUrl) return dish.photoUrl
+  // Блюда нет в меню (сняли, а в счёте осталось) — фото из сборки, если было
+  if (!dish || dish.photo) return null
+  return letterArt(dish.name)
+}
+
+function letterArt(name: string): string {
+  const letter = (name.trim()[0] ?? '·').toUpperCase().replace(/[<&>"']/g, '')
+  const svg =
+    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 500">` +
+    `<defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#3a2f28"/><stop offset="1" stop-color="#1f1a17"/></linearGradient></defs>` +
+    `<rect width="400" height="500" fill="url(#g)"/>` +
+    `<text x="200" y="300" text-anchor="middle" font-family="Georgia,serif" font-size="200" fill="#e8d9c4" fill-opacity=".55">${letter}</text></svg>`
+  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`
+}
+
 /** Фото 4:5 для карточек и шторки блюда. */
 export function dishPhoto(id: string): string {
-  return `./dishes/${id}.jpg`
+  return ownPhoto(id) ?? `./dishes/${id}.jpg`
 }
 
 /** Миниатюра для строк 56–76 px: полноразмерное фото там — сотни лишних килобайт. */
 export function dishThumb(id: string): string {
-  return `./dishes/thumb/${id}.jpg`
+  return ownPhoto(id) ?? `./dishes/thumb/${id}.jpg`
 }
 
 /** Вертикальный кадр 9:16 для шапки и крупных карточек; если его нет — обычное фото. */
 export function dishTall(id: string): string {
-  return TALL.has(id) ? `./hero/${id}.jpg` : dishPhoto(id)
+  return ownPhoto(id) ?? (TALL.has(id) ? `./hero/${id}.jpg` : dishPhoto(id))
 }
 
 export function artSet(kind: 'welcome' | 'table' | 'done'): string[] {

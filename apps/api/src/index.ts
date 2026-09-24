@@ -21,6 +21,7 @@ import {
   getDish,
   isStopped,
   menuPayload,
+  menuVersion,
   priceOf,
   priceWithOptions,
   setStopOverride,
@@ -31,6 +32,7 @@ import { isKnownTable, seatsOf } from './hallplan.ts'
 import { hallPayload, kitchenPayload } from './feeds.ts'
 import { createStore, type Store } from './store/index.ts'
 import { createShiftRoutes } from './shiftApi.ts'
+import { createMenuRoutes, loadPublishedMenu } from './menuApi.ts'
 import {
   dropSession,
   wasRevoked,
@@ -54,6 +56,7 @@ let storePromise: Promise<Store> | null = null
 // Стоп-лист живёт в памяти процесса — загружаем его из хранилища один раз при старте
 const getStore = () =>
   (storePromise ??= createStore().then(async store => {
+    await loadPublishedMenu(store)
     applyStopOverrides(await store.stopOverrides())
     return store
   }))
@@ -217,6 +220,8 @@ function snapshot(t: TableSession, id: string) {
     closedAt: t.closedAt,
     // Что сейчас нельзя заказать: кухня выключает блюда тумблером
     stop: stopList(),
+    // Версия меню: сменилась — клиент перечитывает меню после публикации
+    menuVersion: menuVersion(),
     personas: t.personas.map(p => ({
       id: p.id,
       name: p.name,
@@ -311,6 +316,7 @@ function publicStub(t: TableSession, id: string) {
     sessionId: null,
     // Меню смотрят и до того, как представились: «закончилось» нужно и им
     stop: stopList(),
+    menuVersion: menuVersion(),
     status: t.status,
     openedAt: t.openedAt,
     closedAt: t.closedAt,
@@ -1292,6 +1298,9 @@ async function handleApi(req: any, res: any, url: URL) {
     })
   }
 
+  // Конструктор меню и фото блюд
+  if (await menuRoutes(req, res, url, store)) return
+
   if (url.pathname === '/api/menu' && req.method === 'GET') {
     return json(res, 200, menuPayload())
   }
@@ -1436,6 +1445,16 @@ async function handleApi(req: any, res: any, url: URL) {
   if (out.status === 200) await broadcast(store, tableId)
   return json(res, out.status, out.body)
 }
+
+const menuRoutes = createMenuRoutes({
+  json,
+  actorFrom,
+  allowed,
+  staffUnauthorized,
+  audit,
+  flushAudit,
+  broadcastEverywhere
+})
 
 const shiftRoutes = createShiftRoutes({
   json,

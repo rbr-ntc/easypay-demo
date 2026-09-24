@@ -3,7 +3,7 @@ import { ticketUrgency, ticketWait } from '@easypay/domain/kitchen'
 import type { KitchenTicket } from '@easypay/domain/kitchen'
 import { dismissCancelled, handOver, markReady, subscribeKitchen, takeToWork } from '../kitchenApi'
 import type { KitchenPayload } from '../kitchenApi'
-import { MENU, optionsLabel } from '../data'
+import { ensureMenu, MENU, optionsLabel } from '../data'
 import { useStore } from '../store'
 import { useCab } from './Shell'
 import { setStop, staffError } from './staffApi'
@@ -40,6 +40,7 @@ export function KitchenPage({ station }: { station: 'kitchen' | 'bar' }) {
   const [q, setQ] = useState('')
 
   useEffect(() => subscribeKitchen(setData, setLive), [])
+  useEffect(() => ensureMenu(data?.menuVersion), [data?.menuVersion])
 
   const tickets = ((data?.tickets ?? []) as Ticket[]).filter(t => t.station === station)
   const cancelled = ((data?.cancelled ?? []) as Ticket[]).filter(t => t.station === station)
@@ -209,12 +210,15 @@ function StopPanel({
   onToast: (m: string) => void
 }) {
   const [pending, setPending] = useState<string | null>(null)
+  const { menuRev } = useStore()
   const dishes = useMemo(
     () =>
-      Object.entries(MENU)
-        .filter(([cat]) => (station === 'bar') === BAR_CATEGORIES.has(cat))
-        .flatMap(([, items]) => items),
-    [station]
+      Object.entries(MENU).flatMap(([cat, items]) =>
+        items.filter(d => (d.station ?? (BAR_CATEGORIES.has(cat) ? 'bar' : 'kitchen')) === station)
+      ),
+    // menuRev — меню опубликовали заново
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [station, menuRev]
   )
   const stopped = new Set(stop)
   const needle = q.trim().toLowerCase()

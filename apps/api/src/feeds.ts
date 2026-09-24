@@ -2,7 +2,7 @@
 import { computeTotals, isBillLine, round2 } from '@easypay/domain/money'
 import { summarizeHall } from '@easypay/domain/hall'
 import { sortTickets, summarizeKitchen, ticketUrgency } from '@easypay/domain/kitchen'
-import { dishName, priceOf, stationOf, allergensOf, removedAllergensOf, stopList } from './menu.ts'
+import { dishName, priceOf, stationOf, allergensOf, removedAllergensOf, stopList, menuVersion } from './menu.ts'
 import { HALL, metaOf, planTables } from './hallplan.ts'
 import { waiterOfTable } from './staff.ts'
 import type { Call, TableSession } from './types.ts'
@@ -190,6 +190,8 @@ export function kitchenPayload(tables: Map<string, TableSession>) {
     },
     // Стоп-лист рядом с очередью: повар выключает блюдо тем же экраном
     stop: stopList(),
+    // Меню опубликовали — экран кухни перечитает его для стоп-листа
+    menuVersion: menuVersion(),
     now
   }
 }

@@ -6,6 +6,7 @@ import { Debts } from './Debts'
 import { Shifts } from './Shifts'
 import { Checks } from './Checks'
 import { Log } from './Log'
+import { MenuPage } from './menu/MenuPage'
 
 /** Раздел кабинета по адресу `#/admin/<раздел>/<под-адрес>`. */
 export function AdminPage({ route }: { route: CabRoute }) {
@@ -22,6 +23,8 @@ export function AdminPage({ route }: { route: CabRoute }) {
       return <Checks shift={route.sub} />
     case 'log':
       return <Log />
+    case 'menu':
+      return <MenuPage />
     default:
       return <Empty>Раздел собирается</Empty>
   }

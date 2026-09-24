@@ -22,6 +22,12 @@ export type Permission =
   | 'log'
   /** Стоп-лист: «закончилось» — первым узнаёт кухня или бар, не менеджер. */
   | 'stop'
+  /** Кабинет: правка и публикация меню. */
+  | 'menu'
+  /** Кабинет: персонал — PIN, увольнение, закрепление столов. */
+  | 'staff'
+  /** Кабинет: настройки заведения, пороги тревог, способы оплаты. */
+  | 'settings'
 
 export interface Staff {
   id: string
@@ -52,7 +58,7 @@ export const ROLE_LABEL: Record<RoleName, string> = {
  *  log            — журнал действий смены
  */
 export const PERMISSIONS: Record<RoleName, Permission[]> = {
-  manager: ['hall', 'kitchen', 'table', 'start', 'ready', 'serve', 'dismiss', 'ack', 'close', 'clean', 'cash', 'refund', 'reset', 'log', 'stop'],
+  manager: ['hall', 'kitchen', 'table', 'start', 'ready', 'serve', 'dismiss', 'ack', 'close', 'clean', 'cash', 'refund', 'reset', 'log', 'stop', 'menu', 'staff', 'settings'],
   // Убрать стол — работа зала: пока это делал таймер, гостей сажали за грязный
   // Официант за стойкой — тот же бармен: «кончилось игристое» он узнаёт первым
   waiter: ['hall', 'kitchen', 'table', 'start', 'ready', 'serve', 'dismiss', 'ack', 'close', 'clean', 'cash', 'stop'],
