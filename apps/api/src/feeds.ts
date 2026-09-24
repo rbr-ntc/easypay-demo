@@ -127,6 +127,19 @@ export function kitchenPayload(tables: Map<string, TableSession>) {
     for (const line of table.lines) {
       if (!line.sent) continue
       const persona = table.personas.find(p => p.id === line.personaId)
+      // Аллергии тех, кто будет это есть: свои — у своего блюда, у общего —
+      // всех, кто его делит. Раньше тикет нёс только аллергены блюда, и повар
+      // жарил рибай на сливочном масле гостье с лактозой, не зная о ней
+      const eaters = line.shared
+        ? table.personas.filter(p => (line.sharedWith?.length ? line.sharedWith.includes(p.id) : true))
+        : persona
+          ? [persona]
+          : []
+      const dishAllergens = allergensOf(line.dishId, line.options ?? {})
+      const guestAllergies = eaters
+        .filter(p => (p.allergies ?? []).length > 0)
+        .map(p => ({ name: p.name, allergies: p.allergies ?? [] }))
+      const allergyHits = [...new Set(guestAllergies.flatMap(g => g.allergies))].filter(a => dishAllergens.includes(a))
       const base = {
         tableId: id,
         sessionId: table.sessionId,
@@ -136,7 +149,12 @@ export function kitchenPayload(tables: Map<string, TableSession>) {
         dishId: line.dishId,
         name: dishName(line.dishId),
         station: stationOf(line.dishId),
-        allergens: allergensOf(line.dishId, line.options ?? {}),
+        allergens: dishAllergens,
+        guestAllergies,
+        // В блюде есть то, на что у едока аллергия: гость это подтвердил, но
+        // кухня обязана знать — это осознанный риск, а не недосмотр
+        allergyHits,
+        sharedNames: line.shared ? eaters.map(p => p.name) : null,
         // Аллергены, снятые модификатором: для повара это не пожелание, а запрет
         removedAllergens: removedAllergensOf(line.dishId, line.options ?? {}),
         // Живой текст гостя: «аллергия на орехи, критично»

@@ -602,6 +602,11 @@ function joinGuest(t: TableSession, tableId: string, body: any): MutationResult 
   // Молчаливое выбрасывание чужого значения — та же болезнь, что была у /call:
   // гость пишет «молоко», система оставляет пустой список, и оба уверены,
   // что предупреждение сделано. Лучше честная ошибка со списком.
+  // Не список — тоже ошибка: строка «лактоза» раньше давала пустой список и
+  // гостя без защиты, хотя он честно указал аллергию
+  if (body.allergies !== undefined && body.allergies !== null && !Array.isArray(body.allergies)) {
+    return fail(400, 'allergies must be a list', { allowed: ALLERGENS })
+  }
   const rawAllergies: unknown[] = Array.isArray(body.allergies) ? (body.allergies as unknown[]) : []
   const unknownAllergies = rawAllergies.filter(a => typeof a !== 'string' || !ALLERGENS.includes(a))
   if (unknownAllergies.length > 0) {
@@ -648,10 +653,16 @@ function guestAction(t: TableSession, tableId: string, action: string, body: any
 
     // Блюдо с заявленным аллергеном не заказывается «случайно»: система знает,
     // что человеку нельзя, и обязана остановить его, а не промолчать
-    const mine = persona.allergies ?? []
-    const hits = mine.length > 0 ? allergensOf(dish.id, checked.options ?? {}).filter(a => mine.includes(a)) : []
+    // Общее блюдо касается всех за столом: брускетта «на всех» при соседе с
+    // лактозой — это его тарелка тоже, а раньше проверялся только заказавший
+    const dishAllergens = allergensOf(dish.id, checked.options ?? {})
+    const concerned = body.shared ? t.personas : [persona]
+    const people = concerned
+      .map(p => ({ name: p.name, self: p.id === persona.id, allergens: dishAllergens.filter(a => (p.allergies ?? []).includes(a)) }))
+      .filter(p => p.allergens.length > 0)
+    const hits = [...new Set(people.flatMap(p => p.allergens))]
     if (hits.length > 0 && body.confirmAllergen !== true) {
-      return fail(409, 'allergen warning', { allergens: hits, dish: dish.name })
+      return fail(409, 'allergen warning', { allergens: hits, dish: dish.name, people })
     }
 
     const line = {

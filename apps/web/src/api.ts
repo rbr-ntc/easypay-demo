@@ -198,11 +198,13 @@ export const apiAddLine = (
   options: Record<string, string>,
   idemKey: string,
   // Гость увидел предупреждение об аллергене и сознательно подтвердил заказ
-  confirmAllergen = false
+  confirmAllergen = false,
+  // Живой текст кухне: сервер его принимал и кухня показывала, а экрана не было
+  comment?: string
 ) =>
   post<{ ok: true; uid: number }>(
     'lines',
-    { dishId, qty, shared, options, idemKey, confirmAllergen },
+    { dishId, qty, shared, options, idemKey, confirmAllergen, ...(comment?.trim() ? { comment: comment.trim() } : {}) },
     { guest }
   )
 

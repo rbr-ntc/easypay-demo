@@ -61,7 +61,7 @@ export function NameSheet() {
       return
     }
 
-    const res = await addLine(pending.dishId, pending.qty, pending.shared, pending.options, undefined, false, pending.idemKey)
+    const res = await addLine(pending.dishId, pending.qty, pending.shared, pending.options, undefined, false, pending.idemKey, pending.comment)
     setBusy(false)
 
     if (res.allergens && res.allergens.length > 0) {

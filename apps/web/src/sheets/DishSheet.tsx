@@ -44,6 +44,7 @@ export function DishSheet() {
    */
   const [confirmedFor, setConfirmedFor] = useState<string | null>(null)
   const [details, setDetails] = useState(false)
+  const [note, setNote] = useState('')
   // Одно открытие карточки — одно намерение заказать. Повторные нажатия
   // приходят на сервер с тем же ключом и не создают вторую порцию:
   // количество выбирается плюсиком, а не частотой тапов.
@@ -68,6 +69,7 @@ export function DishSheet() {
     setBlocked(ui.pendingAllergens)
     setConfirmedFor(null)
     setDetails(false)
+    setNote('')
   }
   // Предупреждение, доставшееся от шторки с именем, показано — гасим его в UI
   useEffect(() => {
@@ -77,10 +79,21 @@ export function DishSheet() {
   if (!dish) return null
 
   const mine = me?.allergies ?? []
+  // Общее блюдо ест весь стол: аллергия соседа — тоже повод остановиться
+  const neighbours =
+    companyAtTable && shared
+      ? (snap?.personas ?? [])
+          .filter(p => p.id !== me?.id)
+          .map(p => ({ name: p.name, hits: allergyHits(dish, p.allergies ?? [], opts) }))
+          .filter(p => p.hits.length > 0)
+      : []
+  const myHits = allergyHits(dish, mine, opts)
   // Риск считаем по ТЕКУЩЕМУ выбору: «без сметаны» снимает лактозу — и
   // предупреждение уходит само, без галочки
-  const risk = Array.from(new Set([...allergyHits(dish, mine, opts), ...(blocked ?? []).filter(a => allergenTags(dish, opts).includes(a))]))
-  const fixes = rescues(dish, risk, mine)
+  const risk = Array.from(
+    new Set([...myHits, ...neighbours.flatMap(n => n.hits), ...(blocked ?? []).filter(a => allergenTags(dish, opts).includes(a))])
+  )
+  const fixes = rescues(dish, risk, [...mine, ...neighbours.flatMap(n => n.hits)])
   const riskKey = [...risk].sort().join('|')
   const confirmed = risk.length > 0 && confirmedFor === riskKey
   const needOk = risk.length > 0 && !confirmed
@@ -94,12 +107,12 @@ export function DishSheet() {
     const asShared = companyAtTable && shared
     if (!me) {
       // Имя спрашиваем ровно в момент первой надобности; блюдо НЕ теряется
-      patch({ sheet: 'name', pendingAdd: { dishId: dish.id, qty, shared: asShared, options: opts, idemKey: addKey.current } })
+      patch({ sheet: 'name', pendingAdd: { dishId: dish.id, qty, shared: asShared, options: opts, idemKey: addKey.current, comment: note } })
       return
     }
     sending.current = true
     setBusy(true)
-    const res = await addLine(dish.id, qty, asShared, opts, undefined, confirmed, addKey.current)
+    const res = await addLine(dish.id, qty, asShared, opts, undefined, confirmed, addKey.current, note)
     sending.current = false
     setBusy(false)
     if (res.allergens && res.allergens.length > 0) {
@@ -167,8 +180,16 @@ export function DishSheet() {
 
           {risk.length > 0 && (
             <div className="mt-4 rounded-[20px] px-4 py-3.5" style={{ border: '1.5px solid #FF9A7A' }}>
-              <div className="text-[15px] font-bold text-g-warn">Есть {risk.join(', ')} — у вас аллергия</div>
-              <div className="mt-1 text-[13px] text-g-body">Кухня увидит ваш выбор как запрет, а не как пожелание.</div>
+              {myHits.length > 0 && <div className="text-[15px] font-bold text-g-warn">Есть {myHits.join(', ')} — у вас аллергия</div>}
+              {neighbours.map(n => (
+                <div key={n.name} className="text-[15px] font-bold text-g-warn">
+                  Есть {n.hits.join(', ')} — у {n.name} аллергия, а блюдо общее
+                </div>
+              ))}
+              {myHits.length === 0 && neighbours.length === 0 && (
+                <div className="text-[15px] font-bold text-g-warn">Есть {risk.join(', ')} — у кого-то за столом аллергия</div>
+              )}
+              <div className="mt-1 text-[13px] text-g-body">Кухня увидит аллергию на тикете — это запрет, а не пожелание.</div>
               {/* Приложение знает, какой вариант снимает аллерген, — кухне оно
                   это говорит. Гостю не сказать было прямой потерей. */}
               {fixes.map(f => (
@@ -231,6 +252,19 @@ export function DishSheet() {
               </div>
             )
           })}
+
+          {/* Пожелание кухне: сервер его принимал и повар видел, а написать было негде */}
+          <label className="mt-5 block">
+            <span className="text-[13px] text-g-mute">Пожелание кухне</span>
+            <input
+              value={note}
+              onChange={e => setNote(e.target.value)}
+              maxLength={200}
+              placeholder="без лука · отдельной посудой · соус отдельно"
+              className="mt-2 h-12 w-full rounded-[16px] bg-g-s1 px-4 text-[15px] text-g-fg outline-none placeholder:text-g-mute"
+              style={{ border: '1px solid rgba(255,255,255,.1)' }}
+            />
+          </label>
 
           {/* Общее блюдо — только когда за столом есть с кем делить */}
           {companyAtTable && (

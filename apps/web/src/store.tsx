@@ -58,6 +58,8 @@ export interface PendingAdd {
   options: LineOptions
   /** Ключ намерения: блюдо, добавленное после ввода имени, не должно задвоиться при повторе. */
   idemKey?: string
+  /** Пожелание кухне, написанное до того, как гость представился. */
+  comment?: string
 }
 
 export interface UiState {
@@ -292,7 +294,9 @@ interface Ctx {
     asGuestToken?: string,
     confirmAllergen?: boolean,
     /** Ключ намерения: один на карточку блюда, а не на каждый тап по кнопке. */
-    idemKey?: string
+    idemKey?: string,
+    /** Пожелание кухне: «без лука», «аллергия, отдельной посудой». */
+    comment?: string
   ) => Promise<AddResult>
   removeLine: (uid: number) => Promise<void>
   /** Отменить своё блюдо, пока кухня не взяла его в работу. */
@@ -506,13 +510,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         setSnap(r.snapshot)
         return r.snapshot.personas.find(p => p.id === r.personaId) ?? null
       }, null),
-    addLine: async (dishId, qty, shared, options, asGuestToken, confirmAllergen = false, idemKey) => {
+    addLine: async (dishId, qty, shared, options, asGuestToken, confirmAllergen = false, idemKey, comment) => {
       const token = asGuestToken ?? guestToken()
       if (!token) return { ok: false }
       try {
         // Без ключа снаружи каждый повтор был бы новым намерением — и семь
         // быстрых нажатий превращались в семь порций
-        await apiAddLine(token, dishId, qty, shared, options, idemKey ?? newIdemKey(), confirmAllergen)
+        await apiAddLine(token, dishId, qty, shared, options, idemKey ?? newIdemKey(), confirmAllergen, comment)
         return { ok: true }
       } catch (err) {
         // Аллерген — не ошибка связи: гостю нужен осознанный выбор, а не тост

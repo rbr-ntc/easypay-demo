@@ -3,6 +3,7 @@ import { ticketUrgency, ticketWait } from '@easypay/domain/kitchen'
 import type { KitchenTicket } from '@easypay/domain/kitchen'
 import { dismissCancelled, handOver, markReady, subscribeKitchen, takeToWork } from '../kitchenApi'
 import type { KitchenPayload } from '../kitchenApi'
+import { allergenAccusative } from '@easypay/domain/allergens'
 import { ensureMenu, MENU, optionsLabel } from '../data'
 import { ensureSettings } from '../settings'
 import { useStore } from '../store'
@@ -19,6 +20,13 @@ import { Empty, Toggle } from './ui'
 type Ticket = KitchenTicket & {
   removedAllergens?: { id: string; choice: string; removes: string[] }[]
   comment?: string | null
+  /** Аллергии тех, кто будет это есть (у общего блюда — всех, кто делит). */
+  guestAllergies?: { name: string; allergies: string[] }[]
+  /** В блюде есть аллерген едока: гость подтвердил риск, кухня обязана знать. */
+  allergyHits?: string[]
+  sharedNames?: string[] | null
+  /** Отмена пришла, когда блюдо уже было на плите: продукт потерян. */
+  wasCooking?: boolean
 }
 
 /** Бар готовит напитки: в menu.json это разделы «Напитки» и «Вино и бар». */
@@ -85,6 +93,8 @@ export function KitchenPage({ station }: { station: 'kitchen' | 'bar' }) {
                 <b>Снято:</b> {t.name}
                 {t.qty > 1 ? ` ×${t.qty}` : ''} · стол {t.tableId}
                 {t.reason ? ` · ${t.reason}` : ''}
+                {/* С плиты — значит, продукт уже потрачен: повар выбрасывает, а не вычёркивает */}
+                {t.wasCooking && <b className="text-c-bad-ink"> · уже готовилось</b>}
               </span>
               <span className="flex-1" />
               {may('dismiss') && (
@@ -168,18 +178,30 @@ function TicketCard({
         {t.qty > 1 ? ` ×${t.qty}` : ''}
       </div>
       {/* Вариант, снимающий аллерген, — не пожелание, а запрет */}
+      {/* Аллергия едока — первым делом: это не пожелание, а запрет */}
+      {(t.guestAllergies ?? []).map(g => (
+        <div key={g.name} className="mt-2 rounded-lg bg-c-bad px-2.5 py-2 text-[13px] font-bold text-white">
+          АЛЛЕРГИЯ · {g.name}: {g.allergies.join(', ')}
+        </div>
+      ))}
+      {(t.allergyHits ?? []).length > 0 && (
+        <div className="mt-1.5 rounded-lg border border-c-bad-line bg-c-bad-bg px-2.5 py-1.5 text-[12px] font-bold text-c-bad-ink">
+          В блюде есть {t.allergyHits!.join(', ')} — гость предупреждён и подтвердил. Уточните у официанта.
+        </div>
+      )}
       {(t.removedAllergens ?? []).map(r => (
         <div key={r.id} className="mt-2 rounded-lg bg-c-bad px-2.5 py-2 text-[13px] font-bold text-white">
-          {r.choice.toUpperCase()} — снимает {r.removes.join(' · ')}
+          {r.choice.toUpperCase()} — снимает {r.removes.map(allergenAccusative).join(' и ')}
         </div>
       ))}
       {mods && <div className="mt-1.5 text-[13px]">{mods}</div>}
       {t.comment && <div className="mt-1.5 text-[13px] font-bold">✎ {t.comment}</div>}
-      {station === 'kitchen' && t.allergens?.length > 0 && (
+      {/* И на баре тоже: сульфиты в вине и орехи в миндальном молоке — его работа */}
+      {t.allergens?.length > 0 && (
         <div className="mt-1.5 text-[12px] font-bold text-c-warn-ink">аллергены: {t.allergens.join(' · ')}</div>
       )}
       <div className="mt-1.5 text-[12px] text-c-mute">
-        {t.shared ? 'на стол' : t.guest}
+        {t.shared ? `на стол${t.sharedNames?.length ? `: ${t.sharedNames.join(', ')}` : ''}` : t.guest}
         {t.waiterName ? ` · ${t.waiterName}` : ''}
       </div>
       {canAct && (
