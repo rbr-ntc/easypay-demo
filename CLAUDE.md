@@ -83,21 +83,24 @@ localStorage. Им же удобно проверять деплой curl-ом.
 
 ### Деплой
 
-Живое демо: http://77.221.141.238 — VPS, `/opt/easypay`, systemd-служба `easypay`
-(PORT=80, токен менеджера в `/etc/systemd/system/easypay.service.d/override.conf`),
-вход по SSH-ключу `~/.ssh/id_rsa`, логи `journalctl -u easypay -f`.
+Живое демо: **https://77-221-141-238.sslip.io:8443** (Caddy с Let's Encrypt и HTTP/2; старый
+`http://77.221.141.238/…` переадресуется туда с тем же путём). VPS, `/opt/easypay`, systemd-служба
+`easypay` на `127.0.0.1:8787` (токен менеджера в `/etc/systemd/system/easypay.service.d/override.conf`),
+вход по SSH-ключу `~/.ssh/id_rsa`, логи `journalctl -u easypay -f`. Устройство стенда — Caddy,
+бэкапы по cron, порты — в `infra/stand/README.md`.
 На VPS **нет npm**, поэтому воркспейсы связаны симлинками вручную:
 `/opt/easypay/node_modules/@easypay/{domain,config}` → `packages/*`. Внешних зависимостей
 у сервера нет, так что этого достаточно; при добавлении новых пакетов симлинк нужно завести.
-Редеплой из корня после `npm run build`:
+
+Выкладка — одной командой из корня: сборка, тесты, бэкап базы, код, недостающие миграции
+(через psql, с записью в `schema_migrations`), рестарт и проверка ответа:
 
 ```bash
-tar czf /tmp/e.tgz apps/api/dist apps/api/package.json apps/web/dist packages/domain/dist packages/domain/package.json packages/config packages/db package.json && scp /tmp/e.tgz root@77.221.141.238:/tmp/ && ssh root@77.221.141.238 'tar xzf /tmp/e.tgz -C /opt/easypay && systemctl restart easypay'
+scripts/deploy.sh
 ```
 
-Новые миграции (`packages/db/migrations/*.sql`) применяются на стенде до рестарта:
-`cd /opt/easypay/packages/db && DATABASE_URL=… node src/migrate.js` (адрес базы — в окружении
-службы `easypay`).
+Сессии персонала лежат в базе (`staff_sessions`), поэтому рестарт при выкладке никого из
+смены не выкидывает.
 
 Деплой статики через GitHub Pages удалён: живая версия требует Node-сервера, а workflow
 публиковал устаревшую мок-версию.
