@@ -124,7 +124,10 @@ export interface Snapshot {
   call: ServerCall | null
   calls: ServerCall[]
   /** Принятые вызовы за 15 минут: кто идёт к гостю. */
-  acked?: { id: string; personaId: string; reason: string; at: number; by: string | null }[]
+  acked?: { id: string; personaId: string; reason: string; at: number; by: string | null; reply?: string | null }[]
+  /** Оценки визита гостями стола. */
+  /** Кто из гостей уже оценил визит (сама оценка — только управляющей). */
+  rated?: string[]
   waiter: { id: string; name: string } | null
   seats: number
   /** Заглушка для постороннего: состав и деньги вырезаны, это не пустой стол. */
@@ -280,6 +283,10 @@ export const apiTip = (guest: string, amount: number, idemKey: string, method?: 
 
 export const apiCall = (guest: string, reason: 'help' | 'bill' | 'water', note?: string) =>
   post<{ ok: true; callId: string; repeated: boolean }>('call', { reason, note }, { guest })
+
+/** Оценка визита: «всё отлично», «нормально», «есть замечание» с текстом. */
+export const apiRate = (guest: string, rating: 'good' | 'ok' | 'bad', note?: string) =>
+  post<{ ok: true }>('rate', { rating, ...(note?.trim() ? { note: note.trim() } : {}) }, { guest })
 
 /** Изменить свои аллергии после посадки: забыл отметить орехи — не повод остаться без защиты. */
 export const apiSetAllergies = (guest: string, allergies: string[]) =>

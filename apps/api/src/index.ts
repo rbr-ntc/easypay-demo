@@ -196,6 +196,7 @@ function openSessionInPlace(t: TableSession) {
   t.calls = []
   // Принятые вызовы прошлой посадки новым гостям не показываем
   t.callAcks = []
+  t.ratings = []
   t.seq = 1
   t.overpaid = 0
   if (t.db) t.db.sessionUuid = null // в БД это будет новая строка сессии
@@ -271,7 +272,9 @@ function snapshot(t: TableSession, id: string) {
     // Принятые вызовы за последние 15 минут: гость видит, кто к нему идёт
     acked: (t.callAcks ?? [])
       .filter(a => Date.now() - a.at < 15 * 60 * 1000)
-      .map(a => ({ id: a.id, personaId: a.personaId, reason: a.reason, at: a.at, by: a.byName })),
+      .map(a => ({ id: a.id, personaId: a.personaId, reason: a.reason, at: a.at, by: a.byName, reply: a.reply ?? null })),
+    // Кто уже оценил — чтобы не спрашивать дважды. Саму оценку соседям не показываем
+    rated: (t.ratings ?? []).map(r => r.personaId),
     calls: t.calls.map(c => ({
       id: c.id,
       at: c.at,
@@ -514,7 +517,7 @@ const STAFF_ACTIONS = new Set([
   'serve', 'ready', 'start', 'close', 'reset', 'ack', 'dismiss', 'clean', 'cash', 'refund', 'removeGuest', 'addLine'
 ])
 const GUEST_ACTIONS = new Set([
-  'lines', 'remove', 'send', 'pay', 'tip', 'call', 'cancelMine', 'cashIntent', 'cancelCash', 'leave', 'allergies'
+  'lines', 'remove', 'send', 'pay', 'tip', 'call', 'cancelMine', 'cashIntent', 'cancelCash', 'leave', 'allergies', 'rate'
 ])
 const IDEMPOTENT_ACTIONS = new Set(['join', 'lines', 'pay', 'tip', 'refund', 'addLine'])
 const CALL_REASONS = new Set(['help', 'bill', 'water'])
@@ -628,7 +631,8 @@ export function mutate(
   // заплатил за всех, — а чаевые идут официанту мимо счёта и ничего не ломают.
   const TIP_AFTER_CLOSE_MS = 30 * 60_000
   const justClosed = t.status === 'closed' && t.closedAt && Date.now() - t.closedAt < TIP_AFTER_CLOSE_MS
-  if (t.status !== 'open' && !(action === 'tip' && justClosed)) return fail(409, 'table closed')
+  // Чаевые и оценку оставляют и после закрытия стола — гость ещё на экране «Спасибо»
+  if (t.status !== 'open' && !((action === 'tip' || action === 'rate') && justClosed)) return fail(409, 'table closed')
 
   return guestAction(t, tableId, action, body, persona)
 }
@@ -698,11 +702,23 @@ function removePersona(t: TableSession, persona: Persona): string | null {
     .filter(l => !(l.personaId === persona.id && !l.sent))
     .map(l => (l.shared && l.sharedWith?.includes(persona.id) ? { ...l, sharedWith: l.sharedWith.filter(id => id !== persona.id) } : l))
   t.calls = t.calls.filter(c => c.personaId !== persona.id)
+  // Гостя в базе удалят вместе с оценкой — иначе её запись ссылалась бы на пустоту
+  t.ratings = (t.ratings ?? []).filter(r => r.personaId !== persona.id)
   if (t.cashIntent?.personaId === persona.id) t.cashIntent = null
   return null
 }
 
 function guestAction(t: TableSession, tableId: string, action: string, body: any, persona: Persona): MutationResult {
+  if (action === 'rate') {
+    // Оценка визита: раньше выбор на экране «Спасибо» никуда не уходил
+    const rating = body.rating
+    if (rating !== 'good' && rating !== 'ok' && rating !== 'bad') return fail(400, 'bad rating', { allowed: ['good', 'ok', 'bad'] })
+    const note = sanitizeNote(body.note)
+    t.ratings = [...(t.ratings ?? []).filter(r => r.personaId !== persona.id), { personaId: persona.id, rating, note, at: Date.now() }]
+    audit(null, 'оценил визит', tableId, `${persona.name}: ${{ good: 'всё отлично', ok: 'нормально', bad: 'есть замечание' }[rating]}${note ? ` — ${note}` : ''}`, null, persona)
+    return ok({ ok: true })
+  }
+
   if (action === 'allergies') {
     // Забыл отметить орехи при входе — не повод остаться без защиты до конца ужина
     if (!Array.isArray(body.allergies)) return fail(400, 'allergies must be a list', { allowed: ALLERGENS })
@@ -1284,9 +1300,19 @@ function staffAction(t: TableSession, tableId: string, action: string, body: any
     const ACK_KEEP_MS = 15 * 60 * 1000
     t.callAcks = [
       ...(t.callAcks ?? []).filter(a => Date.now() - a.at < ACK_KEEP_MS),
-      { id: call.id, personaId: call.personaId, reason: call.reason, at: Date.now(), byId: actor?.id ?? null, byName: actor?.name ?? null }
+      {
+        id: call.id,
+        personaId: call.personaId,
+        reason: call.reason,
+        at: Date.now(),
+        byId: actor?.id ?? null,
+        byName: actor?.name ?? null,
+        // Ответ гостю: «пицца через 3 минуты» — официант знает, а сказать было нечем
+        reply: sanitizeNote(body.reply)?.slice(0, 120) ?? null
+      }
     ]
-    audit(actor, 'принял вызов', tableId, t.personas.find(p => p.id === call.personaId)?.name ?? null)
+    const replied = t.callAcks.at(-1)?.reply
+    audit(actor, 'принял вызов', tableId, [t.personas.find(p => p.id === call.personaId)?.name, replied && `ответ: ${replied}`].filter(Boolean).join(' · ') || null)
     return ok({ ok: true, left: t.calls.length })
   }
 

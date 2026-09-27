@@ -27,6 +27,8 @@ type Ticket = KitchenTicket & {
   sharedNames?: string[] | null
   /** Отмена пришла, когда блюдо уже было на плите: продукт потерян. */
   wasCooking?: boolean
+  /** То же блюдо тот же гость заказал только что — заказ или двойное нажатие? */
+  repeat?: boolean
 }
 
 /** Бар готовит напитки: в menu.json это разделы «Напитки» и «Вино и бар». */
@@ -208,6 +210,11 @@ function TicketCard({
           {r.choice.toUpperCase()} — снимает {r.removes.map(allergenAccusative).join(' и ')}
         </div>
       ))}
+      {t.repeat && (
+        <div className="mt-1.5 rounded-lg bg-c-warn-bg px-2.5 py-1.5 text-[12px] font-bold text-c-warn-fg">
+          Повтор: гость уже заказывал это только что — уточните у официанта
+        </div>
+      )}
       {mods && <div className="mt-1.5 text-[13px]">{mods}</div>}
       {t.comment && <div className="mt-1.5 text-[13px] font-bold">✎ {t.comment}</div>}
       {/* И на баре тоже: сульфиты в вине и орехи в миндальном молоке — его работа */}

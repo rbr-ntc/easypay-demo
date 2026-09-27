@@ -40,6 +40,12 @@ export function Overview() {
               выручка · чистыми {fmt(r.netRevenue)}
               {r.openRemaining > 0 && ` · ещё ${fmt(r.openRemaining)} ждут оплаты за открытыми столами`}
             </div>
+            {r.ratings && r.ratings.good + r.ratings.ok + r.ratings.bad > 0 && (
+              <div className="mt-1 text-[13px] text-c-mute">
+                оценки гостей: понравилось {r.ratings.good} · нормально {r.ratings.ok}
+                {r.ratings.bad > 0 ? <b className="text-c-bad-ink"> · замечаний {r.ratings.bad}</b> : ' · замечаний нет'}
+              </div>
+            )}
             <div className="mt-5 grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-6">
               <Kpi label="Чеков" value={r.checks} />
               <Kpi label="Гостей" value={r.guests} />

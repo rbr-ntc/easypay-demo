@@ -73,6 +73,7 @@ export function reportOfCheck(c: ShiftCheck, w?: ShiftWindow): ReportCheck {
     // «Снято с кухни» — потерянный продукт: отменённое после того, как взяли в
     // работу. Одно правило во всех хранилищах и витринах (зал, отчёт, сверка)
     cancelledTotal: c.cancelledTotal,
+    ratings: (c.ratings ?? []).map(r => r.rating),
     payments: (c.payments ?? []).filter(p => inWindow(p.at, w)).map(p => ({ amount: p.amount, method: p.method, at: p.at })),
     tips: (c.tipsList ?? (c.tips > 0 ? [{ amount: c.tips, waiter: c.waiter, at: c.closedAt ?? c.openedAt }] : [])).filter(t => inWindow(t.at, w)),
     lines: c.lines.map(l => ({ name: l.name, qty: l.qty, amount: l.amount, cancelled: l.cancelled }))
@@ -122,6 +123,7 @@ export function checkOfOpen(tableId: string, t: TableSession): ShiftCheck {
     tipsList: t.tips.map(x => ({ amount: x.amount, waiter: waiterOfTable(tableId)?.name ?? null, at: x.at })),
     refunded: round2((t.refunds ?? []).reduce((a, r) => a + r.amount, 0)),
     refundsList: (t.refunds ?? []).map(r => ({ amount: r.amount, method: r.method ?? 'sbp', at: r.at })),
+    ratings: (t.ratings ?? []).map(r => ({ rating: r.rating, note: r.note, guest: t.personas.find(p => p.id === r.personaId)?.name ?? null })),
     firstSentAt: sent.length ? Math.min(...sent) : null,
     lastServedAt: served.length ? Math.max(...served) : null
   }

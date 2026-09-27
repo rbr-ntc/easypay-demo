@@ -71,7 +71,7 @@ export async function createPostgresStore(url?: string): Promise<Store> {
 
   /** Чек закрытой сессии: состав, платежи по отдельности, чаевые, возвраты. */
   async function checkOfRow(row: any): Promise<ShiftCheck> {
-    const [lines, payments, tips, guests, refunds] = await Promise.all([
+    const [lines, payments, tips, guests, refunds, ratings] = await Promise.all([
       sql`select l.*, g.name as guest_name from order_lines l
           left join guests g on g.id = l.guest_id
           where l.table_session_id = ${row.id} order by l.seq`,
@@ -81,7 +81,8 @@ export async function createPostgresStore(url?: string): Promise<Store> {
           where p.table_session_id = ${row.id} order by p.created_at`,
       sql`select amount, created_at from tips where table_session_id = ${row.id}`,
       sql`select count(*) as n from guests where table_session_id = ${row.id}`,
-      sql`select amount, method, created_at from refunds where table_session_id = ${row.id} order by created_at`
+      sql`select amount, method, created_at from refunds where table_session_id = ${row.id} order by created_at`,
+      sql`select r.rating, r.note, g.name as guest_name from guest_ratings r left join guests g on g.id = r.guest_id where r.table_session_id = ${row.id}`
     ])
     const billed = lines.filter((l: any) => l.sent_at && !l.cancelled_at)
     const total = round2(billed.reduce((a: number, l: any) => a + Number(l.price) * l.qty, 0))
@@ -131,6 +132,7 @@ export async function createPostgresStore(url?: string): Promise<Store> {
       tipsList: tips.map((t: any) => ({ amount: Number(t.amount), waiter, at: msOf(t.created_at) ?? 0 })),
       refunded: round2(refunds.reduce((a: number, r: any) => a + Number(r.amount), 0)),
       refundsList: refunds.map((r: any) => ({ amount: Number(r.amount), method: r.method ?? 'sbp', at: msOf(r.created_at) ?? 0 })),
+      ratings: ratings.map((r: any) => ({ rating: r.rating, note: r.note ?? null, guest: r.guest_name ?? null })),
       firstSentAt: sent.length ? Math.min(...sent) : null,
       lastServedAt: served.length ? Math.max(...served) : null
     }
@@ -167,7 +169,7 @@ export async function createPostgresStore(url?: string): Promise<Store> {
       row = last
     }
 
-    const [guests, lines, payments, tips, calls, refunds, acked] = await Promise.all([
+    const [guests, lines, payments, tips, calls, refunds, acked, ratings] = await Promise.all([
       tx`select * from guests where table_session_id = ${row.id} order by joined_at`,
       tx`select * from order_lines where table_session_id = ${row.id} order by seq`,
       tx`select * from payments where table_session_id = ${row.id} order by created_at`,
@@ -177,7 +179,8 @@ export async function createPostgresStore(url?: string): Promise<Store> {
       // Принятые за 15 минут — гость видит «Оля идёт»
       // Только принятые человеком: вызов, снятый системой (гость заплатил),
       // иначе показывал «Официант идёт к вам», когда никто не шёл
-      tx`select * from calls where table_session_id = ${row.id} and ack_by is not null and ack_at > now() - interval '15 minutes' order by ack_at`
+      tx`select * from calls where table_session_id = ${row.id} and (ack_by is not null or ack_name is not null) and ack_at > now() - interval '15 minutes' order by ack_at`,
+      tx`select * from guest_ratings where table_session_id = ${row.id} order by created_at`
     ])
 
     const ms = (v: any) => (v ? new Date(v).getTime() : null)
@@ -244,8 +247,9 @@ export async function createPostgresStore(url?: string): Promise<Store> {
       })),
       callAcks: acked.map((c: any) => {
         const byId = staffExt(c.ack_by)
-        return { id: c.id, personaId: c.guest_id, reason: c.reason, at: ms(c.ack_at) ?? 0, byId, byName: staffName(byId) }
+        return { id: c.id, personaId: c.guest_id, reason: c.reason, at: ms(c.ack_at) ?? 0, byId, byName: staffName(byId) ?? c.ack_name ?? null, reply: c.ack_reply ?? null }
       }),
+      ratings: ratings.map((r: any) => ({ personaId: r.guest_id, rating: r.rating, note: r.note ?? null, at: ms(r.created_at) ?? 0 })),
       calls: calls.map((c: any) => ({
         id: c.id,
         at: ms(c.created_at) ?? 0,
@@ -405,8 +409,16 @@ export async function createPostgresStore(url?: string): Promise<Store> {
     // Кто принял вызов — чтобы гость после перечитывания видел, кто идёт
     for (const a of session.callAcks ?? []) {
       await tx`
-        update calls set ack_at = coalesce(ack_at, ${new Date(a.at)}), ack_by = coalesce(ack_by, ${staffUuid(a.byId)})
+        update calls set ack_at = coalesce(ack_at, ${new Date(a.at)}), ack_by = coalesce(ack_by, ${staffUuid(a.byId)}),
+               ack_reply = coalesce(ack_reply, ${a.reply ?? null}), ack_name = coalesce(ack_name, ${a.byName ?? null})
         where id = ${a.id} and table_session_id = ${sid}
+      `
+    }
+    for (const r of session.ratings ?? []) {
+      await tx`
+        insert into guest_ratings (table_session_id, guest_id, rating, note, created_at)
+        values (${sid}, ${r.personaId}, ${r.rating}, ${r.note}, ${new Date(r.at)})
+        on conflict (table_session_id, guest_id) do update set rating = excluded.rating, note = excluded.note, created_at = excluded.created_at
       `
     }
     const openIds = session.calls.map(c => c.id)

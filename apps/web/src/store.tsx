@@ -6,6 +6,7 @@ import {
   apiAddLine,
   apiCall,
   apiLeave,
+  apiRate,
   apiSetAllergies,
   apiClose,
   apiServe,
@@ -338,6 +339,8 @@ interface Ctx {
   setAllergies: (allergies: string[]) => Promise<boolean>
   /** Выйти из-за стола, если сел по ошибке и за тобой ничего нет. */
   leaveTable: () => Promise<boolean>
+  /** Оценить визит. true — сервер принял. */
+  rateVisit: (rating: 'good' | 'ok' | 'bad', note?: string) => Promise<boolean>
   // смена сотрудника: вход по PIN, права роли
   staff: Staff | null
   staffChecked: boolean
@@ -381,7 +384,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     for (const a of snap?.acked ?? []) {
       if (seenAcks.current.has(a.id)) continue
       seenAcks.current.add(a.id)
-      if (a.personaId === mineId && Date.now() - a.at < 60_000) toastRef.current?.(`${a.by ?? 'Официант'} идёт к вам`)
+      if (a.personaId === mineId && Date.now() - a.at < 60_000) {
+        // Ответ официанта — словами: «пицца через 3 минуты», а не только «идёт»
+        toastRef.current?.(a.reply ? `${a.by ?? 'Официант'}: ${a.reply}` : `${a.by ?? 'Официант'} идёт к вам`)
+      }
     }
   }, [snap?.acked, identity?.personaId])
   const personaId = identity?.personaId ?? null
@@ -640,6 +646,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         if (!guestToken()) return false
         await apiSetAllergies(guestToken()!, allergies)
         toast(allergies.length ? `Аллергии: ${allergies.join(', ')} — кухня увидит` : 'Аллергий нет — отметили')
+        return true
+      }, false),
+    rateVisit: (rating, note) =>
+      guard(async () => {
+        if (!guestToken()) return false
+        await apiRate(guestToken()!, rating, note)
         return true
       }, false),
     leaveTable: () =>

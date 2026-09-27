@@ -30,6 +30,8 @@ export interface ReportCheck {
   payments: { amount: number; method: string; at: number }[]
   tips: { amount: number; waiter: string | null }[]
   lines: { name: string; qty: number; amount: number; cancelled: boolean }[]
+  /** Оценки визита гостями стола. */
+  ratings?: ('good' | 'ok' | 'bad')[]
 }
 
 export interface ShiftReport {
@@ -54,6 +56,9 @@ export interface ShiftReport {
   waiters: { name: string; revenue: number; tables: number; tips: number }[]
   top: { name: string; qty: number }[]
   low: { name: string; qty: number }[]
+  /** Оценки гостей за смену: сколько «всё отлично», «нормально», «есть замечание». */
+  /** В Z-отчётах, замороженных до оценок, поля нет. */
+  ratings?: { good: number; ok: number; bad: number }
 }
 
 /**
@@ -152,6 +157,11 @@ export function buildShiftReport(checks: ReportCheck[], menu: string[] = []): Sh
       .map(([name, w]) => ({ name, ...w }))
       .sort((a, b) => b.revenue - a.revenue),
     top: sold.slice(0, 5),
+    ratings: {
+      good: checks.reduce((a, c) => a + (c.ratings ?? []).filter(r => r === 'good').length, 0),
+      ok: checks.reduce((a, c) => a + (c.ratings ?? []).filter(r => r === 'ok').length, 0),
+      bad: checks.reduce((a, c) => a + (c.ratings ?? []).filter(r => r === 'bad').length, 0)
+    },
     // Аутсайдеры — хуже всего продающиеся, по возрастанию; не проданное ни
     // разу — первым: его раньше не было видно вовсе
     low: [

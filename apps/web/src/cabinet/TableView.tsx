@@ -31,6 +31,13 @@ const STAGE: Record<LineStage | 'draft', { label: string; color: string; next?: 
 
 const METHOD: Record<string, string> = { sbp: 'СБП', card: 'карта', cash: 'наличные' }
 
+/** Быстрые ответы на вызов: одно нажатие — и гость знает, чего ждать. */
+const REPLIES: { label: string; reply: string | null }[] = [
+  { label: 'Иду', reply: null },
+  { label: 'Через 2 мин', reply: 'Подойду через 2 минуты' },
+  { label: 'Уточню на кухне', reply: 'Уточню на кухне и вернусь' }
+]
+
 const time = (at: number | null | undefined) =>
   at ? new Date(at).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }) : '—'
 
@@ -166,12 +173,27 @@ export function TableView({ id }: { id: string }) {
             </span>
             <span className="c-num text-[13px] font-bold text-c-bad-ink">{fmtDur(now - c.at)}</span>
             {may('ack') && (
-              <button
-                onClick={() => void run(`ack-${c.id}`, 'ack', { callId: c.id }, 'Вызов снят')}
-                className="h-10 rounded-xl bg-c-ink px-4.5 text-[15px] font-bold text-white"
-              >
-                Иду
-              </button>
+              // Ответ гостю: «пицца через 3 минуты» — официант знает, гость видит
+              <span className="flex flex-wrap justify-end gap-1.5">
+                {REPLIES.map(r => (
+                  <button
+                    key={r.label}
+                    onClick={() => void run(`ack-${c.id}`, 'ack', { callId: c.id, reply: r.reply }, r.reply ? `Гостю: «${r.reply}»` : 'Вызов снят')}
+                    className={`h-10 rounded-xl px-3.5 text-[14px] ${r.reply ? 'border border-c-line bg-c-card' : 'bg-c-ink font-bold text-white'}`}
+                  >
+                    {r.label}
+                  </button>
+                ))}
+                <button
+                  onClick={() => {
+                    const reply = window.prompt('Ответ гостю', '')?.trim()
+                    if (reply) void run(`ack-${c.id}`, 'ack', { callId: c.id, reply }, `Гостю: «${reply}»`)
+                  }}
+                  className="h-10 rounded-xl border border-c-line bg-c-card px-3.5 text-[14px]"
+                >
+                  Ответить…
+                </button>
+              </span>
             )}
           </div>
         ))}

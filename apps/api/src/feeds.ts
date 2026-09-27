@@ -1,7 +1,7 @@
 // Витрины персонала: карточки зала и очередь кухни. Считаются из состояния столов.
 import { computeTotals, isBillLine, round2 } from '@easypay/domain/money'
 import { summarizeHall } from '@easypay/domain/hall'
-import { sortTickets, summarizeKitchen, ticketUrgency } from '@easypay/domain/kitchen'
+import { REPEAT_WINDOW_MS, sortTickets, summarizeKitchen, ticketUrgency } from '@easypay/domain/kitchen'
 import { dishName, priceOf, stationOf, allergensOf, removedAllergensOf, stopList, stopInfo, menuVersion } from './menu.ts'
 import { settingsVersion } from './settings.ts'
 import { HALL, metaOf, planTables } from './hallplan.ts'
@@ -159,6 +159,23 @@ export function kitchenPayload(tables: Map<string, TableSession>) {
         // кухня обязана знать — это осознанный риск, а не недосмотр
         allergyHits,
         sharedNames: line.shared ? eaters.map(p => p.name) : null,
+        // Тот же гость, то же блюдо, недавно — может быть и заказ, и двойное нажатие:
+        // повар не отличит по тикету, официанту стоит уточнить
+        // Порядок — по позиции в счёте: двойное нажатие уходит одной отправкой с одним временем
+        repeat:
+          !line.shared &&
+          table.lines.some(
+            (o, i) =>
+              i < table.lines.indexOf(line) &&
+              !o.shared &&
+              !o.cancelled &&
+              o.sent &&
+              o.dishId === line.dishId &&
+              o.personaId === line.personaId &&
+              o.sentAt != null &&
+              line.sentAt != null &&
+              line.sentAt - o.sentAt < REPEAT_WINDOW_MS
+          ),
         // Аллергены, снятые модификатором: для повара это не пожелание, а запрет
         removedAllergens: removedAllergensOf(line.dishId, line.options ?? {}),
         // Живой текст гостя: «аллергия на орехи, критично»

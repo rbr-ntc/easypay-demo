@@ -52,6 +52,12 @@ export function setStationThresholds(station: string, limits: { warnMs: number; 
   STATION_THRESHOLDS = { ...STATION_THRESHOLDS, [station]: limits }
 }
 
+/**
+ * Окно «повтора»: тот же гость заказал то же блюдо ещё раз. Может быть и вторая
+ * порция, и двойное нажатие — повару стоит уточнить, гостю — знать, что порций две.
+ */
+export const REPEAT_WINDOW_MS = 10 * 60 * 1000
+
 export const KITCHEN_THRESHOLDS = STATION_THRESHOLDS.kitchen
 
 export function thresholdsFor(station: string | undefined) {

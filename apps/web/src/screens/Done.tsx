@@ -16,16 +16,22 @@ import { SETTINGS } from '../settings'
  * счёта — так и написано.
  */
 
-const RATES = ['Всё отлично', 'Нормально', 'Есть замечание']
+const RATES: { id: 'good' | 'ok' | 'bad'; label: string }[] = [
+  { id: 'good', label: 'Всё отлично' },
+  { id: 'ok', label: 'Нормально' },
+  { id: 'bad', label: 'Есть замечание' }
+]
 
 export function Done() {
-  const { ui, patch, me, snap, totals, leaveTip } = useStore()
+  const { ui, patch, me, snap, totals, leaveTip, rateVisit } = useStore()
   const [busy, setBusy] = useState(false)
   const [tipSent, setTipSent] = useState(0)
   const [checkOpen, setCheckOpen] = useState(false)
-  // Заглушка до следующего этапа: оценка пока никуда не уходит — у сервера
-  // нет для неё ручки. Выбор виден гостю, но мы не обещаем, что его прочтут.
-  const [rate, setRate] = useState<string | null>(null)
+  // Оценка уходит на сервер: менеджер видит её в чеке и в обзоре смены
+  const rated = !!me && (snap?.rated ?? []).includes(me.id)
+  const [rate, setRate] = useState<'good' | 'ok' | 'bad' | null>(null)
+  const [note, setNote] = useState('')
+  const [rateSent, setRateSent] = useState(rated)
   const tipKey = useRef(newIdemKey())
   const bye = useMemo(() => seasonConfig(currentSeason()).bye, [])
 
@@ -125,12 +131,17 @@ export function Done() {
       <div className="mx-5 mt-9 text-center">
         <h2 className="g-serif text-[28px]">как всё прошло?</h2>
         <div className="mt-3.5 flex flex-wrap justify-center gap-2">
-          {RATES.map(r => {
+          {RATES.map(({ id: r, label }) => {
             const on = rate === r
             return (
               <button
                 key={r}
-                onClick={() => setRate(r)}
+                onClick={() => {
+                  setRate(r)
+                  // «Есть замечание» — сначала текст, остальное уходит сразу
+                  if (r !== 'bad') void rateVisit(r).then(ok => ok && setRateSent(true))
+                  else setRateSent(false)
+                }}
                 aria-pressed={on}
                 className="h-11 rounded-full px-4 text-[15px]"
                 style={
@@ -139,11 +150,28 @@ export function Done() {
                     : { background: 'var(--g-s1)', color: '#F3F0EA', border: '1px solid rgba(255,255,255,.1)' }
                 }
               >
-                {r}
+                {label}
               </button>
             )
           })}
         </div>
+        {rate === 'bad' && !rateSent && (
+          <div className="mt-3.5 flex gap-2">
+            <input
+              value={note}
+              onChange={e => setNote(e.target.value)}
+              maxLength={200}
+              placeholder="Что было не так?"
+              aria-label="Замечание"
+              className="h-12 min-w-0 flex-1 rounded-full bg-g-s1 px-4 text-[15px] text-g-fg outline-none placeholder:text-g-mute"
+              style={{ border: '1px solid rgba(255,255,255,.1)' }}
+            />
+            <button onClick={() => void rateVisit('bad', note).then(ok => ok && setRateSent(true))} className="g-cta h-12 rounded-full px-5 text-[15px]">
+              Отправить
+            </button>
+          </div>
+        )}
+        {rateSent && <div className="mt-3 text-[13px] text-g-tan">Спасибо — управляющая это увидит</div>}
       </div>
 
       <div className="mx-4 mt-9 rounded-3xl bg-g-s1 px-4.5 py-1">

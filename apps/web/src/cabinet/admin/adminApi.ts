@@ -97,6 +97,8 @@ export interface CheckRow {
   firstSentAt?: number | null
   lastServedAt?: number | null
   settled: number
+  /** Оценки визита с экрана «Спасибо»: одна на гостя. */
+  ratings?: { rating: 'good' | 'ok' | 'bad'; note: string | null; guest: string | null }[]
 }
 
 export interface LogEntry {

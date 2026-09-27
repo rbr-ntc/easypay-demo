@@ -7,6 +7,8 @@ import { hm, METHOD_LABEL, Row, StatusTag, type CheckStatus } from './parts'
  * Чек целиком: кто что ел, кто как платил и путь стола по времени.
  * Этим отвечают на спор «я не заказывал» и «я же платил» без поднятия логов.
  */
+
+const RATING_LABEL = { good: 'Всё понравилось', ok: 'Нормально', bad: 'Есть замечание' } as const
 export function CheckDetail({ check: c, status, onClose }: { check: CheckRow; status: CheckStatus; onClose: () => void }) {
   const byGuest = new Map<string, CheckRow['lines']>()
   for (const l of c.lines) {
@@ -72,6 +74,18 @@ export function CheckDetail({ check: c, status, onClose }: { check: CheckRow; st
           {c.cancelledTotal > 0 && <Row label="Снято с кухни" value={fmt(c.cancelledTotal)} />}
           {c.tips > 0 && <Row label="Чаевые (мимо счёта)" value={fmt(c.tips)} />}
         </div>
+
+        {(c.ratings ?? []).length > 0 && (
+          <div className="mt-4">
+            <div className="mb-1 text-[13px] font-bold text-c-mute">Оценки гостей</div>
+            {c.ratings!.map((r, i) => (
+              <div key={i} className={`py-1 text-[14px] ${r.rating === 'bad' ? 'text-c-bad-ink' : ''}`}>
+                {RATING_LABEL[r.rating]} · {r.guest ?? 'гость'}
+                {r.note && <span className="text-c-mute"> — «{r.note}»</span>}
+              </div>
+            ))}
+          </div>
+        )}
 
         {(c.payments ?? []).length > 0 && (
           <div className="mt-4">

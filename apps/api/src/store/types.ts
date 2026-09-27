@@ -190,5 +190,7 @@ export interface ShiftCheck {
   /** Возвраты по отдельности: наличные уходят из кассы, и сверка должна это знать. */
   refundsList?: { amount: number; method: string; at: number }[]
   firstSentAt?: number | null
+  /** Оценки визита гостями этого стола. */
+  ratings?: { rating: 'good' | 'ok' | 'bad'; note: string | null; guest: string | null }[]
   lastServedAt?: number | null
 }

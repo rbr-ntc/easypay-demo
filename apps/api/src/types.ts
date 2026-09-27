@@ -107,7 +107,9 @@ export interface TableSession {
   tips: Tip[]
   calls: Call[]
   /** Недавно принятые вызовы: гость видит «Оля идёт», а не пустоту. */
-  callAcks?: { id: string; personaId: string; reason: string; at: number; byId: string | null; byName: string | null }[]
+  callAcks?: { id: string; personaId: string; reason: string; at: number; byId: string | null; byName: string | null; reply?: string | null }[]
+  /** Оценка визита: одна на гостя, последняя побеждает. */
+  ratings?: { personaId: string; rating: 'good' | 'ok' | 'bad'; note: string | null; at: number }[]
   seq: number
   /** Долг, с которым стол закрыли — измеряется до отмены неподанного. */
   closedWithDebt?: number

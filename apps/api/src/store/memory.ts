@@ -40,6 +40,13 @@ function freshShift(): Shift {
   }
 }
 
+/** Оценки визита для чека: имя гостя — пока состав стола на руках. */
+function rememberedCheckRatings(session: TableSession): Pick<ShiftCheck, 'ratings'> {
+  return {
+    ratings: (session.ratings ?? []).map(r => ({ rating: r.rating, note: r.note, guest: session.personas.find(p => p.id === r.personaId)?.name ?? null }))
+  }
+}
+
 export function createMemoryStore(): Store {
   const tables = new Map<string, TableSession>()
   /** Сколько чеков держим целиком: их состав нужен только для показа. */
@@ -126,6 +133,7 @@ export function createMemoryStore(): Store {
       tipsList: session.tips.map(t => ({ amount: t.amount, waiter: waiterOfTable(tableId)?.name ?? null, at: t.at })),
       refunded: round2((session.refunds ?? []).reduce((a, r) => a + r.amount, 0)),
       refundsList: (session.refunds ?? []).map(r => ({ amount: r.amount, method: r.method ?? 'sbp', at: r.at })),
+      ...rememberedCheckRatings(session),
       firstSentAt: session.lines.reduce<number | null>((m, l) => (l.sentAt && (m === null || l.sentAt < m) ? l.sentAt : m), null),
       lastServedAt: session.lines.reduce<number | null>((m, l) => (l.servedAt && (m === null || l.servedAt > m) ? l.servedAt : m), null),
       total: round2(money.tableTotal),
@@ -152,6 +160,13 @@ export function createMemoryStore(): Store {
     checkTotals.cancelledTotal = round2(checkTotals.cancelledTotal + check.cancelledTotal)
 
     if (closedChecks.length > CHECKS_KEPT) closedChecks.pop()
+  }
+
+  /** Оценку ставят на экране «Спасибо» — уже после закрытия стола. */
+  function syncRatings(session: TableSession) {
+    const check = closedChecks.find(c => c.sessionId === session.sessionId)
+    if (!check) return
+    Object.assign(check, rememberedCheckRatings(session))
   }
 
   /** Свести замороженный чек с текущей переплатой сессии после возврата. */
@@ -187,7 +202,10 @@ export function createMemoryStore(): Store {
       if (wasOpen && session.status === 'closed') rememberCheck(tableId, session)
       // Переплату вернули: чек и итоги смены заморожены в момент закрытия, и без
       // сведения зал продолжал бы требовать отдать уже отданные деньги
-      else if (session.status === 'closed') settleOverpaid(session)
+      else if (session.status === 'closed') {
+        settleOverpaid(session)
+        syncRatings(session)
+      }
       if (session.resetRequested) {
         // Стол освобождается: отменённые позиции оставляем кухне, остальное забываем
         const cancelled = session.lines.filter(l => l.cancelled)

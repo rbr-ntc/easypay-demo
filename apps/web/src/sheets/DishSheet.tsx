@@ -6,6 +6,7 @@ import { useStore } from '../store'
 import { newIdemKey } from '../keys'
 import { fmt } from '../format'
 import { dishTall } from '../guest/showcase'
+import { REPEAT_WINDOW_MS } from '@easypay/domain/kitchen'
 import { allergyHits, rescues } from '../guest/allergy'
 
 const MAX_QTY = 9 // столько же принимает сервер
@@ -133,6 +134,10 @@ export function DishSheet() {
     [allAllergens.length ? String(allAllergens.length) : 'нет', 'аллергены']
   ]
   const alreadyShared = shared && (snap?.lines ?? []).some(l => l.shared && l.dishId === dish.id && !l.cancelled)
+  // Уже заказывал это сам недавно — чтобы второй тар-тар был осознанным, а не случайным
+  const mineBefore = (snap?.lines ?? []).find(
+    l => !l.shared && l.dishId === dish.id && l.personaId === me?.id && !l.cancelled && l.sent && l.sentAt && Date.now() - l.sentAt < REPEAT_WINDOW_MS
+  )
 
   return (
     <div className="g-anim-up absolute inset-0 z-[21] bg-g-paper" role="dialog" aria-modal="true" aria-label={dish.name}>
@@ -287,6 +292,12 @@ export function DishSheet() {
                 />
               </span>
             </button>
+          )}
+          {mineBefore && !shared && (
+            <div className="mt-2 px-1 text-[13px] text-g-tan">
+              Вы уже заказали {dish.name.toLowerCase()} {Math.max(1, Math.round((Date.now() - (mineBefore.sentAt ?? 0)) / 60000))} мин назад — это будет
+              ещё одна порция.
+            </div>
           )}
           {alreadyShared && (
             <div className="mt-2 px-1 text-[13px] text-g-tan">
