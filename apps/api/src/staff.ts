@@ -59,12 +59,13 @@ export function applyStaff(list: StaffRecord[]) {
   STAFF = list.map(s => ({ ...s, tables: [...s.tables] }))
   // Уволенного выкидываем из смены сразу, а не через двенадцать часов
   const fired = new Set(STAFF.filter(s => !s.active).map(s => s.id))
-  for (const [token, sess] of sessions) {
+  for (const [key, sess] of sessions) {
     if (fired.has(sess.staffId)) {
-      sessions.delete(token)
-      revoked.set(token, Date.now())
+      sessions.delete(key)
+      revoked.set(key, Date.now())
     }
   }
+  for (const id of fired) sessionEvents.push({ kind: 'revokeStaff', staffId: id })
 }
 
 export const allStaff = (): StaffRecord[] => STAFF
@@ -93,9 +94,47 @@ export function waiterOfTable(tableId: string) {
 }
 
 // --- Сессии ---
+// Сессии живут в базе (staff_sessions), в памяти — их копия для быстрой
+// проверки. Раньше они были только в памяти, и любой рестарт сервера —
+// каждая выкладка — выкидывал из смены весь персонал: повар посреди готовки
+// получал «войдите заново». Ключ — хеш токена: сам токен в базе не хранится.
 const SESSION_TTL = 12 * 60 * 60 * 1000 // смена
-/** @type {Map<string, {staff: object, expiresAt: number}>} */
 const sessions = new Map<string, { id: string; staffId: string; staff: any; device: string | null; expiresAt: number }>()
+const tokenKey = (token: unknown) => crypto.createHash('sha256').update(String(token ?? '')).digest('hex')
+
+export interface StoredSession {
+  id: string
+  staffId: string
+  tokenHash: string
+  device: string | null
+  expiresAt: number
+}
+
+export type SessionEvent =
+  | { kind: 'open'; session: StoredSession }
+  | { kind: 'revoke'; tokenHash: string }
+  | { kind: 'revokeStaff'; staffId: string }
+
+/** Что записать в базу: копится здесь, сбрасывается сервером после действия. */
+const sessionEvents: SessionEvent[] = []
+export function takeSessionEvents(): SessionEvent[] {
+  return sessionEvents.splice(0, sessionEvents.length)
+}
+
+/** Рестарт процесса для тестов: память сессий пуста, база — нет. */
+export function forgetSessionsInMemory() {
+  sessions.clear()
+}
+
+/** Поднять сессии из базы при старте: персонал остаётся в смене после рестарта. */
+export function restoreSessions(list: StoredSession[]) {
+  const now = Date.now()
+  for (const r of list) {
+    const rec = findStaff(r.staffId)
+    if (!rec || !rec.active || r.expiresAt <= now) continue
+    sessions.set(r.tokenHash, { id: r.id, staffId: r.staffId, staff: publicStaff(rec), device: r.device, expiresAt: r.expiresAt })
+  }
+}
 
 const MAX_SESSIONS_PER_STAFF = 5
 
@@ -109,26 +148,25 @@ export function createSession(staff: any, device: string | null = null) {
     if (oldest) {
       sessions.delete(oldest[0])
       revoked.set(oldest[0], Date.now())
+      sessionEvents.push({ kind: 'revoke', tokenHash: oldest[0] })
     }
   }
 
   const token = crypto.randomBytes(18).toString('base64url')
   const id = crypto.randomUUID()
-  sessions.set(token, {
-    id,
-    staffId: staff.id,
-    staff: publicStaff(staff),
-    device,
-    expiresAt: Date.now() + SESSION_TTL
-  })
+  const key = tokenKey(token)
+  const expiresAt = Date.now() + SESSION_TTL
+  sessions.set(key, { id, staffId: staff.id, staff: publicStaff(staff), device, expiresAt })
+  sessionEvents.push({ kind: 'open', session: { id, staffId: staff.id, tokenHash: key, device, expiresAt } })
   return { token, sessionId: id }
 }
 
 export function sessionStaff(token: unknown) {
-  const found = sessions.get(String(token ?? ''))
+  const key = tokenKey(token)
+  const found = sessions.get(key)
   if (!found) return null
   if (found.expiresAt < Date.now()) {
-    sessions.delete(String(token))
+    sessions.delete(key)
     return null
   }
   // Роль и столы — текущие: менеджер мог переназначить их посреди смены
@@ -148,11 +186,13 @@ export function activeSessions() {
 
 /** Токен был погашен вытеснением — об этом надо сказать прямо. */
 export function wasRevoked(token: unknown) {
-  return revoked.has(String(token ?? ''))
+  return revoked.has(tokenKey(token))
 }
 
 export function dropSession(token: unknown) {
-  sessions.delete(String(token ?? ''))
+  const key = tokenKey(token)
+  sessions.delete(key)
+  sessionEvents.push({ kind: 'revoke', tokenHash: key })
 }
 
 export function sweepSessions() {

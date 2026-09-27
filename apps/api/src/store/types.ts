@@ -1,5 +1,5 @@
 import type { AuditEntry, MutationResult, Shift, TableSession } from '../types.ts'
-import type { StaffRecord } from '../staff.ts'
+import type { SessionEvent, StaffRecord, StoredSession } from '../staff.ts'
 
 /**
  * Хранилище состояния зала. Две реализации: память (быстрые тесты и демо без БД)
@@ -89,6 +89,12 @@ export interface Store {
   staffList(): Promise<StaffRecord[] | null>
   /** Создать или обновить сотрудника вместе с закреплёнными столами. */
   saveStaff(rec: StaffRecord): Promise<void>
+
+  // ── Сессии персонала ──────────────────────────────────────────────────
+  /** Живые сессии (не отозванные, не истёкшие) — поднять после рестарта. */
+  staffSessions(): Promise<StoredSession[]>
+  /** Записать вход, выход, вытеснение, увольнение. */
+  applySessionEvents(events: SessionEvent[]): Promise<void>
 
   // ── Настройки заведения ───────────────────────────────────────────────
   /** Сохранённые настройки и момент сохранения; null — не сохраняли. */

@@ -40,6 +40,8 @@ import { createSettingsRoutes, loadSettings } from './settingsApi.ts'
 import { currentSettings, phoneMethodAllowed, settingsVersion } from './settings.ts'
 import {
   dropSession,
+  restoreSessions,
+  takeSessionEvents,
   wasRevoked,
   loginAllowed,
   lockoutSeconds,
@@ -63,6 +65,8 @@ const getStore = () =>
   (storePromise ??= createStore().then(async store => {
     await loadPublishedMenu(store)
     await loadStaff(store)
+    // Персонал остаётся в смене после рестарта: сессии поднимаем из базы
+    restoreSessions(await store.staffSessions())
     await loadSettings(store)
     applyStopOverrides(await store.stopOverrides())
     const who = await store.stopDetails()
@@ -134,6 +138,15 @@ async function flushAudit(store: Store) {
   const entries = pendingAudit
   pendingAudit = []
   for (const entry of entries) await store.audit(entry)
+  // Входы, выходы и увольнения — туда же: сессии переживают рестарт сервера
+  const events = takeSessionEvents()
+  if (events.length) {
+    try {
+      await store.applySessionEvents(events)
+    } catch (err) {
+      console.error('сессии персонала не записались в базу:', err)
+    }
+  }
 }
 
 // --- Потоки SSE ---
@@ -1444,6 +1457,7 @@ async function handleApi(req: any, res: any, url: URL) {
   if (url.pathname === '/api/staff/logout') {
     if (req.method !== 'POST') return json(res, 405, { error: 'method' })
     dropSession(req.headers['x-staff-token'])
+    await flushAudit(store)
     return json(res, 200, { ok: true })
   }
 

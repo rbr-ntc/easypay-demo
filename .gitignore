@@ -5,3 +5,8 @@ dist
 *.tsbuildinfo
 .env
 .env.*
+
+# Скиллы агентов, установленные локально (npx skills add) — не часть продукта
+.agents/
+.claude/skills/
+skills-lock.json

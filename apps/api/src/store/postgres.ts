@@ -844,6 +844,41 @@ export async function createPostgresStore(url?: string): Promise<Store> {
       return row ? { mime: row.mime as string, data: Buffer.from(row.data) } : null
     },
 
+    async staffSessions() {
+      const rows = await sql`
+        select s.id, s.token_hash, s.device_label, s.expires_at, st.ext_id
+          from staff_sessions s join staff st on st.id = s.staff_id
+         where s.revoked_at is null and s.expires_at > now() and st.ext_id is not null
+      `
+      return rows.map((r: any) => ({
+        id: r.id as string,
+        staffId: r.ext_id as string,
+        tokenHash: r.token_hash as string,
+        device: (r.device_label as string | null) ?? null,
+        expiresAt: msOf(r.expires_at) ?? 0
+      }))
+    },
+
+    async applySessionEvents(events) {
+      for (const e of events) {
+        if (e.kind === 'open') {
+          const staffId = staffUuid(e.session.staffId)
+          // Сотрудника нет в базе (запуск по файлу) — сессия живёт только в памяти
+          if (!staffId) continue
+          await sql`
+            insert into staff_sessions (id, staff_id, token_hash, device_label, expires_at)
+            values (${e.session.id}, ${staffId}, ${e.session.tokenHash}, ${e.session.device}, ${new Date(e.session.expiresAt)})
+            on conflict (token_hash) do nothing
+          `
+        } else if (e.kind === 'revoke') {
+          await sql`update staff_sessions set revoked_at = now() where token_hash = ${e.tokenHash} and revoked_at is null`
+        } else {
+          const staffId = staffUuid(e.staffId)
+          if (staffId) await sql`update staff_sessions set revoked_at = now() where staff_id = ${staffId} and revoked_at is null`
+        }
+      }
+    },
+
     async settings() {
       const [row] = await sql`select settings from venues where id = ${venueId}`
       const doc = row?.settings as Record<string, unknown> | undefined

@@ -2,7 +2,7 @@
 // Поведение обязано совпадать с Postgres-реализацией — на обеих гоняется один набор тестов.
 import { computeTotals, isBillLine, round2 } from '@easypay/domain/money'
 import { dishName, priceOf } from '../menu.ts'
-import { staffFromConfig, waiterOfTable, type StaffRecord } from '../staff.ts'
+import { staffFromConfig, waiterOfTable, type StaffRecord, type StoredSession } from '../staff.ts'
 import type { AuditEntry, MutationResult, Shift, TableSession } from '../types.ts'
 import type { DecisionNote, MenuDocKind, MenuDocRow, Settlement, ShiftCheck, ShiftInfo, Store } from './types.ts'
 
@@ -54,6 +54,7 @@ export function createMemoryStore(): Store {
   const photos = new Map<string, { mime: string; data: Buffer }>()
   let staff: StaffRecord[] | null = null
   let settings: { doc: unknown; savedAt: number } | null = null
+  let staffSessionRows: (StoredSession & { revoked: boolean })[] = []
   const shift = freshShift()
   let guestsSeen = 0
 
@@ -346,6 +347,19 @@ export function createMemoryStore(): Store {
 
     async photo(id) {
       return photos.get(id) ?? null
+    },
+
+    async staffSessions() {
+      const now = Date.now()
+      return staffSessionRows.filter(r => !r.revoked && r.expiresAt > now).map(({ revoked: _r, ...r }) => ({ ...r }))
+    },
+
+    async applySessionEvents(events) {
+      for (const e of events) {
+        if (e.kind === 'open') staffSessionRows = [...staffSessionRows, { ...e.session, revoked: false }]
+        else if (e.kind === 'revoke') staffSessionRows = staffSessionRows.map(r => (r.tokenHash === e.tokenHash ? { ...r, revoked: true } : r))
+        else staffSessionRows = staffSessionRows.map(r => (r.staffId === e.staffId ? { ...r, revoked: true } : r))
+      }
     },
 
     async settings() {
