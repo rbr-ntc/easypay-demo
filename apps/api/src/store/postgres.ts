@@ -8,6 +8,7 @@ import { staffName, waiterOfTable } from '../staff.ts'
 import type { AuditEntry, MutationResult, Shift, TableSession } from '../types.ts'
 import type { DecisionNote, Settlement, ShiftCheck, ShiftInfo, Store } from './types.ts'
 import { emptySession } from './memory.ts'
+import { metaOf } from '../hallplan.ts'
 
 /** Сколько ещё показывать закрытый стол витринам зала и кухни. */
 const RECENT_CLOSED_MS = 30 * 60 * 1000
@@ -463,7 +464,11 @@ export async function createPostgresStore(url?: string): Promise<Store> {
       await tx`
         insert into guest_ratings (table_session_id, guest_id, rating, note, created_at)
         values (${sid}, ${r.personaId}, ${r.rating}, ${r.note}, ${new Date(r.at)})
-        on conflict (table_session_id, guest_id) do update set rating = excluded.rating, note = excluded.note, created_at = excluded.created_at
+        on conflict (table_session_id, guest_id) do update set rating = excluded.rating, note = excluded.note, created_at = excluded.created_at,
+          -- Гость переоценил — старое «разобрано» к новой жалобе не относится
+          resolved_at = case when guest_ratings.rating is distinct from excluded.rating or guest_ratings.note is distinct from excluded.note then null else guest_ratings.resolved_at end,
+          resolved_by = case when guest_ratings.rating is distinct from excluded.rating or guest_ratings.note is distinct from excluded.note then null else guest_ratings.resolved_by end,
+          resolution = case when guest_ratings.rating is distinct from excluded.rating or guest_ratings.note is distinct from excluded.note then null else guest_ratings.resolution end
       `
     }
     const openIds = session.calls.map(c => c.id)
@@ -523,6 +528,102 @@ export async function createPostgresStore(url?: string): Promise<Store> {
 
   return {
     kind: 'postgres',
+
+    async qualityVisits(from, to, limit) {
+      const rows = await sql`
+        select ts.id, rt.number as table_id, ts.opened_at, ts.closed_at,
+          (select count(*) from guests g where g.table_session_id = ts.id)::int as guests,
+          (select coalesce(sum(amount), 0) from tips where table_session_id = ts.id) as tips
+        from table_sessions ts
+        join restaurant_tables rt on rt.id = ts.table_id
+        -- Посадки, которые шли в этом окне: и перенесённые из прошлой смены тоже
+        where rt.venue_id = ${venueId} and coalesce(ts.closed_at, now()) > ${new Date(from)} and ts.opened_at < ${new Date(to)}
+        order by ts.opened_at desc
+        limit ${limit}
+      `
+      if (rows.length === 0) return []
+      const ids = rows.map((r: any) => r.id)
+      const [ratings, calls, lines, tipWaiters] = await Promise.all([
+        sql`
+          select gr.table_session_id, gr.guest_id, gr.rating, gr.note, gr.created_at, gr.resolved_at, gr.resolution,
+                 g.name as guest_name, st.name as resolver
+          from guest_ratings gr
+          left join guests g on g.id = gr.guest_id
+          left join staff st on st.id = gr.resolved_by
+          where gr.table_session_id in ${sql(ids)}
+        `,
+        // Ожидание официанта — только вызовы, принятые человеком, а не снятые оплатой
+        sql`
+          select table_session_id, ack_by, extract(epoch from (ack_at - created_at)) * 1000 as ms
+          from calls
+          where table_session_id in ${sql(ids)} and ack_at is not null and (ack_by is not null or ack_name is not null)
+        `,
+        sql`
+          select table_session_id, extract(epoch from (served_at - sent_at)) * 1000 as ms
+          from order_lines
+          where table_session_id in ${sql(ids)} and sent_at is not null and served_at is not null and cancelled_at is null
+        `,
+        sql`select table_session_id, waiter_id from tips where table_session_id in ${sql(ids)} and waiter_id is not null`
+      ])
+      const bySession = <T extends { table_session_id: string }>(list: T[]) => {
+        const map = new Map<string, T[]>()
+        for (const x of list) map.set(x.table_session_id, [...(map.get(x.table_session_id) ?? []), x])
+        return map
+      }
+      const rs = bySession(ratings as any[])
+      const cs = bySession(calls as any[])
+      const ls = bySession(lines as any[])
+      const ts = bySession(tipWaiters as any[])
+      /**
+       * Кто обслуживал — по фактам посадки: кому ушли чаевые, кто подходил на
+       * вызовы. Закрепление стола «сейчас» переписало бы месяц чужой работы
+       * на того, кто держит стол сегодня.
+       */
+      const servedBy = (id: string, tableId: string) => {
+        const tipper = (ts.get(id) ?? [])[0]?.waiter_id
+        const acks = (cs.get(id) ?? []).map((c: any) => c.ack_by).filter(Boolean)
+        const top = acks.sort((a: string, b: string) => acks.filter((x: string) => x === b).length - acks.filter((x: string) => x === a).length)[0]
+        const ext = staffExt(tipper ?? top ?? null)
+        if (ext) return { id: ext, name: staffName(ext) }
+        const now = waiterOfTable(tableId)
+        return { id: now?.id ?? null, name: now?.name ?? null }
+      }
+      return rows.map((r: any) => {
+        const waiter = servedBy(r.id, r.table_id)
+        return {
+          sessionId: r.id,
+          tableId: r.table_id,
+          zone: metaOf(r.table_id)?.zoneName ?? null,
+          openedAt: new Date(r.opened_at).getTime(),
+          closedAt: r.closed_at ? new Date(r.closed_at).getTime() : null,
+          guests: Number(r.guests),
+          waiterId: waiter?.id ?? null,
+          waiter: waiter?.name ?? null,
+          ratings: (rs.get(r.id) ?? []).map((x: any) => ({
+            guestId: x.guest_id,
+            guest: x.guest_name ?? null,
+            rating: x.rating,
+            note: x.note ?? null,
+            at: new Date(x.created_at).getTime(),
+            resolvedAt: x.resolved_at ? new Date(x.resolved_at).getTime() : null,
+            resolvedBy: x.resolver ?? null,
+            resolution: x.resolution ?? null
+          })),
+          callWaits: (cs.get(r.id) ?? []).map((x: any) => Math.max(0, Number(x.ms))),
+          kitchenWaits: (ls.get(r.id) ?? []).map((x: any) => Math.max(0, Number(x.ms))),
+          tips: Number(r.tips)
+        }
+      })
+    },
+
+    async resolveRating(sessionId, guestId, byStaffId, resolution) {
+      const done = await sql`
+        update guest_ratings set resolved_at = now(), resolved_by = ${staffUuid(byStaffId)}, resolution = ${resolution}
+        where table_session_id = ${sessionId} and guest_id = ${guestId}
+        returning 1
+      `
+      return done.length > 0
+    },
 
     async read(tableId) {
       return loadSession(sql, tableId)

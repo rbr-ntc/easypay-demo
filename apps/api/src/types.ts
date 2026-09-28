@@ -130,6 +130,8 @@ export interface TableSession {
   cleanedAt?: number | null
   /** Гость просит принять наличные — ждём подтверждения от официанта. */
   cashIntent?: { personaId: string; scope: string; amount: number; at: number } | null
+  /** Сколько гости ждали официанта на вызовах (мс) — вся посадка, без обрезки по времени. */
+  callWaits?: number[]
   /** Оплаты через эквайера, которые ещё в пути или только что закончились. */
   payIntents?: PayIntent[]
   /** Приставленные стулья сверх плана зала — живут до конца посадки. */
@@ -144,7 +146,17 @@ export interface TableSession {
   tips: Tip[]
   calls: Call[]
   /** Недавно принятые вызовы: гость видит «Оля идёт», а не пустоту. */
-  callAcks?: { id: string; personaId: string; reason: string; at: number; byId: string | null; byName: string | null; reply?: string | null }[]
+  callAcks?: {
+    id: string
+    personaId: string
+    reason: string
+    at: number
+    byId: string | null
+    byName: string | null
+    reply?: string | null
+    /** Когда гость позвал: сколько он ждал «иду» — метрика качества официанта. */
+    calledAt?: number
+  }[]
   /** Оценка визита: одна на гостя, последняя побеждает. */
   ratings?: { personaId: string; rating: 'good' | 'ok' | 'bad'; note: string | null; at: number }[]
   seq: number

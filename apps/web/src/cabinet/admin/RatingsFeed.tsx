@@ -31,8 +31,8 @@ export function RatingsFeed() {
     <Panel
       title={`Отзывы гостей за смену · ${rows.length}`}
       action={
-        <a href={href({ ws: 'admin', page: 'checks', sub: 'current' })} className="text-[13px] font-bold">
-          Чеки →
+        <a href={href({ ws: 'admin', page: 'quality' })} className="text-[13px] font-bold">
+          Гости и качество →
         </a>
       }
     >

@@ -8,6 +8,7 @@ import { Log } from './Log'
 import { MenuPage } from './menu/MenuPage'
 import { StaffPage } from './StaffPage'
 import { SettingsPage } from './SettingsPage'
+import { Quality } from './Quality'
 
 /** Раздел кабинета по адресу `#/admin/<раздел>/<под-адрес>`. */
 export function AdminPage({ route }: { route: CabRoute }) {
@@ -22,6 +23,8 @@ export function AdminPage({ route }: { route: CabRoute }) {
       return <Shifts id={route.sub} />
     case 'checks':
       return <Checks shift={route.sub} />
+    case 'quality':
+      return <Quality />
     case 'log':
       return <Log />
     case 'menu':

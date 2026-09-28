@@ -33,6 +33,7 @@ import { isKnownTable, seatsOf } from './hallplan.ts'
 import { hallPayload, kitchenPayload } from './feeds.ts'
 import { createStore, type Store } from './store/index.ts'
 import { createShiftRoutes } from './shiftApi.ts'
+import { createQualityRoutes } from './qualityApi.ts'
 import { createMenuRoutes, loadPublishedMenu } from './menuApi.ts'
 import { createStaffRoutes, loadStaff } from './staffApi.ts'
 import { receiptLines, receiptNoOf, receiptNote, venueOfReceipt } from './receipt.ts'
@@ -207,6 +208,7 @@ function openSessionInPlace(t: TableSession) {
   t.extraSeats = 0
   // Поздние оплаты прошлой посадки новому столу не принадлежат: их заморозку снимет эквайер-поток
   t.payIntents = []
+  t.callWaits = []
   t.seq = 1
   t.overpaid = 0
   if (t.db) t.db.sessionUuid = null // в БД это будет новая строка сессии
@@ -1517,10 +1519,13 @@ function staffAction(t: TableSession, tableId: string, action: string, body: any
         at: Date.now(),
         byId: actor?.id ?? null,
         byName: actor?.name ?? null,
+        calledAt: call.at,
         // Ответ гостю: «пицца через 3 минуты» — официант знает, а сказать было нечем
         reply: sanitizeNote(body.reply)?.slice(0, 120) ?? null
       }
     ]
+    // Ожидание официанта — для «Гости и качество»; след для гостя выше живёт 15 минут, это — всю посадку
+    if (actor) t.callWaits = [...(t.callWaits ?? []), Date.now() - call.at]
     const replied = t.callAcks.at(-1)?.reply
     audit(actor, 'принял вызов', tableId, [t.personas.find(p => p.id === call.personaId)?.name, replied && `ответ: ${replied}`].filter(Boolean).join(' · ') || null)
     return ok({ ok: true, left: t.calls.length })
@@ -1774,6 +1779,7 @@ async function handleApi(req: any, res: any, url: URL) {
 
   // Смена, реестр чеков любой смены, «требует решения»
   if (await shiftRoutes(req, res, url, store)) return
+  if (await qualityRoutes(req, res, url, store)) return
 
   if (url.pathname === '/api/log') {
     const actor = actorFrom(req, url)
@@ -2090,6 +2096,8 @@ const menuRoutes = createMenuRoutes({
   flushAudit,
   broadcastEverywhere
 })
+
+const qualityRoutes = createQualityRoutes({ json, readBody, actorFrom, allowed, staffUnauthorized, audit, flushAudit })
 
 const shiftRoutes = createShiftRoutes({
   json,

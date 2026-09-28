@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { ShiftReport } from '@easypay/domain/shift'
+import type { QualityReport } from '@easypay/domain/quality'
 import { getStaffToken } from '../../staff'
 import { staffError, staffPost, type StaffResult } from '../staffApi'
 
@@ -137,6 +138,12 @@ export const settleDebt = (sessionId: string, kind: 'collected' | 'written_off',
   staffPost('/api/decisions/settle', { sessionId, kind, ...opts })
 export const noteDecision = (key: string, text: string) => staffPost('/api/decisions/note', { key, text })
 
+export type QualityPeriod = 'shift' | 'today' | '7d' | '30d'
+export const fetchQuality = (period: QualityPeriod) =>
+  getJson<{ period: QualityPeriod; from: number; to: number; truncated: boolean; report: QualityReport }>(`/api/quality?period=${period}`)
+export const resolveRemark = (sessionId: string, guestId: string, resolution: string) =>
+  staffPost('/api/quality/resolve', { sessionId, guestId, resolution })
+
 /**
  * Данные кабинета: загрузка, обновление после действия и тихий опрос.
  * Живых потоков у отчётов нет — раз в 15 секунд достаточно: это не зал.
@@ -178,7 +185,9 @@ export const errorText = (r: StaffResult): string => {
     'debt not found': 'Долг не найден — обновите страницу',
     'method required': 'Выберите способ взыскания',
     'stale session': 'За столом уже новые гости — верните переплату на кассе и отметьте в журнале',
-    'nothing to refund': 'Переплату уже вернули'
+    'nothing to refund': 'Переплату уже вернули',
+    'rating not found': 'Отзыв не найден — обновите страницу',
+    'resolution required': 'Напишите, что сделали — это прочтёт владелец'
   }
   return map[r.error ?? ''] ?? staffError(r)
 }

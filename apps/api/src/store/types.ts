@@ -1,4 +1,5 @@
 import type { AuditEntry, MutationResult, Shift, TableSession } from '../types.ts'
+import type { QualityVisit } from '@easypay/domain/quality'
 import type { SessionEvent, StaffRecord, StoredSession } from '../staff.ts'
 
 /**
@@ -101,6 +102,10 @@ export interface Store {
   settings(): Promise<{ doc: unknown; savedAt: number } | null>
   saveSettings(doc: unknown): Promise<number>
 
+  /** Визиты за период для «Гости и качество»: оценки, ожидание вызова и кухни, чаевые. */
+  qualityVisits(from: number, to: number, limit: number): Promise<QualityVisit[]>
+  /** Отметить замечание разобранным. false — такой оценки нет. */
+  resolveRating(sessionId: string, guestId: string, byStaffId: string | null, resolution: string): Promise<boolean>
   close(): Promise<void>
 }
 

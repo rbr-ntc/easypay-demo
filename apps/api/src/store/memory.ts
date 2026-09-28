@@ -2,7 +2,9 @@
 // Поведение обязано совпадать с Postgres-реализацией — на обеих гоняется один набор тестов.
 import { computeTotals, isBillLine, round2 } from '@easypay/domain/money'
 import { dishName, priceOf } from '../menu.ts'
-import { staffFromConfig, waiterOfTable, type StaffRecord, type StoredSession } from '../staff.ts'
+import { staffFromConfig, staffName, waiterOfTable, type StaffRecord, type StoredSession } from '../staff.ts'
+import { resolutionKey, visitOf, type Resolution } from '../quality.ts'
+import type { QualityVisit } from '@easypay/domain/quality'
 import type { AuditEntry, MutationResult, Shift, TableSession } from '../types.ts'
 import type { DecisionNote, MenuDocKind, MenuDocRow, Settlement, ShiftCheck, ShiftInfo, Store } from './types.ts'
 
@@ -150,6 +152,7 @@ export function createMemoryStore(): Store {
       )
     }
     closedChecks.unshift(check)
+    archiveVisit(tableId, session)
 
     // Итоги копим счётчиком, а не пересчитываем по массиву: массив обрезан
     // двумя сотнями последних чеков, и свод по нему занижал смену молча
@@ -163,6 +166,14 @@ export function createMemoryStore(): Store {
   }
 
   /** Оценку ставят на экране «Спасибо» — уже после закрытия стола. */
+  /** Визит закрытого стола для «Гости и качество»: сессия после закрытия уйдёт из памяти. */
+  function archiveVisit(tableId: string, session: TableSession) {
+    const v = visitOf(tableId, session, resolutions)
+    if (!v) return
+    visits.set(v.sessionId, v)
+    if (visits.size > CHECKS_KEPT) visits.delete(visits.keys().next().value!)
+  }
+
   function syncRatings(session: TableSession) {
     const check = closedChecks.find(c => c.sessionId === session.sessionId)
     if (!check) return
@@ -181,8 +192,41 @@ export function createMemoryStore(): Store {
     check.refundsList = (session.refunds ?? []).map(r => ({ amount: r.amount, method: r.method ?? 'sbp', at: r.at }))
   }
 
+  const visits = new Map<string, QualityVisit>()
+  const resolutions = new Map<string, Resolution>()
+
   return {
     kind: 'memory',
+
+    async qualityVisits(from, to, limit) {
+      const live = [...tables.entries()].map(([id, t]) => visitOf(id, t, resolutions)).filter((v): v is QualityVisit => !!v)
+      const all = new Map<string, QualityVisit>()
+      for (const v of [...visits.values(), ...live]) {
+        // Разобранное после закрытия — подтягиваем свежие отметки
+        all.set(v.sessionId, {
+          ...v,
+          ratings: v.ratings.map(r => {
+            // Архив снят на закрытии — отметку, поставленную позже, подтягиваем; переоценку — нет
+            const res = resolutions.get(resolutionKey(v.sessionId, r.guestId))
+            return res && res.at >= r.at ? { ...r, resolvedAt: res.at, resolvedBy: res.by, resolution: res.text } : r
+          })
+        })
+      }
+      return [...all.values()]
+        // Посадки, которые шли в этом окне: и перенесённые из прошлой смены тоже
+        .filter(v => (v.closedAt ?? Date.now()) > from && v.openedAt < to)
+        .sort((a, b) => b.openedAt - a.openedAt)
+        .slice(0, limit)
+    },
+
+    async resolveRating(sessionId, guestId, byStaffId, resolution) {
+      const known = [...visits.values(), ...[...tables.entries()].map(([id, t]) => visitOf(id, t, resolutions))].some(
+        v => v?.sessionId === sessionId && v.ratings.some(r => r.guestId === guestId)
+      )
+      if (!known) return false
+      resolutions.set(resolutionKey(sessionId, guestId), { at: Date.now(), by: staffName(byStaffId) ?? null, text: resolution })
+      return true
+    },
 
     async read(tableId) {
       return tables.get(tableId) ?? emptySession()
@@ -205,6 +249,7 @@ export function createMemoryStore(): Store {
       else if (session.status === 'closed') {
         settleOverpaid(session)
         syncRatings(session)
+        archiveVisit(tableId, session)
       }
       if (session.resetRequested) {
         // Стол освобождается: отменённые позиции оставляем кухне, остальное забываем

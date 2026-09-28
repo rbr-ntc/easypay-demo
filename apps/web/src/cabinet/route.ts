@@ -10,12 +10,13 @@ import { tableId } from '../api'
 
 export type Workspace = 'admin' | 'hall' | 'kitchen' | 'bar'
 
-export type AdminPage = 'overview' | 'shifts' | 'checks' | 'debts' | 'menu' | 'staff' | 'log' | 'settings' | 'close'
+export type AdminPage = 'overview' | 'shifts' | 'checks' | 'quality' | 'debts' | 'menu' | 'staff' | 'log' | 'settings' | 'close'
 
 export const ADMIN_PAGES: { id: Exclude<AdminPage, 'close'>; label: string }[] = [
   { id: 'overview', label: 'Обзор' },
   { id: 'shifts', label: 'Смены' },
   { id: 'checks', label: 'Чеки' },
+  { id: 'quality', label: 'Гости и качество' },
   { id: 'debts', label: 'Долги и решения' },
   { id: 'menu', label: 'Меню' },
   { id: 'staff', label: 'Персонал' },
