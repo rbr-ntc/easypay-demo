@@ -3,17 +3,30 @@ import { newIdemKey } from '../keys'
 import { findDish } from '../data'
 import type { Animal } from '../data'
 import { ANIMAL_LIST, Avatar } from '../avatars'
-import { BottomSheet, PrimaryButton } from '../ui'
 import { useStore } from '../store'
-import { ALLERGENS } from '@easypay/domain/allergens'
+import { ALLERGENS, allergenHints } from '@easypay/domain/allergens'
+import { SETTINGS } from '../settings'
 
+const ANIMAL_RU: Record<Animal, string> = {
+  fox: 'лиса',
+  bear: 'медведь',
+  panda: 'панда',
+  raccoon: 'енот',
+  owl: 'сова',
+  cat: 'кот'
+}
+
+/**
+ * «Как вас зовут?» — имя и зверь, чтобы за столом было видно, кто что
+ * заказал. Спрашиваем ровно в момент первой надобности: при первом блюде
+ * или при вызове официанта. Регистрации нет.
+ */
 export function NameSheet() {
   const { ui, patch, snap, join, addLine, toast } = useStore()
   const [name, setName] = useState('')
   const [animal, setAnimal] = useState<Animal>('fox')
   // Аллергии спрашиваем один раз при посадке: дальше система предупреждает сама
   const [allergies, setAllergies] = useState<string[]>([])
-  const [showAllergies, setShowAllergies] = useState(false)
   const [busy, setBusy] = useState(false)
   // Повторное «Готово» после обрыва связи не создаёт вторую персону
   const joinKey = useRef(newIdemKey())
@@ -24,183 +37,140 @@ export function NameSheet() {
   const free = ANIMAL_LIST.filter(a => !taken.has(a))
   const effectiveAnimal = taken.has(animal) ? (free[0] ?? animal) : animal
 
-  const close = () => patch({ sheet: null, currentDishId: null, pendingAdd: null })
+  const pendingDish = ui.pendingAdd ? findDish(ui.pendingAdd.dishId) : undefined
+  const ready = name.trim().length > 0
+
+  const close = () => patch({ sheet: null, currentDishId: null, pendingAdd: null, afterJoin: null })
 
   const confirm = async () => {
-    if (busy) return
+    if (busy || !ready) return
     setBusy(true)
-    const persona = await join(
-      name.trim() || `Гость ${others.length + 1}`,
-      effectiveAnimal,
-      joinKey.current,
-      allergies
-    )
+    const persona = await join(name.trim(), effectiveAnimal, joinKey.current, allergies)
     if (!persona) {
       setBusy(false)
       return
     }
     // Блюдо, ради которого спросили имя, НЕ теряется — добавляем сразу.
     // Шторку закрываем ПОСЛЕ ответа сервера: иначе некуда вернуть гостя, если
-    // заказ не прошёл, и тост «Капучино → Глеб» врал при пустом заказе — тот же
-    // дефект, который правился в карточке блюда, только на самом частом пути:
-    // первое блюдо новичка.
+    // заказ не прошёл, и тост врал бы при пустом заказе.
     const pending = ui.pendingAdd
     if (!pending) {
-      patch({ sheet: null, currentDishId: null, pendingAdd: null })
+      // Имя спрашивали ради вызова официанта — зовём сразу, а не обещаем впустую
+      patch({ sheet: ui.afterJoin === 'call' ? 'call' : null, currentDishId: null, pendingAdd: null, afterJoin: null })
       setBusy(false)
       return
     }
 
-    const dish = findDish(pending.dishId)
-    const res = await addLine(pending.dishId, pending.qty, pending.shared, pending.options)
+    const res = await addLine(pending.dishId, pending.qty, pending.shared, pending.options, undefined, false, pending.idemKey, pending.comment)
     setBusy(false)
 
     if (res.allergens && res.allergens.length > 0) {
-      // Предупреждение об аллергене показывает карточка блюда — вместе с
-      // вариантами, которые аллерген снимают. Молча проглотить его нельзя.
-      patch({
-        sheet: 'dish',
-        currentDishId: pending.dishId,
-        pendingAdd: null,
-        pendingAllergens: res.allergens
-      })
+      // Предупреждение показывает карточка блюда — вместе с вариантами,
+      // которые аллерген снимают. Молча проглотить его нельзя.
+      patch({ sheet: 'dish', currentDishId: pending.dishId, pendingAdd: null, pendingAllergens: res.allergens })
       return
     }
     if (!res.ok) {
-      // Сервер отказал: гость остаётся в карточке и видит тост с причиной
-      patch({ sheet: 'dish', currentDishId: pending.dishId, pendingAdd: null })
+      // С тем же ключом: если сервер успел добавить блюдо, повтор его не задвоит
+      patch({ sheet: 'dish', currentDishId: pending.dishId, pendingAdd: null, resumeKey: pending.idemKey ?? null })
       return
     }
-
     patch({ sheet: null, currentDishId: null, pendingAdd: null })
-    if (dish) toast(pending.shared ? `${dish.name} → общее на стол` : `${dish.name} → ${persona.name}`)
+    if (pendingDish) toast(pending.shared ? `${pendingDish.name} — на всех` : `${pendingDish.name} — добавлено`)
   }
 
   return (
-    <BottomSheet onClose={close}>
-      <div style={{ padding: '0 22px', paddingBottom: 'calc(26px + env(safe-area-inset-bottom))' }}>
-        <div style={{ fontWeight: 680, fontSize: 22, letterSpacing: '-0.5px', marginBottom: 4 }}>За кем записать заказ?</div>
-        <div style={{ fontSize: 14, color: 'var(--ep-muted)', marginBottom: 18 }}>
-          Выберите зверюшку и впишите имя — за ним закрепятся блюда
+    <>
+      <div onClick={close} className="g-anim-fade absolute inset-0 z-20" style={{ background: 'rgba(20,14,8,.5)' }} />
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="Как вас зовут?"
+        className="g-anim-up absolute right-0 bottom-0 left-0 z-[21] max-h-[92%] overflow-y-auto rounded-t-[28px] bg-g-paper px-5 pt-6 pb-[calc(1.25rem+env(safe-area-inset-bottom))]"
+      >
+        <h2 className="g-serif text-[34px] text-g-fg">Как вас зовут?</h2>
+        <p className="mt-2 text-[15px] leading-normal text-g-mute">
+          Имя и зверь — чтобы за столом было видно, кто что заказал. Без регистрации.
+        </p>
+
+        <input
+          value={name}
+          onChange={e => setName(e.target.value)}
+          placeholder="Имя"
+          aria-label="Ваше имя"
+          autoComplete="given-name"
+          maxLength={24}
+          className="mt-4 h-13 w-full rounded-full bg-g-s1 px-4 text-[17px] text-g-fg outline-none placeholder:text-g-mute focus:ring-2 focus:ring-g-acc"
+          style={{ border: '1px solid rgba(255,255,255,.1)' }}
+        />
+
+        <div className="mt-4 grid grid-cols-6 gap-2">
+          {ANIMAL_LIST.map(a => {
+            const disabled = taken.has(a)
+            const on = a === effectiveAnimal
+            return (
+              <button
+                key={a}
+                type="button"
+                aria-label={`Зверь: ${ANIMAL_RU[a]}`}
+                aria-pressed={on}
+                disabled={disabled}
+                onClick={() => setAnimal(a)}
+                className="flex aspect-square items-center justify-center rounded-full disabled:opacity-30"
+                style={{ boxShadow: on ? '0 0 0 3px var(--g-acc)' : 'none' }}
+              >
+                <Avatar animal={a} size={52} label={name || 'Гость'} />
+              </button>
+            )
+          })}
         </div>
 
-        {/* Ряд шире экрана, и последний зверь раньше просто пропадал за краем.
-            Затухание у правой границы показывает, что список листается. */}
-        <div style={{ position: 'relative', marginBottom: 14 }}>
-          <div style={{ display: 'flex', gap: 11, overflowX: 'auto', padding: '4px 2px 10px', scrollSnapType: 'x proximity' }}>
-            {ANIMAL_LIST.map(a => {
-              const disabled = taken.has(a)
-              return (
-                <button
-                  key={a}
-                  type="button"
-                  aria-label={`Зверюшка ${a}`}
-                  aria-pressed={a === effectiveAnimal}
-                  disabled={disabled}
-                  onClick={() => setAnimal(a)}
-                  style={{
-                    flexShrink: 0,
-                    padding: 0,
-                    border: 'none',
-                    background: 'transparent',
-                    borderRadius: '50%',
-                    scrollSnapAlign: 'center',
-                    cursor: disabled ? 'not-allowed' : 'pointer',
-                    opacity: disabled ? 0.35 : 1,
-                    boxShadow: a === effectiveAnimal ? '0 0 0 2px #fff, 0 0 0 4px var(--ep-ink)' : 'none',
-                    transition: 'box-shadow 120ms'
-                  }}
-                >
-                  <Avatar animal={a} size={60} label={name || 'А'} />
-                </button>
-              )
-            })}
-          </div>
-          <div
-            aria-hidden
-            style={{
-              position: 'absolute',
-              top: 0,
-              right: 0,
-              width: 28,
-              bottom: 10,
-              pointerEvents: 'none',
-              background: 'linear-gradient(90deg, rgba(255,255,255,0) 0%, var(--ep-surface) 100%)'
-            }}
-          />
-        </div>
-
-        <div style={{ background: 'var(--ep-bg)', border: '1px solid var(--ep-border)', borderRadius: 'var(--ep-r-sm)', padding: '14px 16px', marginBottom: 14 }}>
-          <input
-            placeholder="Ваше имя"
-            value={name}
-            onChange={e => setName(e.target.value)}
-            style={{ width: '100%', border: 'none', outline: 'none', background: 'transparent', fontSize: 17, fontWeight: 540, color: 'var(--ep-ink)' }}
-          />
-        </div>
-
-        {/* Аллергии: система уже умеет считать их по модификаторам, но не знала,
-            что человеку нельзя. Спрашиваем один раз — дальше предупреждаем сами. */}
-        <button
-          type="button"
-          onClick={() => setShowAllergies(v => !v)}
-          style={{
-            width: '100%',
-            textAlign: 'left',
-            border: 'none',
-            background: 'transparent',
-            padding: '10px 0',
-            fontSize: 14,
-            color: allergies.length > 0 ? 'var(--ep-danger, #9B1C1C)' : 'var(--ep-muted)',
-            cursor: 'pointer'
-          }}
-        >
-          {allergies.length > 0 ? `Аллергии: ${allergies.join(', ')}` : 'У меня аллергия…'}
-        </button>
-
-        {showAllergies && (
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7, marginBottom: 14 }}>
-            {ALLERGENS.map(a => {
-              const on = allergies.includes(a)
-              return (
-                <button
-                  key={a}
-                  type="button"
-                  aria-pressed={on}
-                  onClick={() => setAllergies(list => (on ? list.filter(x => x !== a) : [...list, a]))}
-                  style={{
-                    // 44 по высоте: чипсы аллергенов были 32-34 и мазали пальцем
-                    minHeight: 44,
-                    padding: '7px 14px',
-                    borderRadius: 'var(--ep-r-pill)',
-                    border: on ? '2px solid #9B1C1C' : '1px solid var(--ep-border)',
-                    background: on ? '#FDECEC' : 'var(--ep-surface)',
-                    color: on ? '#9B1C1C' : 'inherit',
-                    fontSize: 13.5,
-                    fontWeight: on ? 640 : 480,
-                    cursor: 'pointer'
-                  }}
-                >
-                  {a}
-                </button>
-              )
-            })}
-          </div>
+        {/* Вопрос об аллергии можно выключить в настройках — для бара без кухни */}
+        {SETTINGS.guest.askAllergy && (
+          <>
+            <div className="mt-4.5 text-[13px] font-bold text-g-mute">Аллергия — предупредим и скажем кухне</div>
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {ALLERGENS.map(a => {
+                const on = allergies.includes(a)
+                return (
+                  <button
+                    key={a}
+                    type="button"
+                    aria-pressed={on}
+                    onClick={() => setAllergies(list => (on ? list.filter(x => x !== a) : [...list, a]))}
+                    className="h-10 rounded-full px-3.5 text-[15px]"
+                    style={
+                      on
+                        ? { background: '#F3F0EA', color: '#1A1612', border: '1px solid #F3F0EA' }
+                        : { background: 'var(--g-s1)', color: '#F3F0EA', border: '1px solid rgba(255,255,255,.1)' }
+                    }
+                  >
+                    {a}
+                  </button>
+                )
+              })}
+            </div>
+            {allergenHints(allergies).map(h => (
+              <p key={h} className="mt-2 text-[13px] text-g-tan">
+                {h}
+              </p>
+            ))}
+          </>
         )}
 
         {others.length > 0 && (
-          <div style={{ fontSize: 12.5, color: 'var(--ep-muted)', marginBottom: 18 }}>
-            За столом уже: {others.map(p => p.name).join(' · ')}
-          </div>
-        )}
-        {others.length === 0 && (
-          <div style={{ fontSize: 12.5, color: 'var(--ep-muted)', marginBottom: 18 }}>Вы первый за этим столом</div>
+          <div className="mt-4 text-[13px] text-g-mute">За столом уже: {others.map(p => p.name).join(' · ')}</div>
         )}
 
-        <PrimaryButton onClick={() => void confirm()} disabled={busy} style={{ minHeight: 54 }}>
-          {busy ? 'Секунду…' : 'Готово'}
-        </PrimaryButton>
+        <button
+          onClick={() => void confirm()}
+          disabled={busy || !ready}
+          className="g-cta mt-5 h-14 w-full rounded-full text-[17px] disabled:opacity-40"
+        >
+          {/* «добавить Уха» — название в именительном после глагола; через точку склонять не нужно */}
+          {busy ? 'Секунду…' : pendingDish ? `Готово · ${pendingDish.name}` : 'Готово'}
+        </button>
       </div>
-    </BottomSheet>
+    </>
   )
 }

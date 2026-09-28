@@ -12,3 +12,21 @@ export function fmt(n: number): string {
   }
   return (neg ? '−' : '') + out + ' ₽'
 }
+
+/**
+ * Перечисление имён по-русски: «Глеб и Мила», «Глеб, Мила и Ника».
+ * Простой join через « и » давал «Глеб и Глеб и Глеб» — читается как заикание.
+ */
+export function listNames(names: string[]): string {
+  if (names.length <= 1) return names[0] ?? ''
+  return `${names.slice(0, -1).join(', ')} и ${names[names.length - 1]}`
+}
+
+/** «1 блюдо», «3 блюда», «5 блюд». */
+export function plural(n: number, one: string, few: string, many: string): string {
+  const m10 = n % 10
+  const m100 = n % 100
+  if (m10 === 1 && m100 !== 11) return one
+  if (m10 >= 2 && m10 <= 4 && (m100 < 12 || m100 > 14)) return few
+  return many
+}

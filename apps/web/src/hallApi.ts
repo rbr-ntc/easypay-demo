@@ -1,12 +1,15 @@
 import { getStaffToken } from './staff'
+import { openStream } from './liveStream'
 import type { HallCard, HallShift, HallSummary } from '@easypay/domain/hall'
 
 export interface HallPayload {
   restaurant: string
   zones: { id: string; name: string }[]
   tables: HallCard[]
-  shift: HallShift & { startedAt: number }
+  shift: HallShift & { startedAt: number; open?: boolean; tipsByStaff?: Record<string, number> }
   summary: HallSummary
+  /** Версия настроек заведения: пороги тревог, напоминание о смене. */
+  settingsVersion?: number
   now: number
 }
 
@@ -26,15 +29,5 @@ export async function fetchHall(): Promise<HallPayload | null> {
  * компромисс демо (в проде — сессионная кука для персонала).
  */
 export function subscribeHall(onData: (p: HallPayload) => void, onState: (ok: boolean) => void): () => void {
-  const es = new EventSource(`/api/hall/stream?token=${encodeURIComponent(getStaffToken())}`)
-  es.onmessage = e => {
-    try {
-      onData(JSON.parse(e.data) as HallPayload)
-      onState(true)
-    } catch (err) {
-      console.error('bad hall payload:', err)
-    }
-  }
-  es.onerror = () => onState(false)
-  return () => es.close()
+  return openStream(() => `/api/hall/stream?token=${encodeURIComponent(getStaffToken())}`, onData, onState, 'зал')
 }

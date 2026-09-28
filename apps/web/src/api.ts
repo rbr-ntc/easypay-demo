@@ -1,5 +1,6 @@
 import type { Animal } from './data'
 import { getStaffToken } from './staff'
+import { openStream } from './liveStream'
 import type { Staff } from '@easypay/domain/roles'
 
 // Стол — только из ?t=... (его несёт QR со стола). Молчаливого дефолта нет:
@@ -11,6 +12,34 @@ export const tableId: string | null = requested && TABLE_RE.test(requested) ? re
 export const requestedTable = requested // как есть — чтобы показать «стол не найден»
 
 const API = tableId ? `/api/t/${encodeURIComponent(tableId)}` : null
+
+/**
+ * Подпись стола из QR (`&k=…`): без неё сесть за стол нельзя — номер в ссылке
+ * угадывается. Запоминаем и убираем из адреса, чтобы ссылка, пересланная
+ * в мессенджер, не усаживала за стол из дома.
+ */
+const KEY_STORE = tableId ? `easypay-key-${tableId}` : null
+/** Подпись живёт ужин, а не вечно: иначе бывший гость садился бы за стол из дома. */
+const KEY_TTL_MS = 12 * 60 * 60 * 1000
+export const tableKey: string | null = (() => {
+  if (!KEY_STORE) return null
+  const params = new URLSearchParams(window.location.search)
+  const fromUrl = params.get('k')
+  try {
+    if (fromUrl) {
+      localStorage.setItem(KEY_STORE, JSON.stringify({ k: fromUrl, at: Date.now() }))
+      params.delete('k')
+      window.history.replaceState(null, '', `${window.location.pathname}?${params.toString()}${window.location.hash}`)
+      return fromUrl
+    }
+    const saved = JSON.parse(localStorage.getItem(KEY_STORE) ?? 'null') as { k?: string; at?: number } | null
+    if (saved?.k && saved.at && Date.now() - saved.at < KEY_TTL_MS) return saved.k
+    localStorage.removeItem(KEY_STORE)
+    return null
+  } catch {
+    return fromUrl
+  }
+})()
 
 export class ApiError extends Error {
   readonly status: number
@@ -38,6 +67,11 @@ export interface ServerPersona {
 }
 
 export interface ServerLine {
+  /** Общий черновик: кто отказался и чьего решения по аллергену ждёт. */
+  optedOut?: string[]
+  awaitingConsent?: string[]
+  /** Аллергены позиции с учётом модификаторов — считает сервер. */
+  allergens?: string[]
   uid: number
   dishId: string
   name?: string
@@ -68,6 +102,9 @@ export interface ServerPayment {
   amount: number
   scope: string
   at: number
+  /** Номер и состав чека: у наличных гость получает его из снимка, ответа pay нет. */
+  receiptNo?: string | null
+  lines?: Receipt['lines']
 }
 
 export interface ServerTip {
@@ -81,7 +118,13 @@ export interface ServerCall {
   at: number
   personaId: string
   reason: string
+  /** Что гость написал словами. Важнее подписи причины: с ним официант знает,
+      зачем идёт, а без него — «Ольга зовёт официанта» и лишний заход. */
+  note?: string | null
   name?: string
+  /** Сколько раз гость позвал, пока никто не подошёл. */
+  repeats?: number
+  lastAt?: number
 }
 
 /** Итоги считает сервер — гость видит ровно то, что спишется. */
@@ -96,6 +139,9 @@ export interface PersonaTotals {
 }
 
 export interface ServerTotals {
+  /** Переплата, которую ещё надо вернуть гостю, и уже возвращённое. */
+  toRefund?: number
+  refunded?: number
   tableTotal: number
   paidTotal: number
   remaining: number
@@ -116,10 +162,33 @@ export interface Snapshot {
   tips: ServerTip[]
   call: ServerCall | null
   calls: ServerCall[]
+  /** Принятые вызовы за 15 минут: кто идёт к гостю. */
+  acked?: { id: string; personaId: string; reason: string; at: number; by: string | null; reply?: string | null }[]
+  /** Оценки визита гостями стола. */
+  /** За стол садятся только с подписью из QR (у гостя без неё — «отсканируйте QR»). */
+  keyRequired?: boolean
+  /** Эквайер стола (`yookassa`) или null — демо, где оплата записывается сразу. */
+  acquiring?: string | null
+  /** Кто сейчас на странице оплаты и сколько зарезервировано. */
+  payPending?: { personaId: string; amount: number; scope?: string; at: number }[]
+  /** Остатки с учётом оплат в пути — по ним считается сумма к оплате. */
+  reserved?: { remaining: number; byPersona: { personaId: string; paid: number; remaining: number }[] } | null
+  /** Кто из гостей уже оценил визит (сама оценка — только управляющей). */
+  rated?: string[]
   waiter: { id: string; name: string } | null
   seats: number
   /** Заглушка для постороннего: состав и деньги вырезаны, это не пустой стол. */
   limited?: boolean
+  /** Поток был полным, но гость больше не за столом: забыть личность. */
+  revoked?: boolean
+  /** Сколько гостей уже за открытым столом — видно и постороннему, без имён. */
+  occupied?: number
+  /** Что сейчас нельзя заказать — кухня выключает блюда тумблером. */
+  stop?: string[]
+  /** Версия опубликованного меню: сменилась — перечитываем меню. */
+  menuVersion?: number
+  /** Версия настроек заведения: способы оплаты, чаевые, пороги. */
+  settingsVersion?: number
   /** Просьба принять наличные: деньги ещё не в счёте, их берёт человек. */
   cashIntent?: { personaId: string; scope: string; amount: number; at: number } | null
   totals: ServerTotals
@@ -172,7 +241,8 @@ export const apiJoin = (name: string, animal: Animal, idemKey: string, allergies
     animal,
     // Аллергии гостя: дальше система предупреждает сама, а не ждёт комментария
     allergies,
-    idemKey
+    idemKey,
+    ...(tableKey ? { tableKey } : {})
   })
 
 export const apiAddLine = (
@@ -183,21 +253,39 @@ export const apiAddLine = (
   options: Record<string, string>,
   idemKey: string,
   // Гость увидел предупреждение об аллергене и сознательно подтвердил заказ
-  confirmAllergen = false
+  confirmAllergen = false,
+  // Живой текст кухне: сервер его принимал и кухня показывала, а экрана не было
+  comment?: string
 ) =>
   post<{ ok: true; uid: number }>(
     'lines',
-    { dishId, qty, shared, options, idemKey, confirmAllergen },
+    { dishId, qty, shared, options, idemKey, confirmAllergen, ...(comment?.trim() ? { comment: comment.trim() } : {}) },
     { guest }
   )
 
 /** Отменить своё блюдо, пока кухня не взяла его в работу. */
+/** Общее блюдо соседа: «я это не ем» или «буду есть, знаю про аллерген». */
+export const apiSharedChoice = (guest: string, uid: number, choice: 'out' | 'consent' | 'back') =>
+  post<{ ok: true }>(choice === 'consent' ? 'sharedConsent' : 'sharedOptOut', choice === 'back' ? { uid, out: false } : { uid }, { guest })
+
 export const apiCancelMine = (guest: string, uid: number) =>
   post<{ ok: true }>('cancelMine', { uid }, { guest })
 
 export const apiRemoveLine = (guest: string, uid: number) => post<{ ok: true }>('remove', { uid }, { guest })
 
-export const apiSend = (guest: string, scope: 'mine' | 'all') => post<{ ok: true; sent: number }>('send', { scope }, { guest })
+export const apiSend = (guest: string, scope: 'mine' | 'all', confirmUids: number[] = []) =>
+  post<{ ok: true; sent: number; heldBack?: { dish: string; reason: 'stop' | 'allergy'; people: string[] }[] }>(
+    'send',
+    { scope, ...(confirmUids.length ? { confirmUids } : {}) },
+    { guest }
+  )
+
+/** Что остановило отправку: блюдо из корзины с аллергеном того, кто будет есть. */
+export interface SendAllergy {
+  uid: number
+  dish: string
+  people: { name: string; allergens: string[] }[]
+}
 
 export interface Receipt {
   no: string
@@ -212,10 +300,26 @@ export interface Receipt {
     price: number
     /** Модификаторы: чек обязан называть, бутылка это или бокал. */
     options?: Record<string, string>
+    /** «Прожарка: Medium rare · Гарнир: фри» — названия вариантов, а не ключи. */
+    optionsText?: string | null
     shared: boolean
     share: number | null
   }[]
+  /** Почему строки не равны списанному: поровну, доплата, остаток стола. */
+  note?: string | null
+  venue?: { name: string; address: string | null; legal: string | null; inn: string | null }
 }
+
+/** Передумал платить картой: резерв снимается, можно наличными. */
+export const apiCancelPay = (guest: string) => post<{ ok: true }>('cancelPay', {}, { guest })
+
+/** Чем кончилась оплата у эквайера: гость вернулся со страницы оплаты. */
+export const apiPayStatus = (guest: string, intentId: string) =>
+  post<{ ok: true; status: 'pending' | 'succeeded' | 'canceled'; amount?: number; receipt?: Receipt | null; reason?: string; confirmationUrl?: string | null }>(
+    'payStatus',
+    { intentId },
+    { guest }
+  )
 
 export const apiPay = (
   guest: string,
@@ -224,10 +328,34 @@ export const apiPay = (
   /** Чем именно платит гость — иначе в платеже осядет «СБП» на любой выбор. */
   method?: string
 ) =>
-  post<{ ok: true; amount: number; remaining: number; receipt?: Receipt }>(
+  post<{
+    ok: true
+    amount: number
+    remaining?: number
+    receipt?: Receipt
+    /** Эквайер подключён: платить идём на его страницу, в счёт — после подтверждения. */
+    pending?: boolean
+    intentId?: string
+    confirmationUrl?: string | null
+    /** Оплата уже была начата раньше — с этим scope. */
+    resumed?: boolean
+    scope?: string
+  }>(
     'pay',
     { scope, idemKey, method },
     { guest }
+  )
+
+/**
+ * Вернуть переплату гостю. Только менеджеру: деньги уходят из кассы наружу,
+ * поэтому идёт через общий клиент — с таймаутом, ApiError и ключом
+ * идемпотентности, чтобы ретрай после обрыва не отдал деньги дважды.
+ */
+export const apiRefund = (amount: number, method: 'sbp' | 'cash', sessionId: string | null, idemKey: string) =>
+  post<{ ok: true; amount: number; left: number }>(
+    'refund',
+    { amount, method, idemKey },
+    { staff: true, sessionId }
   )
 
 /** «Заплачу наличными»: просьба к официанту, деньги не списываются. */
@@ -237,11 +365,22 @@ export const apiCashIntent = (guest: string, scope: 'own' | 'equal' | 'full') =>
 /** «Передумал»: снять просьбу о наличных, чтобы официант не шёл зря. */
 export const apiCancelCash = (guest: string) => post<{ ok: true }>('cancelCash', {}, { guest })
 
-export const apiTip = (guest: string, amount: number, idemKey: string) =>
-  post<{ ok: true; amount: number }>('tip', { amount, idemKey }, { guest })
+export const apiTip = (guest: string, amount: number, idemKey: string, method?: string) =>
+  post<{ ok: true; amount: number }>('tip', { amount, idemKey, ...(method ? { method } : {}) }, { guest })
 
 export const apiCall = (guest: string, reason: 'help' | 'bill' | 'water', note?: string) =>
   post<{ ok: true; callId: string; repeated: boolean }>('call', { reason, note }, { guest })
+
+/** Оценка визита: «всё отлично», «нормально», «есть замечание» с текстом. */
+export const apiRate = (guest: string, rating: 'good' | 'ok' | 'bad', note?: string) =>
+  post<{ ok: true }>('rate', { rating, ...(note?.trim() ? { note: note.trim() } : {}) }, { guest })
+
+/** Изменить свои аллергии после посадки: забыл отметить орехи — не повод остаться без защиты. */
+export const apiSetAllergies = (guest: string, allergies: string[]) =>
+  post<{ ok: true; allergies: string[] }>('allergies', { allergies }, { guest })
+
+/** Сел по ошибке (второй телефон, чужое имя) — выйти, пока за тобой ничего нет. */
+export const apiLeave = (guest: string) => post<{ ok: true }>('leave', {}, { guest })
 
 // Действия персонала — с сессией сотрудника и привязкой к сессии стола
 export const apiStart = (uid: number, sessionId: string) =>
@@ -406,15 +545,6 @@ export function subscribe(
   if (staff) params.set('token', staff)
   const query = params.toString()
   const url = query ? `${API}/stream?${query}` : `${API}/stream`
-  const es = new EventSource(url)
-  es.onmessage = e => {
-    try {
-      onSnapshot(JSON.parse(e.data) as Snapshot)
-      onState(true)
-    } catch (err) {
-      console.error('bad snapshot:', err)
-    }
-  }
-  es.onerror = () => onState(false) // EventSource переподключается сам
-  return () => es.close()
+  // Вкладку свернули — поток отпускаем, вернулись — полный снимок придёт сразу
+  return openStream(() => url, onSnapshot, onState, 'стол')
 }

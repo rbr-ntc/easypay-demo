@@ -1,25 +1,23 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { StoreProvider, useStore } from './store'
-import { Welcome } from './screens/Welcome'
 import { Menu } from './screens/Menu'
-import { Cart } from './screens/Cart'
-import { Status } from './screens/Status'
+import { Table } from './screens/Table'
 import { Payment } from './screens/Payment'
-import { Tips } from './screens/Tips'
 import { Done } from './screens/Done'
 import { DishSheet } from './sheets/DishSheet'
 import { NameSheet } from './sheets/NameSheet'
-import { SendSheet } from './sheets/SendSheet'
+import { Welcome } from './screens/Welcome'
 import { CallSheet } from './sheets/CallSheet'
-import { Waiter } from './Waiter'
-import { Hall } from './hall/Hall'
-import { Kitchen } from './kitchen/Kitchen'
+import { AllergySheet } from './sheets/AllergySheet'
+import { Cabinet } from './cabinet/Cabinet'
+import { parseRoute } from './cabinet/route'
 import { TablePicker } from './screens/TablePicker'
-import { StaffGate } from './staff/StaffGate'
-import { tableId } from './api'
+import { ScanQr } from './screens/ScanQr'
+import { tableId, tableKey } from './api'
 import { seatsOfTable } from './hallConfig'
 import { QrTent } from './QrTent'
-import { Toast } from './ui'
+import { currentSeason, seasonVars } from './guest/showcase'
+import { GToast } from './guest/parts'
 
 function ConnBanner() {
   const { connected, snap } = useStore()
@@ -27,7 +25,7 @@ function ConnBanner() {
   return (
     // Полоса не накрывает шапку, а сдвигает её: раньше она ложилась поверх
     // логотипа, и первое, что видел гость, — обрезанное название заведения
-    <div style={{ flexShrink: 0, background: '#B00020', color: 'var(--ep-on-ink)', textAlign: 'center', fontSize: 12.5, padding: '7px 12px' }}>
+    <div className="shrink-0 bg-error px-3 py-1.5 text-center text-xs text-error-content">
       Подключаемся к серверу демо…
     </div>
   )
@@ -43,63 +41,98 @@ function useAutoNav() {
   const fullyPaid = totals.tableTotal > 0 && totals.remaining <= 0.01
   const prevUnsent = useRef(hasUnsent)
   const prevPaid = useRef(fullyPaid)
+  const seenCash = useRef(new Set((snap?.payments ?? []).filter(p => p.method === 'cash' && p.receiptNo).map(p => p.receiptNo!)))
 
   useEffect(() => {
     const unsentJustGone = prevUnsent.current && !hasUnsent && anySent
     prevUnsent.current = hasUnsent
     prevPaid.current = fullyPaid
     if (!me) return
-    // Стол полностью оплачен (кем-то другим), а я на экране оплаты и сам не платил —
-    // уводим на статус и при переходе, и при простом заходе на этот экран
-    if (fullyPaid && ui.screen === 'payment' && ui.payStage !== 'processing' && ui.lastPaid === 0) {
-      patch({ screen: 'status', payStage: 'form', sheet: null })
-      toast('Стол уже полностью оплачен 🎉')
+    // Официант только что принял мои наличные — это моя оплата, а не «стол оплачен кем-то»:
+    // показываем «Спасибо» с чеком из снимка, ответа pay у наличных нет (смена №7, П3)
+    // Только наличные, появившиеся с прошлого снимка: старый чек не должен уводить
+    // гостя с оплаты, когда он через пару минут платит за соседа
+    const fresh = (snap?.payments ?? []).filter(p => p.method === 'cash' && p.receiptNo && !seenCash.current.has(p.receiptNo))
+    fresh.forEach(p => seenCash.current.add(p.receiptNo!))
+    const myCash = [...fresh].reverse().find(p => p.personaId === me.id)
+    if (myCash && ui.screen === 'payment' && ui.payStage !== 'processing' && ui.payStage !== 'checking') {
+      patch({
+        screen: 'done',
+        payStage: 'form',
+        payMethod: 'cash',
+        sheet: null,
+        lastPaid: myCash.amount,
+        lastReceipt: {
+          no: myCash.receiptNo!,
+          at: myCash.at,
+          amount: myCash.amount,
+          scope: myCash.scope,
+          guest: me.name,
+          table: tableId ?? '',
+          lines: myCash.lines ?? [],
+          // Почему в чеке строк больше, чем заплачено: «поровну» и «весь стол» перечисляют весь стол (П8)
+          note: myCash.scope === 'equal' ? 'поровну: ваша доля счёта; в чеке — весь стол' : myCash.scope === 'full' ? 'оплачен остаток по столу' : null
+        }
+      })
       return
     }
-    // Кто-то отправил всё на кухню, пока я был в корзине
-    if (unsentJustGone && ui.screen === 'cart' && ui.sheet === null) {
-      patch({ screen: 'status' })
+    // Стол полностью оплачен (кем-то другим), а я на экране оплаты и сам не
+    // платил — уводить с оплаты некуда, кроме стола
+    if (fullyPaid && ui.screen === 'payment' && ui.payStage !== 'processing' && ui.payStage !== 'checking' && ui.lastPaid === 0) {
+      patch({ screen: 'table', payStage: 'form', sheet: null })
+      toast('Стол уже полностью оплачен')
+      return
+    }
+    // Кто-то отправил всё на кухню, пока я смотрел меню: на «Столе» это видно
+    // сразу — черновик исчез, появилась стадия
+    if (unsentJustGone && ui.screen === 'menu' && ui.sheet === null) {
       toast('Заказ отправлен на кухню')
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hasUnsent, fullyPaid, ui.screen])
+  }, [hasUnsent, fullyPaid, ui.screen, snap?.payments.length])
 }
 
 function Guest() {
-  const { ui } = useStore()
+  const { ui, connected, snap, me } = useStore()
   useAutoNav()
+  // Сезон и гамма — переменные корня: фон, акцент и кнопки меняют тон вместе
+  const vars = useMemo(() => seasonVars(currentSeason()), [])
   return (
-    <div className="ep-guest">
-      {ui.screen === 'welcome' && <Welcome />}
-      {ui.screen === 'menu' && <Menu />}
-      {ui.screen === 'cart' && <Cart />}
-      {ui.screen === 'status' && <Status />}
-      {ui.screen === 'payment' && <Payment />}
-      {ui.screen === 'tips' && <Tips />}
-      {ui.screen === 'done' && <Done />}
-
-      {ui.sheet === 'dish' && <DishSheet />}
-      {ui.sheet === 'name' && <NameSheet />}
-      {ui.sheet === 'send' && <SendSheet />}
-      {ui.sheet === 'call' && <CallSheet />}
-
-      {ui.toast && <Toast msg={ui.toast} />}
+    <div className="ep-guest g4" data-screen={ui.screen} style={vars as React.CSSProperties}>
+      {/* Без подписи из QR за стол не сесть — говорим сразу; кто уже сидит, работает как раньше */}
+      {!me && snap?.keyRequired && !tableKey ? <ScanQr /> : <GuestScreens />}
     </div>
   )
 }
 
-// Экран стола без ?t=… — заходить сюда нужно из зала
-function NoTable() {
+function GuestScreens() {
+  const { ui, connected, snap } = useStore()
   return (
-    <div className="ep-w-login">
-      <div className="ep-w-login-card">
-        <div className="ep-w-login-title">Стол не выбран</div>
-        <div className="ep-w-login-hint">Экран стола открывается из зала — там видно, какие столы заняты.</div>
-        <a className="ep-w-btn ep-w-btn--primary" style={{ display: 'inline-block', lineHeight: '42px', textDecoration: 'none' }} href="#/hall">
-          Открыть зал
-        </a>
-      </div>
-    </div>
+    <>
+      {ui.screen === 'welcome' && <Welcome />}
+      {ui.screen === 'menu' && <Menu />}
+      {ui.screen === 'table' && <Table />}
+      {ui.screen === 'payment' && <Payment />}
+      {ui.screen === 'done' && <Done />}
+
+      {ui.sheet === 'dish' && <DishSheet />}
+      {ui.sheet === 'name' && <NameSheet />}
+      {ui.sheet === 'call' && <CallSheet />}
+      {ui.sheet === 'allergies' && <AllergySheet />}
+
+      {/* Связь пропала после того, как данные уже были: показываем последнее известное */}
+      {!connected && snap && (
+        <div
+          role="status"
+          className="absolute top-0 right-0 left-0 z-[25] px-4 py-2.5 text-center text-[13px]"
+          style={{ background: '#3A2A22', color: '#FFD9CB' }}
+        >
+          Нет связи — показываем последнее, что знаем. Заказ и оплата подождут.
+        </div>
+      )}
+
+      {ui.toast && <GToast msg={ui.toast} />}
+    </>
   )
 }
 
@@ -117,17 +150,14 @@ function useRoute(): string {
 function useDocumentTitle(route: string) {
   useEffect(() => {
     const table = tableId ? `Стол №${tableId}` : null
-    const title = route.startsWith('#/hall')
-      ? 'EasyPay · Зал'
-      : route.startsWith('#/kitchen')
-        ? 'EasyPay · Кухня'
-        : route.startsWith('#/waiter')
-        ? `EasyPay · ${table ?? 'стол не выбран'} — экран ресторана`
-        : route.startsWith('#/qr')
-          ? `EasyPay · QR ${table ?? 'столов'}`
-          : table
-            ? `EasyPay · ${table}`
-            : 'EasyPay · выберите стол'
+    const cab = parseRoute(route)
+    const title = cab
+      ? `EasyPay · ${cab.ws === 'admin' ? 'Кабинет' : cab.ws === 'hall' ? 'Зал' : cab.ws === 'kitchen' ? 'Кухня' : 'Бар'}`
+      : route.startsWith('#/qr')
+        ? `EasyPay · QR ${table ?? 'столов'}`
+        : table
+          ? `EasyPay · ${table}`
+          : 'EasyPay · выберите стол'
     document.title = title
   }, [route])
 }
@@ -135,30 +165,19 @@ function useDocumentTitle(route: string) {
 export default function App() {
   const route = useRoute()
   useDocumentTitle(route)
+  const cab = parseRoute(route)
   return (
     <StoreProvider>
       <div style={{ height: '100%', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
-      <ConnBanner />
-      {route.startsWith('#/hall') ? (
-        <StaffGate need="hall">
-          <Hall />
-        </StaffGate>
-      ) : route.startsWith('#/kitchen') ? (
-        <StaffGate need="kitchen">
-          <Kitchen />
-        </StaffGate>
-      ) : route.startsWith('#/waiter') ? (
-        tableId ? (
-          <StaffGate need="table">
-            <Waiter />
-          </StaffGate>
-        ) : (
-          <NoTable />
-        )
+      {cab ? (
+        <Cabinet route={cab} />
       ) : route.startsWith('#/qr') ? (
         <QrTent />
       ) : tableId && seatsOfTable(tableId) !== null ? (
-        <Guest />
+        <>
+          <ConnBanner />
+          <Guest />
+        </>
       ) : (
         <TablePicker />
       )}

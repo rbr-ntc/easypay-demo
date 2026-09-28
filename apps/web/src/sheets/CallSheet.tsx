@@ -1,15 +1,17 @@
 import { useState } from 'react'
-import { BottomSheet, PrimaryButton } from '../ui'
 import { useStore } from '../store'
 
 /**
  * Зачем позвали официанта. Сервер различает «нужна помощь», «счёт» и «воды»
- * и принимает текст — а у гостя была одна кнопка на всё, поэтому официант
- * приходил вслепую и тратил второй заход. Плюс это единственный способ
- * сказать «у меня аллергия» до того, как еда приехала.
+ * и принимает текст — с одной кнопкой на всё официант приходил вслепую и
+ * тратил второй заход. Плюс это единственный способ сказать «у меня
+ * аллергия» до того, как еда приехала.
+ *
+ * В 4.x шторку сначала убрали вслед за макетом, где «Официант» звал сразу, —
+ * и причины с текстом стало не передать. Вернули в новом виде.
  */
 const REASONS: { id: 'help' | 'bill' | 'water'; label: string; hint: string }[] = [
-  { id: 'help', label: 'Нужна помощь', hint: 'подойдите, есть вопрос' },
+  { id: 'help', label: 'Подойдите, пожалуйста', hint: 'есть вопрос или просьба' },
   { id: 'bill', label: 'Принесите счёт', hint: 'мы готовы рассчитаться' },
   { id: 'water', label: 'Воды, пожалуйста', hint: 'графин на стол' }
 ]
@@ -33,35 +35,37 @@ export function CallSheet() {
   const waiter = snap?.waiter?.name
 
   return (
-    <BottomSheet onClose={close}>
-      <div style={{ padding: '0 22px', paddingBottom: 'calc(26px + env(safe-area-inset-bottom))' }}>
-        <div style={{ fontWeight: 680, fontSize: 22, letterSpacing: '-0.5px', marginBottom: 6 }}>
-          Позвать официанта
-        </div>
-        {waiter && (
-          <div style={{ fontSize: 13.5, color: 'var(--ep-muted)', marginBottom: 16 }}>
-            К вашему столу подойдёт {waiter}
-          </div>
-        )}
+    <>
+      <div onClick={close} className="g-anim-fade absolute inset-0 z-20" style={{ background: 'rgba(20,14,8,.5)' }} />
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="Позвать официанта"
+        className="g-anim-up absolute right-0 bottom-0 left-0 z-[21] max-h-[92%] overflow-y-auto rounded-t-[28px] bg-g-paper px-5 pt-6 pb-[calc(1.25rem+env(safe-area-inset-bottom))]"
+      >
+        <h2 className="g-serif text-[34px] text-g-fg">позвать официанта</h2>
+        {waiter && <p className="mt-2 text-[15px] text-g-mute">К вашему столу подойдёт {waiter}</p>}
 
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 9, marginBottom: 16 }}>
-          {REASONS.map(r => {
+        <div className="mt-4 overflow-hidden rounded-3xl bg-g-s1" role="radiogroup" aria-label="Зачем зовёте">
+          {REASONS.map((r, i) => {
             const on = reason === r.id
             return (
               <button
                 key={r.id}
+                role="radio"
+                aria-checked={on}
                 onClick={() => setReason(r.id)}
-                style={{
-                  textAlign: 'left',
-                  padding: '13px 14px',
-                  borderRadius: 'var(--ep-r-card)',
-                  background: 'var(--ep-surface)',
-                  border: on ? '2px solid var(--ep-ink, #101828)' : '1px solid var(--ep-border)',
-                  cursor: 'pointer'
-                }}
+                className="flex w-full items-center gap-3.5 px-4 py-3.5 text-left text-g-fg"
+                style={i ? { borderTop: '1px solid rgba(255,255,255,.1)' } : undefined}
               >
-                <div style={{ fontWeight: 600, fontSize: 15 }}>{r.label}</div>
-                <div style={{ fontSize: 12.5, color: 'var(--ep-muted)', marginTop: 2 }}>{r.hint}</div>
+                <span className="min-w-0 flex-1">
+                  <span className="block text-[15px] font-bold">{r.label}</span>
+                  <span className="block text-[13px] text-g-mute">{r.hint}</span>
+                </span>
+                <span
+                  className="size-5.5 shrink-0 rounded-full"
+                  style={{ border: on ? '7px solid var(--g-acc)' : '1.5px solid #6E685F' }}
+                />
               </button>
             )
           })}
@@ -71,40 +75,23 @@ export function CallSheet() {
           value={note}
           onChange={e => setNote(e.target.value.slice(0, NOTE_MAX))}
           placeholder="Можно написать словами — например, про аллергию"
+          aria-label="Что передать официанту"
           rows={3}
-          style={{
-            width: '100%',
-            boxSizing: 'border-box',
-            padding: '12px 14px',
-            borderRadius: 'var(--ep-r-card)',
-            border: '1px solid var(--ep-border)',
-            background: 'var(--ep-surface)',
-            fontSize: 15,
-            fontFamily: 'inherit',
-            resize: 'none',
-            marginBottom: 16
-          }}
+          className="mt-3 w-full resize-none rounded-[20px] bg-g-s1 px-4 py-3 text-[15px] text-g-fg outline-none placeholder:text-g-mute focus:ring-2 focus:ring-g-acc"
+          style={{ border: '1px solid rgba(255,255,255,.1)' }}
         />
 
-        <PrimaryButton onClick={() => void send()} disabled={busy} style={{ minHeight: 54, marginBottom: 8 }}>
-          Позвать
-        </PrimaryButton>
         <button
-          onClick={close}
-          style={{
-            width: '100%',
-            minHeight: 44,
-            border: 'none',
-            background: 'transparent',
-            color: 'var(--ep-muted)',
-            fontWeight: 520,
-            fontSize: 15,
-            cursor: 'pointer'
-          }}
+          onClick={() => void send()}
+          disabled={busy}
+          className="g-cta mt-4 h-14 w-full rounded-full text-[17px] disabled:opacity-40"
         >
+          {busy ? 'Зовём…' : 'Позвать'}
+        </button>
+        <button onClick={close} className="mt-1 h-12 w-full text-[15px] text-g-mute">
           Не сейчас
         </button>
       </div>
-    </BottomSheet>
+    </>
   )
 }

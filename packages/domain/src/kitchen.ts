@@ -42,10 +42,21 @@ export interface KitchenSummary {
 }
 
 /** Пороги ожидания разные по цехам: капучино через 10 минут — уже провал. */
-export const STATION_THRESHOLDS: Record<string, { warnMs: number; dangerMs: number }> = {
+export let STATION_THRESHOLDS: Record<string, { warnMs: number; dangerMs: number }> = {
   kitchen: { warnMs: 10 * 60_000, dangerMs: 20 * 60_000 },
   bar: { warnMs: 3 * 60_000, dangerMs: 6 * 60_000 }
 }
+
+/** Порог цеха из настроек заведения: «блюдо на кухне дольше N минут». */
+export function setStationThresholds(station: string, limits: { warnMs: number; dangerMs: number }) {
+  STATION_THRESHOLDS = { ...STATION_THRESHOLDS, [station]: limits }
+}
+
+/**
+ * Окно «повтора»: тот же гость заказал то же блюдо ещё раз. Может быть и вторая
+ * порция, и двойное нажатие — повару стоит уточнить, гостю — знать, что порций две.
+ */
+export const REPEAT_WINDOW_MS = 10 * 60 * 1000
 
 export const KITCHEN_THRESHOLDS = STATION_THRESHOLDS.kitchen
 
@@ -75,9 +86,17 @@ export function ticketWait(ticket: KitchenTicket, now: number): number {
   return ticket.sentAt ? Math.max(0, now - ticket.sentAt) : 0
 }
 
+/**
+ * Готовое на раздаче ждёт уже не кухню, а зал: считаем от «готово» и по своим
+ * порогам. Раньше тарелка краснела от времени заказа, и «кухня тормозит»
+ * загоралось, когда блюдо просто не забирали (смена №6, К3).
+ */
+export const PASS_THRESHOLDS = { warnMs: 2 * 60 * 1000, dangerMs: 5 * 60 * 1000 }
+
 export function ticketUrgency(ticket: KitchenTicket, now: number): TicketUrgency {
-  const wait = ticketWait(ticket, now)
-  const limits = thresholdsFor(ticket.station)
+  const onPass = !!ticket.readyAt
+  const wait = onPass ? passWait(ticket, now) : ticketWait(ticket, now)
+  const limits = onPass ? PASS_THRESHOLDS : thresholdsFor(ticket.station)
   if (wait >= limits.dangerMs) return 'danger'
   if (wait >= limits.warnMs) return 'warn'
   return 'ok'
@@ -92,7 +111,8 @@ export function summarizeKitchen(tickets: KitchenTicket[], now: number): Kitchen
   const queued = tickets.filter(t => ticketState(t) === TICKET_STATE.QUEUED)
   const cooking = tickets.filter(t => ticketState(t) === TICKET_STATE.COOKING)
   const ready = tickets.filter(t => ticketState(t) === TICKET_STATE.READY)
-  const waits = tickets.map(t => ticketWait(t, now))
+  // Дольше всех ждёт то, что ещё у кухни: тарелка на раздаче — забота зала (смена №7, К1)
+  const waits = tickets.filter(t => !t.readyAt).map(t => ticketWait(t, now))
   const tables = new Set(tickets.map(t => t.tableId))
   return {
     queued: queued.length,
@@ -102,6 +122,7 @@ export function summarizeKitchen(tickets: KitchenTicket[], now: number): Kitchen
     positions: tickets.reduce((s, t) => s + (Number(t.qty) || 0), 0),
     tables: tables.size,
     oldestWaitMs: waits.length ? Math.max(...waits) : null,
-    overdue: tickets.filter(t => ticketUrgency(t, now) === 'danger').length
+    // Просрочка кухни — только то, что ещё у неё: остывшее на раздаче считает зал
+    overdue: tickets.filter(t => !t.readyAt && ticketUrgency(t, now) === 'danger').length
   }
 }

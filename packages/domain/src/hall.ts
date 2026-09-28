@@ -37,6 +37,8 @@ export interface HallCard {
   kitchenPending: number
   /** Готово и ждёт официанта: тарелка стоит на раздаче. */
   readyCount?: number
+  /** Корзина гостей, ещё не отправленная на кухню. */
+  draftTotal?: number
   oldestPendingSentAt: number | null
   lastSentAt: number | null
   lastServedAt: number | null
@@ -45,6 +47,10 @@ export interface HallCard {
   call: { id?: string; at: number; reason: string; note?: string | null; name: string } | null
   /** Сколько вызовов от стола ждёт: в зале виден только первый. */
   calls?: number
+  /** Сколько раз позвал гость первого вызова: «×3» — не строка, а сигнал. */
+  callRepeats?: number
+  /** Гости сейчас на странице оплаты картой: сумма в пути (без неё стол выглядел должником). */
+  paying?: number
   /** «Хочу заплатить наличными» — деньги ждут официанта у стола. */
   cashIntent?: { amount: number; at: number; scope: string; personaId: string; name: string } | null
 }
@@ -119,12 +125,21 @@ export const STATUS_LABEL: Record<TableStatus, string> = {
 }
 
 /** Пороги «внимания» — те же, по которым живут хостес и менеджер смены. */
-export const THRESHOLDS = {
+export let THRESHOLDS = {
   noOrderMs: 7 * 60_000, // сели и не заказали
   kitchenSlowMs: 20 * 60_000, // позиция висит на кухне
   awaitingPaymentMs: 10 * 60_000, // всё подано, денег нет
-  cleanupMs: 5 * 60_000 // стол закрыт и ещё не убран
+  cleanupMs: 5 * 60_000, // стол закрыт и ещё не убран
+  callMs: 3 * 60_000, // гость зовёт, а никто не идёт
+  cashMs: 5 * 60_000 // гость с наличными ждёт официанта
 }
+
+/** Пороги из настроек заведения (кабинет → «Настройки»). */
+export function setHallThresholds(next: Partial<typeof THRESHOLDS>) {
+  THRESHOLDS = { ...THRESHOLDS, ...next }
+}
+
+const minutes = (ms: number) => Math.max(1, Math.round(ms / 60_000))
 
 const NOTHING: HallAlert[] = []
 
@@ -137,7 +152,10 @@ export function tableStatus(card: HallCard, now: number): TableStatus {
     return justClosed ? TABLE_STATUS.DIRTY : TABLE_STATUS.FREE
   }
   // «Оплачен» = были платежи и остатка нет (одного нулевого остатка мало: пустой стол тоже нулевой)
-  if (card.tableTotal > 0 && card.paidTotal > 0 && card.remaining <= 0.01) return TABLE_STATUS.PAID
+  // Оплачен вперёд, а еда ещё готовится — стол на кухне, а не «закрыть»:
+  // зал звал закрыть, сервер отвечал 409, а «кухня задерживает» пряталось
+  if (card.tableTotal > 0 && card.paidTotal > 0 && card.remaining <= 0.01 && card.kitchenPending === 0) return TABLE_STATUS.PAID
+  if (card.tableTotal > 0 && card.paidTotal > 0 && card.remaining <= 0.01) return TABLE_STATUS.COOKING
   if (card.paidTotal > 0) return TABLE_STATUS.PAYING
   if (card.kitchenPending > 0) return TABLE_STATUS.COOKING
   if (card.sentCount > 0) return TABLE_STATUS.SERVED
@@ -169,9 +187,11 @@ export function tableAlerts(card: HallCard, now: number): HallAlert[] {
       id: 'call-waiter',
       // Текст гостя важнее подписи причины: официант должен знать, зачем идёт.
       // «Ольга зовёт официанта» вместо «уронили вилку» — это лишний заход.
-      label: card.call.note
+      label:
+        (card.call.note
         ? `${card.call.name}: ${card.call.note}`
-        : `${card.call.name} ${CALL_LABEL[card.call.reason] ?? CALL_LABEL.help}`,
+        : `${card.call.name} ${CALL_LABEL[card.call.reason] ?? CALL_LABEL.help}`) +
+        (now - card.call.at > THRESHOLDS.callMs ? ` · ждёт ${minutes(now - card.call.at)} мин` : ''),
       severity: 'danger',
       since: card.call.at
     })
@@ -181,14 +201,22 @@ export function tableAlerts(card: HallCard, now: number): HallAlert[] {
   if (card.cashIntent) {
     alerts.push({
       id: 'cash-wanted',
-      label: `${card.cashIntent.name} платит наличными`,
+      label:
+        `${card.cashIntent.name} платит наличными` +
+        (now - card.cashIntent.at > THRESHOLDS.cashMs ? ` · ждёт ${minutes(now - card.cashIntent.at)} мин` : ''),
       severity: 'danger',
       since: card.cashIntent.at
     })
   }
 
   if (status === TABLE_STATUS.SEATED && card.openedAt && now - card.openedAt > THRESHOLDS.noOrderMs) {
-    alerts.push({ id: 'no-order', label: 'Сели и не заказали', severity: 'warn' })
+    // Полная корзина — это «собирают заказ», а не «не заказали»: аллергик
+    // может выбирать долго, и тревога тут подгоняла бы не того
+    alerts.push({
+      id: 'no-order',
+      label: (card.draftTotal ?? 0) > 0 ? 'Собирают заказ, не отправили' : 'Сели и не заказали',
+      severity: 'warn'
+    })
   }
   if (card.oldestPendingSentAt && now - card.oldestPendingSentAt > THRESHOLDS.kitchenSlowMs) {
     alerts.push({ id: 'kitchen-slow', label: 'Кухня задерживает', severity: 'danger' })
@@ -239,7 +267,7 @@ export function summarizeHall(cards: HallCard[], shift: HallShift | null, now: n
   const closedTables = shift?.tables ?? 0
   // Средний чек — по столам, где были деньги, иначе пустые закрытия занижают его
   const withRevenue = shift?.tablesWithRevenue ?? 0
-  const avgCheck = withRevenue > 0 ? closedRevenue / withRevenue : null
+  const avgCheck = withRevenue > 0 ? round2(closedRevenue / withRevenue) : null
   const seatsTotal = cards.reduce((s, c) => s + (c.seats ?? 0), 0)
 
   return {

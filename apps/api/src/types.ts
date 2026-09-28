@@ -41,6 +41,10 @@ export interface Line {
   cancelAck?: boolean
   /** Живой текст гостя к блюду: «без орехов, аллергия». Доезжает до повара. */
   comment?: string | null
+  /** Аллергены, на которые гость осознанно согласился при заказе. */
+  allergenOk?: string[]
+  /** Кто отказался от общего блюда до отправки: не делит и не платит (А2). */
+  optedOut?: string[]
 }
 
 export type PayMethod = 'sbp' | 'card' | 'cash' | 'tpay' | 'sber' | 'mir'
@@ -63,11 +67,41 @@ export interface Payment {
   receiptNo?: string
   /** За что именно списаны деньги. */
   lines?: ReceiptLine[]
+  /** Ключ намерения гостя: повтор оплаты после рестарта вернёт этот же чек. */
+  idemKey?: string | null
+  /** Номер платежа у эквайера — по нему возврат и сверка с выпиской. */
+  providerId?: string | null
   id: string
   /** Наличные могут приниматься за стол целиком, без привязки к гостю. */
   personaId: string | null
   amount: number
   scope: string
+  at: number
+}
+
+/**
+ * Оплата через эквайера в пути: гость ушёл на страницу ЮKassa, денег в счёте ещё
+ * нет. Пока ждём ответа, сумма зарезервирована — сосед платит только остаток,
+ * и двух списаний за одно блюдо не бывает.
+ */
+export interface PayIntent {
+  /** Наш номер; он же ключ идемпотентности у эквайера. */
+  id: string
+  personaId: string
+  amount: number
+  scope: string
+  /** Что гость выбрал на экране; чем заплатил на деле — скажет эквайер. */
+  method: PayMethod
+  /** Ключ намерения гостя (`persona:ключ`): повтор кнопки не создаёт второй платёж. */
+  idemKey: string | null
+  providerId: string | null
+  confirmationUrl: string | null
+  /** authorized — деньги заморожены, сервер решил списать и списывает. */
+  status: 'creating' | 'pending' | 'authorized' | 'succeeded' | 'canceled'
+  cancelReason?: string | null
+  /** Состав чека фиксируется в момент оплаты, как и у мгновенной. */
+  lines: ReceiptLine[]
+  receiptNo: string
   at: number
 }
 
@@ -77,6 +111,8 @@ export interface Tip {
   amount: number
   at: number
   waiterId: string | null
+  /** С чего списаны: СБП, карта. */
+  method?: PayMethod
 }
 
 export interface Call {
@@ -86,6 +122,9 @@ export interface Call {
   reason: string
   /** Текст гостя к вызову: «аллергия на орехи». */
   note?: string | null
+  /** Сколько раз гость позвал, пока никто не подошёл: один вызов, а не стена строк. */
+  repeats?: number
+  lastAt?: number
 }
 
 export interface TableSession {
@@ -93,6 +132,12 @@ export interface TableSession {
   cleanedAt?: number | null
   /** Гость просит принять наличные — ждём подтверждения от официанта. */
   cashIntent?: { personaId: string; scope: string; amount: number; at: number } | null
+  /** Сколько гости ждали официанта на вызовах (мс) — вся посадка, без обрезки по времени. */
+  callWaits?: number[]
+  /** Оплаты через эквайера, которые ещё в пути или только что закончились. */
+  payIntents?: PayIntent[]
+  /** Приставленные стулья сверх плана зала — живут до конца посадки. */
+  extraSeats?: number
   sessionId: string | null
   status: 'open' | 'closed'
   openedAt: number | null
@@ -102,15 +147,50 @@ export interface TableSession {
   payments: Payment[]
   tips: Tip[]
   calls: Call[]
+  /** Недавно принятые вызовы: гость видит «Оля идёт», а не пустоту. */
+  callAcks?: {
+    id: string
+    personaId: string
+    reason: string
+    at: number
+    byId: string | null
+    byName: string | null
+    reply?: string | null
+    /** Когда гость позвал: сколько он ждал «иду» — метрика качества официанта. */
+    calledAt?: number
+  }[]
+  /** Оценка визита: одна на гостя, последняя побеждает. */
+  ratings?: {
+    personaId: string
+    rating: 'good' | 'ok' | 'bad'
+    note: string | null
+    at: number
+    /** Прежние оценки этого гостя: переоценка не стирает первое замечание. */
+    history?: { rating: 'good' | 'ok' | 'bad'; note: string | null; at: number }[]
+  }[]
   seq: number
   /** Долг, с которым стол закрыли — измеряется до отмены неподанного. */
   closedWithDebt?: number
   /** Переплата, зафиксированная при закрытии стола. */
   overpaid?: number
+  /** Возвраты переплаты: кому, сколько и чем отдали. Уменьшают `overpaid`. */
+  refunds?: Refund[]
   /** Сброс стола: хранилище освободит стол после того, как зафиксирует чек. */
   resetRequested?: boolean
+  /** Смена, в которой стол открыли. Перенесённый стол получает новую смену при её открытии. */
+  shiftId?: string | null
   /** Привязка к строкам БД. В памяти не используется. */
   db?: { tableUuid: string; sessionUuid: string | null }
+}
+
+/** Возврат переплаты гостю. Деньги уходят из кассы — это отдельное событие. */
+export interface Refund {
+  id: string
+  personaId: string | null
+  amount: number
+  method: PayMethod
+  at: number
+  byId: string | null
 }
 
 /** Кто действует: сотрудник со своей сессией или мастер-токен менеджера. */

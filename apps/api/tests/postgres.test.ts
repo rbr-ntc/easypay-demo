@@ -621,4 +621,39 @@ const snapshot = (table: string) =>
     await probe.end()
     assert.equal(open[0].n, 1, 'открытая сессия у стола ровно одна')
   })
+
+  test('возврат переплаты переживает базу и не выдаётся дважды', async () => {
+    // Переплата живёт у ЗАКРЫТОЙ сессии, а единственный апдейт overpaid стоял
+    // под `closed_at is null` — то есть срабатывал ровно раз, при закрытии.
+    // Возврат в базу не попадал, снапшот перечитывался и снова показывал долг:
+    // на стенде одну и ту же переплату можно было выдать сколько угодно раз.
+    const table = '12'
+    await freeTable(table)
+    const guest = await joinGuest(table, 'Рита')
+    await post(table, 'lines', { dishId: 'steak' }, { guest }) // 1290
+    await post(table, 'send', { scope: 'mine' }, { guest })
+    await post(table, 'pay', { scope: 'full', idemKey: `pg-ref-${Date.now()}` }, { guest })
+
+    // Блюдо снимают уже после оплаты — гость заплатил за то, чего не получил
+    await post(table, 'close', { force: true }, { staff: TOKEN })
+
+    const closed = await snapshot(table)
+    const over = closed.totals.toRefund ?? 0
+    assert.equal(over > 0, true, 'переплата возникла')
+
+    const first = await post(table, 'refund', { sessionId: closed.sessionId }, { staff: TOKEN })
+    assert.equal(first.status, 200)
+    assert.equal((await first.json()).left, 0)
+
+    // Снапшот перечитывается ИЗ БАЗЫ — долга там больше быть не должно
+    assert.equal((await snapshot(table)).totals.toRefund, 0, 'возврат сохранился в базе')
+
+    // И второй раз те же деньги отдать нельзя
+    assert.equal((await post(table, 'refund', { sessionId: closed.sessionId }, { staff: TOKEN })).status, 409)
+
+    // Зал и реестр тоже перестали требовать возврат
+    const registry = await staffGet('/api/shift/checks')
+    const check = registry.checks.find((c: any) => c.sessionId === closed.sessionId)
+    assert.equal(check?.overpaid ?? 0, 0, 'реестр не требует вернуть уже отданное')
+  })
 }

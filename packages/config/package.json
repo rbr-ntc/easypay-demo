@@ -8,6 +8,10 @@
     ".": "./index.js",
     "./menu.json": "./menu.json",
     "./hall.json": "./hall.json",
-    "./staff.json": "./staff.json"
+    "./staff.json": "./staff.json",
+    "./showcase.json": "./showcase.json"
+  },
+  "scripts": {
+    "test": "node --test tests/*.test.js"
   }
 }

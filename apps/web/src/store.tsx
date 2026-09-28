@@ -5,6 +5,9 @@ import {
   apiAck,
   apiAddLine,
   apiCall,
+  apiLeave,
+  apiRate,
+  apiSetAllergies,
   apiClose,
   apiServe,
   apiStart,
@@ -13,6 +16,9 @@ import {
   apiWhoami,
   apiJoin,
   apiPay,
+  apiPayStatus,
+  apiCancelPay,
+  apiSharedChoice,
   apiCancelMine,
   apiCancelCash,
   apiCashIntent,
@@ -23,18 +29,28 @@ import {
   subscribe,
   tableId
 } from './api'
-import type { ServerPersona, Snapshot } from './api'
+import type { SendAllergy, ServerPersona, Snapshot } from './api'
 import { clearSignedOut, clearStaff, getCachedStaff, markSignedOut, setCachedStaff, setStaffToken } from './staff'
 import { can } from '@easypay/domain/roles'
 import type { Permission, Staff } from '@easypay/domain/roles'
 import { newIdemKey } from './keys'
-import { CATEGORIES, findDish } from './data'
+import { ensureMenu, findDish, onMenuChange } from './data'
+import { ensureSettings, onSettingsChange, SETTINGS } from './settings'
 import type { Animal, LineOptions } from './data'
 import { amountFor, computeTotals as computeMoney } from '@easypay/domain/money'
 
-export type Screen = 'welcome' | 'menu' | 'cart' | 'status' | 'payment' | 'tips' | 'done'
-export type Sheet = null | 'dish' | 'name' | 'send' | 'call'
-export type PayStage = 'form' | 'qr' | 'processing'
+/**
+ * Пять экранов гостя.
+ *
+ * `cart` и `status` слились в `table`: гость не понимал, что уже ушло на
+ * кухню, а что ещё нет, потому что ответ был размазан по двум экранам.
+ * `welcome` вернулся в 4.x — но только для того, кто за столом ещё никто;
+ * вернувшийся гость идёт сразу в меню. `tips` — часть `done`.
+ */
+export type Screen = 'welcome' | 'menu' | 'table' | 'payment' | 'done'
+export type Sheet = null | 'dish' | 'name' | 'call' | 'allergies'
+/** `failed` — банк не подтвердил: деньги не списаны, повтор идёт тем же ключом. */
+export type PayStage = 'form' | 'qr' | 'processing' | 'checking' | 'failed'
 export type PayScope = 'own' | 'equal' | 'full'
 // «cash» — такой же выбор способа, как остальные. Раньше наличные были не
 // выбором, а мгновенным действием: гость трогал строку, чтобы посмотреть, и
@@ -46,6 +62,10 @@ export interface PendingAdd {
   qty: number
   shared: boolean
   options: LineOptions
+  /** Ключ намерения: блюдо, добавленное после ввода имени, не должно задвоиться при повторе. */
+  idemKey?: string
+  /** Пожелание кухне, написанное до того, как гость представился. */
+  comment?: string
 }
 
 export interface UiState {
@@ -59,39 +79,78 @@ export interface UiState {
    * заново и сразу показывает предупреждение — проглотить его нельзя.
    */
   pendingAllergens: string[] | null
-  menuCat: string
+  /** Ключ намерения, с которым карточку блюда открыли заново после сбоя. */
+  resumeKey: string | null
+  /** Что сделать сразу после «Как вас зовут?»: например, позвать официанта. */
+  afterJoin: 'call' | null
   payScope: PayScope
   payMethod: PayMethod
   payStage: PayStage
+  /** Что именно ответил банк — гостю нужно объяснение, а не «попробуйте ещё». */
+  payError: string | null
+  /** Ответа не было вовсе: платёж мог пройти, и говорить обратное нельзя. */
+  payUnknown: boolean
+  /** Оплата у эквайера, которую ждём: гость вернулся со страницы ЮKassa. */
+  payIntent: string | null
+  /** Сегмент на экране «Стол»: свой заказ или весь стол. */
+  tableTab: 'mine' | 'all'
   lastPaid: number
   /** Чек последней оплаты: номер, время и состав — то, что гость может предъявить. */
   lastReceipt: import('./api').Receipt | null
-  tip: '0' | '5' | '10' | '15' | 'custom'
-  tipCustom: number
-  rating: number
-  sendScope: 'mine' | 'all'
-  sendChecked: boolean
+  /** Чаевые в рублях: гость решает про деньги, а не про проценты. */
+  tip: number
   toast: string | null
 }
 
 const initialUi: UiState = {
-  screen: 'welcome',
+  screen: 'menu',
   sheet: null,
   currentDishId: null,
   pendingAdd: null,
   pendingAllergens: null,
-  menuCat: CATEGORIES[0] ?? '',
+  resumeKey: null,
+  afterJoin: null,
   payScope: 'own',
   payMethod: 'sbp',
   payStage: 'form',
+  payError: null,
+  payUnknown: false,
+  payIntent: null,
+  tableTab: 'mine',
   lastPaid: 0,
   lastReceipt: null,
-  tip: '10',
-  tipCustom: 0,
-  rating: 0,
-  sendScope: 'mine',
-  sendChecked: false,
+  tip: 200,
   toast: null
+}
+
+const PAY_KEY = `easypay-pay-${tableId}`
+
+/** Номер оплаты у эквайера, которую ждём: из адреса возврата или из прошлой попытки. */
+function returningPayIntent(): string | null {
+  const params = new URLSearchParams(window.location.search)
+  const fromUrl = params.get('pay')
+  if (fromUrl) {
+    // Номер из адреса убираем: обновление страницы не должно перепроверять вечно
+    params.delete('pay')
+    const q = params.toString()
+    window.history.replaceState(null, '', `${window.location.pathname}${q ? `?${q}` : ''}${window.location.hash}`)
+    rememberPayIntent(fromUrl)
+    return fromUrl
+  }
+  try {
+    return localStorage.getItem(PAY_KEY)
+  } catch {
+    return null
+  }
+}
+
+function rememberPayIntent(id: string | null) {
+  try {
+    if (id) localStorage.setItem(PAY_KEY, id)
+    else localStorage.removeItem(PAY_KEY)
+  } catch {
+    /* приватный режим — просто не запомним */
+  }
 }
 
 const ID_KEY = `easypay-identity-${tableId}`
@@ -129,6 +188,10 @@ export interface Totals {
   myPaid: number
   myRemaining: number
   scopeAmount: (scope: PayScope) => number
+  /** На скольких делится «Поровну»: все за столом. */
+  equalSplit: number
+  /** Кто-то уже платил «поровну» — остальным предлагаем тоже поровну. */
+  equalMode: boolean
   personaOwn: (pid: string) => number
   personaTotal: (pid: string) => number
   personaPaid: (pid: string) => number
@@ -152,12 +215,27 @@ export function computeTotals(snap: Snapshot | null, myId: string | null): Total
   const myPaid = mine?.paid ?? core.paidOf(myId)
   const myRemaining = mine?.remaining ?? core.remainingOf(myId)
 
-  const scopeAmount = (scope: PayScope) => {
-    if (scope === 'full') return remaining
-    // Делим то, что ещё не оплачено: сосед мог заплатить свою часть раньше
-    if (scope === 'equal') return Math.min(remaining, remaining / participants || 0)
-    return Math.min(myRemaining, remaining)
-  }
+  /**
+   * Сумма списания — ТОЙ ЖЕ функцией, что и на сервере (`amountFor`), на
+   * серверных итогах. Своя формула здесь уже расходилась: «поровну» делила
+   * остаток, а сервер делит счёт — Анна внесла половину из 3 000 на троих,
+   * Борис видел «Оплатить · 500 ₽», а списывалось 1 000 ₽.
+   */
+  // Те же числа, что у сервера: «поровну» — доля счёта минус уже внесённое
+  // Сосед сейчас на странице оплаты — его сумма зарезервирована, кнопка считает от остатка
+  const res = snap?.reserved
+  const resMine = myId ? res?.byPersona.find(p => p.personaId === myId) : undefined
+  const moneyView = {
+    remaining: res?.remaining ?? remaining,
+    tableTotal,
+    participants,
+    remainingOf: () => resMine?.remaining ?? myRemaining,
+    paidOf: () => resMine?.paid ?? myPaid
+  } as any
+  const scopeAmount = (scope: PayScope) => (participants > 0 ? amountFor(moneyView, myId, scope) : 0)
+  const equalSplit = participants
+  // «Поровну» уже идёт — и оплаченное, и в пути: сервер «своё» не примет (смена №7, П4)
+  const equalMode = (snap?.payments ?? []).some(p => p.scope === 'equal') || (snap?.payPending ?? []).some(p => p.scope === 'equal')
 
   return {
     participants,
@@ -173,6 +251,8 @@ export function computeTotals(snap: Snapshot | null, myId: string | null): Total
     myPaid,
     myRemaining,
     scopeAmount,
+    equalSplit,
+    equalMode,
     personaOwn: pid => server?.byPersona.find(p => p.personaId === pid)?.own ?? core.ownOf(pid),
     personaTotal: pid => server?.byPersona.find(p => p.personaId === pid)?.total ?? core.totalOf(pid),
     personaPaid: pid => server?.byPersona.find(p => p.personaId === pid)?.paid ?? core.paidOf(pid),
@@ -194,23 +274,38 @@ export function humanError(err: ApiError): string {
     'scope required': 'Выберите, за что платите: за себя или за весь стол',
     'already sent to kitchen': 'Это блюдо уже на кухне — его снимет официант',
     'already closed': 'Стол уже закрыт',
+    'cash request pending': 'Официант уже идёт за наличными — дождитесь его или отмените просьбу',
+    'shift closed': 'Ресторан ещё не открыл смену — заказ пока не принять. Позовите официанта',
     'kitchen pending': 'На кухне ещё готовятся блюда этого стола',
     'unknown allergen': 'Такой аллергии нет в списке — выберите из предложенных',
     'unknown table': 'Такого стола нет в зале — проверьте QR на столе',
-    'table full': 'За столом уже максимум гостей',
-    'nothing to pay': 'Оплачивать пока нечего',
+    'table key required': 'Отсканируйте QR-код на столе: по ссылке без него за стол не сесть',
+    'table full': 'За столом нет свободных мест — попросите соседа по столу позвать официанта, он приставит стул',
+    // Частая причина — корзина ещё не отправлена: подсказываем, что сделать
+    'nothing to pay': 'Оплачивать пока нечего — если в корзине что-то есть, сначала отправьте на кухню',
+    'unknown method': 'Такой способ оплаты не поддерживается',
+    'stale key': 'Счёт изменился с прошлой попытки — нажмите «Оплатить» ещё раз',
     'nothing to send': 'Всё уже отправлено на кухню',
     'already cooking': 'Кухня уже готовит это блюдо — отменить не получится',
     'already cancelled': 'Это блюдо уже отменено',
     'already served': 'Это блюдо уже подали',
     'allergen warning': 'В этом блюде есть то, на что вы указали аллергию',
+    'guest has orders': 'За вами уже есть заказ — выйти нельзя, позовите официанта',
+    'guest has payments': 'Вы уже платили — выйти нельзя, позовите официанта',
+    'last guest': 'Вы последний за столом',
     'signed out elsewhere': 'Вы вошли на другом устройстве — войдите заново',
     'not your table': 'Это стол другого официанта',
     'dish in stop list': 'Это блюдо сегодня закончилось',
     'unknown dish': 'Такого блюда больше нет в меню',
     'bad qty': 'Можно заказать от 1 до 9 порций',
     'tip too large': 'Слишком большие чаевые для этого счёта',
-    'bad amount': 'Сумма чаевых указана неверно',
+    'bad amount': 'Сумма указана неверно — минимум 1 ₽',
+    'payment in progress': 'Оплата уже идёт — завершите её на странице банка или подождите пару минут',
+    'payment provider unavailable': 'Платёжный сервис не ответил — попробуйте ещё раз через минуту',
+    'public url not configured': 'Оплата с телефона временно недоступна — позовите официанта',
+    'tips via phone unavailable': 'Чаевые с телефона пока недоступны — оставьте наличными официанту',
+    'too many requests': 'Слишком много нажатий подряд — подождите минуту',
+    'equal split in progress': 'Стол уже делит счёт поровну — выберите «поровну» или «весь стол»',
     'locked or missing': 'Позиция уже уехала на кухню — её не убрать',
     'not yours': 'Это позиция другого гостя',
     'stale session': 'Стол успели закрыть — обновите страницу',
@@ -224,9 +319,21 @@ export function humanError(err: ApiError): string {
 }
 
 export function tipAmount(ui: UiState): number {
-  if (ui.tip === 'custom') return ui.tipCustom
-  if (ui.tip === '0') return 0
-  return Math.round((ui.lastPaid * Number(ui.tip)) / 100)
+  return Math.max(0, Math.round(ui.tip))
+}
+
+/**
+ * Чем закончилась оплата. `unknown: true` — сервер не ответил: платёж мог
+ * пройти, и утверждать гостю «деньги не списаны» в этом случае нельзя.
+ */
+export interface PayResult {
+  paid: number
+  error: string | null
+  unknown: boolean
+  /** Ушли на страницу эквайера: результат узнаем после возврата. */
+  redirect?: boolean
+  /** Код ошибки сервера: `stale key` — ключ попытки устарел, нужен новый. */
+  code?: string | null
 }
 
 /** Чем закончилась попытка заказать: успехом, аллергеном или отказом сервера. */
@@ -238,6 +345,8 @@ export interface AddResult {
 interface Ctx {
   ui: UiState
   patch: (p: Partial<UiState>) => void
+  /** Растёт с каждой сменой меню или настроек: ключ для useMemo над ними. */
+  menuRev: number
   snap: Snapshot | null
   connected: boolean
   me: ServerPersona | null
@@ -258,21 +367,44 @@ interface Ctx {
     asGuestToken?: string,
     confirmAllergen?: boolean,
     /** Ключ намерения: один на карточку блюда, а не на каждый тап по кнопке. */
-    idemKey?: string
+    idemKey?: string,
+    /** Пожелание кухне: «без лука», «аллергия, отдельной посудой». */
+    comment?: string
   ) => Promise<AddResult>
   removeLine: (uid: number) => Promise<void>
   /** Отменить своё блюдо, пока кухня не взяла его в работу. */
   cancelMine: (uid: number) => Promise<void>
+  /** Общее блюдо соседа: не ем (не делю и не плачу) или согласна на аллерген. */
+  sharedChoice: (uid: number, choice: 'out' | 'consent' | 'back') => Promise<void>
   /** Позвать официанта с наличными: сумма ждёт подтверждения человека. */
   askCash: (scope: PayScope) => Promise<number>
   /** Передумал: снять просьбу, чтобы официант не шёл за деньгами зря. */
   cancelCash: () => Promise<void>
-  sendWave: (scope: 'mine' | 'all') => Promise<void>
-  /** Способ передаём серверу: иначе в платеже оседает «СБП» на любой выбор гостя. */
-  pay: (scope: PayScope, idemKey: string, method?: PayMethod) => Promise<number>
+  /** Возвращает, дошло ли до кухни: интерфейс не должен праздновать отказ. */
+  /** ok — ушло; allergy — корзина пролежала, и в ней теперь есть чей-то аллерген. */
+  sendWave: (scope: 'mine' | 'all', confirmUids?: number[]) => Promise<{ ok: boolean; held?: boolean; allergy?: SendAllergy[] }>
+  /**
+   * Способ передаём серверу: иначе в платеже оседает «СБП» на любой выбор.
+   * Возвращает исход целиком: экран отказа обязан знать, ЧТО ответил сервер,
+   * — «банк не подтвердил» и «связь оборвалась» это разные вещи, и во втором
+   * случае деньги могли списаться.
+   */
+  pay: (scope: PayScope, idemKey: string, method?: PayMethod) => Promise<PayResult>
+  /** Спросить сервер, чем кончилась оплата у эквайера. `pending` — ещё ждём. */
+  /** Перестать ждать оплату: гость ушёл к столу — при перезагрузке не проверять заново. */
+  forgetPayIntent: () => void
+  /** Отменить свою оплату картой в пути — например, чтобы заплатить наличными. */
+  cancelPay: () => Promise<boolean>
+  checkPay: (intentId: string) => Promise<{ status: 'pending' | 'succeeded' | 'canceled' | 'unknown'; confirmationUrl?: string | null }>
   leaveTip: (amount: number, idemKey: string) => Promise<number>
   callWaiter: (reason: 'help' | 'bill' | 'water', note?: string) => Promise<void>
   forgetMe: () => void // «Я другой гость» — телефон передали новому человеку
+  /** Изменить свои аллергии после посадки. true — сервер принял. */
+  setAllergies: (allergies: string[]) => Promise<boolean>
+  /** Выйти из-за стола, если сел по ошибке и за тобой ничего нет. */
+  leaveTable: () => Promise<boolean>
+  /** Оценить визит. true — сервер принял. */
+  rateVisit: (rating: 'good' | 'ok' | 'bad', note?: string) => Promise<boolean>
   // смена сотрудника: вход по PIN, права роли
   staff: Staff | null
   staffChecked: boolean
@@ -292,13 +424,41 @@ interface Ctx {
 const StoreCtx = createContext<Ctx | null>(null)
 
 export function StoreProvider({ children }: { children: ReactNode }) {
-  const [ui, setUi] = useState<UiState>(initialUi)
+  // Приветствие видит тот, кто за этим столом ещё никто. Вернувшийся гость
+  // (личность в localStorage) сразу попадает в меню — второй раз «добро
+  // пожаловать» после каждой перезагрузки только мешает.
+  const [ui, setUi] = useState<UiState>(() => {
+    // Вернулись со страницы оплаты — сразу проверяем, чем кончилось
+    const intent = returningPayIntent()
+    if (intent && loadIdentity()) return { ...initialUi, screen: 'payment', payStage: 'checking', payIntent: intent }
+    return { ...initialUi, screen: loadIdentity() ? 'menu' : 'welcome' }
+  })
   const [snap, setSnap] = useState<Snapshot | null>(null)
   const [connected, setConnected] = useState(false)
   const [identity, setIdentity] = useState<Identity | null>(loadIdentity)
   const [staff, setStaff] = useState<Staff | null>(getCachedStaff)
   const [staffChecked, setStaffChecked] = useState(false)
   const [shiftTips, setShiftTips] = useState(0)
+  // Меню опубликовали — перерисовываем всех, кто читает MENU при отрисовке
+  const [menuRev, setMenuRev] = useState(0)
+  useEffect(() => onMenuChange(() => setMenuRev(r => r + 1)), [])
+  useEffect(() => onSettingsChange(() => setMenuRev(r => r + 1)), [])
+  useEffect(() => ensureMenu(snap?.menuVersion), [snap?.menuVersion])
+  useEffect(() => ensureSettings(snap?.settingsVersion), [snap?.settingsVersion])
+  // Официант принял мой вызов — говорим, кто идёт: раньше вызов исчезал молча,
+  // и «идут ко мне» было не отличить от «вызов сбросили»
+  const seenAcks = useRef<Set<string>>(new Set())
+  useEffect(() => {
+    const mineId = identity?.personaId
+    for (const a of snap?.acked ?? []) {
+      if (seenAcks.current.has(a.id)) continue
+      seenAcks.current.add(a.id)
+      if (a.personaId === mineId && Date.now() - a.at < 60_000) {
+        // Ответ официанта — словами: «пицца через 3 минуты», а не только «идёт»
+        toastRef.current?.(a.reply ? `${a.by ?? 'Официант'}: ${a.reply}` : `${a.by ?? 'Официант'} идёт к вам`)
+      }
+    }
+  }, [snap?.acked, identity?.personaId])
   const personaId = identity?.personaId ?? null
   // Токен читаем через ref: действие сразу после join не должно видеть старое замыкание
   const identityRef = useRef<Identity | null>(identity)
@@ -364,6 +524,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!snap || !identity) return
     if (snap.limited) {
+      // Сервер прямо сказал: вы больше не за этим столом (убрали, стол пересел)
+      if (snap.revoked) {
+        localStorage.removeItem(ID_KEY)
+        setIdentity(null)
+        setStreamKey(k => k + 1)
+        return
+      }
       if (sawFullSnapshot.current) return
     } else {
       sawFullSnapshot.current = true
@@ -374,14 +541,25 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     }
   }, [snap, identity, me, streamKey])
 
-  // Стол закрыли, пока гость был в потоке — мягко возвращаем на приветствие
+  // Стол закрыли ИЛИ сбросили, пока гость был в потоке — мягко возвращаем в
+  // начало. Раньше смотрели только на статус, а `reset` открывает новую сессию
+  // со статусом open: гость терял личность и оставался на экране «Стол», где
+  // без личности не рендерится вообще ничего — пустой белый лист до перезагрузки.
+  const lostMyself = !!snap && snap.status === 'open' && !me && ui.screen !== 'menu' && ui.screen !== 'welcome'
   useEffect(() => {
-    if (snap?.status === 'closed' && ui.screen !== 'welcome' && ui.screen !== 'done') {
+    if (lostMyself) {
+      setUi(prev => ({ ...initialUi, toast: prev.toast }))
+      toastRef.current?.('Стол начали заново — можно заказывать')
+      return
+    }
+    // Закрытый стол для нового гостя — нормальное начало, а не «вас выгнали»:
+    // приветствие показывается именно на таком столе, его сбрасывать нельзя
+    if (snap?.status === 'closed' && ui.screen !== 'menu' && ui.screen !== 'done' && ui.screen !== 'welcome') {
       setUi(prev => ({ ...initialUi, toast: prev.toast }))
       toastRef.current?.('Стол закрыт. Спасибо, что были с нами!')
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [snap?.status])
+  }, [snap?.status, lostMyself])
 
   const patch = (p: Partial<UiState>) => setUi(prev => ({ ...prev, ...p }))
 
@@ -429,6 +607,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const ctx: Ctx = {
     ui,
     patch,
+    menuRev,
     snap,
     connected,
     me,
@@ -445,13 +624,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         setSnap(r.snapshot)
         return r.snapshot.personas.find(p => p.id === r.personaId) ?? null
       }, null),
-    addLine: async (dishId, qty, shared, options, asGuestToken, confirmAllergen = false, idemKey) => {
+    addLine: async (dishId, qty, shared, options, asGuestToken, confirmAllergen = false, idemKey, comment) => {
       const token = asGuestToken ?? guestToken()
       if (!token) return { ok: false }
       try {
         // Без ключа снаружи каждый повтор был бы новым намерением — и семь
         // быстрых нажатий превращались в семь порций
-        await apiAddLine(token, dishId, qty, shared, options, idemKey ?? newIdemKey(), confirmAllergen)
+        await apiAddLine(token, dishId, qty, shared, options, idemKey ?? newIdemKey(), confirmAllergen, comment)
         return { ok: true }
       } catch (err) {
         // Аллерген — не ошибка связи: гостю нужен осознанный выбор, а не тост
@@ -468,6 +647,14 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       guard(async () => {
         if (!guestToken()) return
         await apiRemoveLine(guestToken()!, uid)
+      }, undefined),
+    sharedChoice: (uid, choice) =>
+      guard(async () => {
+        if (!guestToken()) return
+        await apiSharedChoice(guestToken()!, uid, choice)
+        toastRef.current?.(
+          choice === 'out' ? 'Хорошо — это блюдо делят без вас' : choice === 'back' ? 'Вы снова делите это блюдо' : 'Отметили: блюдо уйдёт на кухню с пометкой для повара'
+        )
       }, undefined),
     cancelMine: uid =>
       guard(async () => {
@@ -490,35 +677,140 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         setUi(prev => ({ ...prev, payMethod: 'sbp' }))
         toast('Хорошо, платим телефоном')
       }, undefined),
-    sendWave: scope =>
-      guard(async () => {
-        if (!guestToken()) return
-        await apiSend(guestToken()!, scope)
-      }, undefined),
-    pay: (scope, idemKey, method) =>
-      guard(async () => {
-        if (!guestToken()) return 0
+    sendWave: async (scope, confirmUids = []) => {
+      if (!guestToken()) return { ok: false }
+      try {
+        const r = await apiSend(guestToken()!, scope, confirmUids)
+        // Чужое с аллергеном соседа и снятое в стоп остаются в корзине — говорим об этом
+        const held = r.heldBack ?? []
+        if (held.length) {
+          toastRef.current?.(
+            held
+              .map(h => (h.reason === 'stop' ? `«${h.dish}» закончилось` : `«${h.dish}» ждёт подтверждения: аллергия у ${h.people.join(', ')}`))
+              .join(' · ')
+          )
+        }
+        return { ok: r.sent > 0, held: held.length > 0 }
+      } catch (err) {
+        if (err instanceof ApiError && err.error === 'allergen warning') {
+          return { ok: false, allergy: (err.extra?.lines as SendAllergy[]) ?? [] }
+        }
+        const dishes = err instanceof ApiError ? (err.extra?.dishes as string[] | undefined) : undefined
+        toastRef.current?.(
+          dishes?.length
+            ? `${dishes.map(d => `«${d}»`).join(', ')} сегодня ${dishes.length === 1 ? 'закончилось' : 'закончились'} — уберите из корзины`
+            : err instanceof ApiError
+              ? humanError(err)
+              : 'Не получилось — проверьте связь и попробуйте ещё раз'
+        )
+        return { ok: false }
+      }
+    },
+    pay: async (scope, idemKey, method) => {
+      if (!guestToken()) return { paid: 0, error: 'guest token required', unknown: false }
+      try {
         const r = await apiPay(guestToken()!, scope, idemKey, method)
+        if (r.pending && r.intentId) {
+          // Уже начатая оплата другим способом — говорим, а не подменяем выбор молча
+          if (r.resumed && r.scope && r.scope !== scope) toastRef.current?.(`У вас уже начата оплата на ${r.amount} ₽ — продолжим её`)
+          rememberPayIntent(r.intentId)
+          // Кнопка «Назад» с сайта эквайера вернёт на проверку, а не на вечное «Проводим оплату»
+          patch({ payStage: 'checking', payIntent: r.intentId })
+          if (r.confirmationUrl) window.location.assign(r.confirmationUrl)
+          return { paid: 0, error: null, unknown: false, redirect: true }
+        }
         patch({ lastPaid: r.amount, lastReceipt: r.receipt ?? null })
-        return r.amount
-      }, 0),
+        return { paid: r.amount, error: null, unknown: false }
+      } catch (err) {
+        const api = err instanceof ApiError ? err : null
+        // Таймаут и обрыв: запрос ушёл, ответа нет. Платёж мог пройти —
+        // говорить «деньги не списаны» здесь было бы враньём про чужие деньги.
+        const unknown = !api || api.status === 0 || api.status >= 500
+        const covered = api?.error === 'nothing to pay' && api.extra?.covered
+        return {
+          paid: 0,
+          error: covered ? 'За вас уже заплатили — платить ничего не нужно' : api ? humanError(api) : 'Не получилось — проверьте связь',
+          unknown,
+          code: api?.error ?? null
+        }
+      }
+    },
+    forgetPayIntent: () => rememberPayIntent(null),
+    cancelPay: () =>
+      guard(async () => {
+        if (!guestToken()) return false
+        await apiCancelPay(guestToken()!)
+        rememberPayIntent(null)
+        patch({ payStage: 'form', payIntent: null })
+        return true
+      }, false),
+    checkPay: async intentId => {
+      if (!guestToken()) return { status: 'unknown' }
+      try {
+        const r = await apiPayStatus(guestToken()!, intentId)
+        if (r.status === 'succeeded') {
+          rememberPayIntent(null)
+          patch({ payStage: 'form', payIntent: null, screen: 'done', lastPaid: r.amount ?? 0, lastReceipt: r.receipt ?? null })
+        } else if (r.status === 'canceled') {
+          rememberPayIntent(null)
+          patch({ payStage: 'failed', payIntent: null, payError: `Платёж не прошёл: ${r.reason ?? 'банк отклонил'}. Деньги не списаны`, payUnknown: false })
+        }
+        return { status: r.status, confirmationUrl: r.confirmationUrl ?? null }
+      } catch (err) {
+        // Такой оплаты нет (стол пересел, чужой телефон) — забываем её, а не ждём вечно
+        if (err instanceof ApiError && (err.status === 404 || err.status === 401)) {
+          rememberPayIntent(null)
+          patch({ payStage: 'form', payIntent: null })
+        }
+        return { status: 'unknown' }
+      }
+    },
     leaveTip: (amount, idemKey) =>
       guard(async () => {
         if (!guestToken() || amount <= 0) return 0
-        const r = await apiTip(guestToken()!, amount, idemKey)
+        // Чаевые — тем же способом, что и оплата; платил наличными — первым
+        // включённым в заведении способом с телефона (СБП могут выключить)
+        const phone = ['sbp', 'card', 'tpay', 'sber', 'mir']
+        const method = phone.includes(ui.payMethod) ? ui.payMethod : SETTINGS.pay.sbp ? 'sbp' : 'card'
+        const r = await apiTip(guestToken()!, amount, idemKey, method)
         return r.amount
       }, 0),
     callWaiter: (reason, note) =>
       guard(async () => {
         if (!guestToken()) return
         await apiCall(guestToken()!, reason, note)
-        toast('Официант уже идёт 👋')
+        toast(snap?.waiter?.name ? `${snap.waiter.name} подойдёт через пару минут` : 'Официант подойдёт через пару минут')
       }, undefined),
     forgetMe: () => {
       localStorage.removeItem(ID_KEY)
       setIdentity(null)
       setUi(initialUi)
     },
+    setAllergies: allergies =>
+      guard(async () => {
+        if (!guestToken()) return false
+        await apiSetAllergies(guestToken()!, allergies)
+        toast(allergies.length ? `Аллергии: ${allergies.join(', ')} — кухня увидит` : 'Аллергий нет — отметили')
+        return true
+      }, false),
+    rateVisit: (rating, note) =>
+      guard(async () => {
+        if (!guestToken()) return false
+        await apiRate(guestToken()!, rating, note)
+        return true
+      }, false),
+    leaveTable: () =>
+      guard(async () => {
+        if (!guestToken()) return false
+        await apiLeave(guestToken()!)
+        localStorage.removeItem(ID_KEY)
+        setIdentity(null)
+        // Поток был подписан с токеном — переподписываемся как посторонний
+        setStreamKey(k => k + 1)
+        setUi(initialUi)
+        toast('Вы вышли из-за стола')
+        return true
+      }, false),
     staff,
     staffChecked,
     shiftTips,

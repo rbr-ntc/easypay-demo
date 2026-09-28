@@ -1,10 +1,13 @@
 // Витрины персонала: карточки зала и очередь кухни. Считаются из состояния столов.
 import { computeTotals, isBillLine, round2 } from '@easypay/domain/money'
 import { summarizeHall } from '@easypay/domain/hall'
-import { sortTickets, summarizeKitchen, ticketUrgency } from '@easypay/domain/kitchen'
-import { dishName, priceOf, stationOf, allergensOf, removedAllergensOf } from './menu.ts'
+import { REPEAT_WINDOW_MS, sortTickets, summarizeKitchen, ticketUrgency } from '@easypay/domain/kitchen'
+import { dishName, priceOf, stationOf, allergensOf, removedAllergensOf, stopList, stopInfo, menuVersion } from './menu.ts'
+import { settingsVersion } from './settings.ts'
 import { HALL, metaOf, planTables } from './hallplan.ts'
 import { waiterOfTable } from './staff.ts'
+import { pendingPaysOf } from './payFlow.ts'
+import { effectiveAllergies } from '@easypay/domain/allergens'
 import type { Call, TableSession } from './types.ts'
 
 
@@ -36,7 +39,7 @@ export function hallCard(id: string, table: TableSession) {
     id,
     zoneId: meta?.zoneId ?? 'other',
     zoneName: meta?.zoneName ?? 'Вне плана',
-    seats: meta?.seats ?? 0,
+    seats: (meta?.seats ?? 0) + (table.status === 'open' ? (table.extraSeats ?? 0) : 0),
     waiterId: waiter?.id ?? null,
     waiterName: waiter?.name ?? null,
     status: table.status,
@@ -61,6 +64,8 @@ export function hallCard(id: string, table: TableSession) {
     tipsTotal: round2(table.tips.reduce((s, t) => s + t.amount, 0)),
     call: firstCall(table),
     calls: (table.calls ?? []).length,
+    callRepeats: (table.calls ?? [])[0]?.repeats ?? 1,
+    paying: round2(pendingPaysOf(table).reduce((s, p) => s + p.amount, 0)),
     // Гость просит принять наличные: официант должен увидеть это в зале,
     // а не проваливаться в каждый стол по очереди
     cashIntent: table.cashIntent
@@ -99,9 +104,15 @@ export function hallPayload(tables: Map<string, TableSession>, shift: any) {
       // Снятое с кухни: еду не отдали, ингредиенты потеряли — это не долг гостя
       writtenOff: round2(shift.writtenOff ?? 0),
       tips: round2(Object.values(shift.tipsByStaff ?? {}).reduce((s: number, x: any) => s + Number(x), 0)),
+      // Каждый официант видит свои чаевые за смену в шапке — раньше их видел
+      // только менеджер. Лента зала общая для персонала, поэтому карта уходит
+      // целиком; интерфейс показывает каждому только его строку
+      tipsByStaff: Object.fromEntries(Object.entries(shift.tipsByStaff ?? {}).map(([id, v]) => [id, round2(Number(v))])),
       overpaid: round2(shift.overpaid),
       tablesWithRevenue: shift.tablesWithRevenue,
-      startedAt: shift.startedAt
+      startedAt: shift.startedAt,
+      // Смена закрыта — в шапке кабинета «Смена закрыта», а не время открытия прошлой
+      open: shift.open !== false
     },
     summary,
     now
@@ -110,6 +121,16 @@ export function hallPayload(tables: Map<string, TableSession>, shift: any) {
 
 function emptyLike(): TableSession {
   return { sessionId: null, status: 'closed', openedAt: null, closedAt: null, personas: [], lines: [], payments: [], tips: [], calls: [], seq: 1 }
+}
+
+/** Сколько неотправленных корзин держит каждое блюдо из стоп-листа. */
+function cartsWith(tables: Map<string, TableSession>, stopped: Set<string>): Record<string, number> {
+  const counts: Record<string, number> = {}
+  for (const t of tables.values()) {
+    if (t.status !== 'open') continue
+    for (const l of t.lines) if (!l.sent && !l.cancelled && stopped.has(l.dishId)) counts[l.dishId] = (counts[l.dishId] ?? 0) + 1
+  }
+  return counts
 }
 
 /** Тикет = отправленная, но ещё не поданная позиция. Кухня видит весь ресторан сразу. */
@@ -124,6 +145,20 @@ export function kitchenPayload(tables: Map<string, TableSession>) {
     for (const line of table.lines) {
       if (!line.sent) continue
       const persona = table.personas.find(p => p.id === line.personaId)
+      // Аллергии тех, кто будет это есть: свои — у своего блюда, у общего —
+      // всех, кто его делит. Раньше тикет нёс только аллергены блюда, и повар
+      // жарил рибай на сливочном масле гостье с лактозой, не зная о ней
+      const eaters = line.shared
+        ? table.personas.filter(p => (line.sharedWith?.length ? line.sharedWith.includes(p.id) : true))
+        : persona
+          ? [persona]
+          : []
+      const dishAllergens = allergensOf(line.dishId, line.options ?? {})
+      const guestAllergies = eaters
+        .filter(p => (p.allergies ?? []).length > 0)
+        .map(p => ({ name: p.name, allergies: p.allergies ?? [] }))
+      // Попадание — по аллергиям для предупреждений: «орехи» ловят и арахис (А3)
+      const allergyHits = [...new Set(eaters.flatMap(p => effectiveAllergies(p.allergies)))].filter(a => dishAllergens.includes(a))
       const base = {
         tableId: id,
         sessionId: table.sessionId,
@@ -133,7 +168,33 @@ export function kitchenPayload(tables: Map<string, TableSession>) {
         dishId: line.dishId,
         name: dishName(line.dishId),
         station: stationOf(line.dishId),
-        allergens: allergensOf(line.dishId, line.options ?? {}),
+        allergens: dishAllergens,
+        guestAllergies,
+        // В блюде есть то, на что у едока аллергия: гость это подтвердил, но
+        // кухня обязана знать — это осознанный риск, а не недосмотр
+        allergyHits,
+        sharedNames: line.shared ? eaters.map(p => p.name) : null,
+        // Тот же гость, то же блюдо, недавно — может быть и заказ, и двойное нажатие:
+        // повар не отличит по тикету, официанту стоит уточнить
+        // Порядок — по времени отправки, при равном времени — по позиции в счёте
+        // (двойное нажатие уходит одной отправкой). Только по позиции пометка
+        // доставалась тикету, который ушёл раньше и уже готовился (смена №6, К2)
+        repeat:
+          !line.shared &&
+          table.lines.some(
+            (o, i) =>
+              o.sentAt != null &&
+              line.sentAt != null &&
+              (o.sentAt < line.sentAt || (o.sentAt === line.sentAt && i < table.lines.indexOf(line))) &&
+              !o.shared &&
+              !o.cancelled &&
+              o.sent &&
+              o.dishId === line.dishId &&
+              o.personaId === line.personaId &&
+              o.sentAt != null &&
+              line.sentAt != null &&
+              line.sentAt - o.sentAt < REPEAT_WINDOW_MS
+          ),
         // Аллергены, снятые модификатором: для повара это не пожелание, а запрет
         removedAllergens: removedAllergensOf(line.dishId, line.options ?? {}),
         // Живой текст гостя: «аллергия на орехи, критично»
@@ -182,10 +243,21 @@ export function kitchenPayload(tables: Map<string, TableSession>) {
       // «Подгорает» — это всё, что уже вышло из нормы: и жёлтые, и красные.
       // Считая одни жёлтые, счётчик показывал ноль при горящей красной карточке
       // — ровно наоборот тому, зачем он нужен повару и менеджеру.
-      warn: sorted.filter(x => ticketUrgency(x as any, now) !== 'ok').length,
+      // Раздачу не считаем: остывающую тарелку забирает зал, это не «кухня подгорает» (смена №7, К1)
+      warn: sorted.filter(x => !x.readyAt && ticketUrgency(x as any, now) !== 'ok').length,
       // Сколько тарелок стоит на раздаче и ждёт официанта
       ready: sorted.filter(x => x.readyAt).length
     },
+    // Стоп-лист рядом с очередью: повар выключает блюдо тем же экраном
+    stop: stopList(),
+    // Кто и когда поставил в стоп — или «по умолчанию в меню»
+    stopInfo: stopInfo(),
+    // Снятое в стоп, но лежащее в неотправленных корзинах: эти гости скоро упрутся в «закончилось» (К3)
+    inCarts: cartsWith(tables, new Set(stopList())),
+    // Меню опубликовали — экран кухни перечитает его для стоп-листа
+    menuVersion: menuVersion(),
+    // Порог «блюдо на кухне дольше» — из настроек
+    settingsVersion: settingsVersion(),
     now
   }
 }

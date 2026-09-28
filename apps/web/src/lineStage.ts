@@ -29,11 +29,16 @@ export const STAGE_LABEL: Record<LineStage, string> = {
 
 export const stageLabel = (line: Parameters<typeof lineStage>[0]) => STAGE_LABEL[lineStage(line)]
 
-/** Цвета бейджа: одно состояние — один цвет, где бы он ни стоял. */
-export const STAGE_TINT: Record<LineStage, { bg: string; fg: string }> = {
-  queued: { bg: '#EDEDF2', fg: '#55555F' },
-  cooking: { bg: '#FFF2DA', fg: '#8A5D00' },
-  ready: { bg: '#E4F4E8', fg: '#1F6B35' },
-  served: { bg: '#E9EEF8', fg: '#2A4B85' },
-  cancelled: { bg: '#FDECEC', fg: '#9B1C1C' }
+/**
+ * Цвет бейджа: одно состояние — один цвет, где бы бейдж ни стоял.
+ *
+ * Классы daisyUI, а не хардкод: цвета берутся из активной темы, поэтому в
+ * тёмной теме бейджи остаются читаемыми сами собой.
+ */
+export const STAGE_BADGE: Record<LineStage, string> = {
+  queued: 'badge-ghost',
+  cooking: 'badge-warning',
+  ready: 'badge-success',
+  served: 'badge-info',
+  cancelled: 'badge-error'
 }

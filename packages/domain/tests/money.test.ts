@@ -109,7 +109,9 @@ test('«поровну» не превышает неоплаченный ост
   const t0 = computeTotals(state, priceOf)
   assert.equal(amountFor(t0, 'dima', 'equal'), round2(t0.tableTotal / 3))
   state.payments.push({ personaId: 'anya', amount: t0.tableTotal - 100 })
-  assert.equal(amountFor(computeTotals(state, priceOf), 'dima', 'equal'), 100)
+  // Аня заплатила почти всё — «поровну» Димы не больше остатка стола
+  const t1 = computeTotals(state, priceOf)
+  assert.equal(amountFor(t1, 'dima', 'equal'), 100)
 })
 
 test('двойная оплата стола невозможна: второму остаётся ноль', () => {
@@ -224,4 +226,51 @@ test('без переплаты личные остатки не трогают�
   assert.equal(money.remainingOf('a'), 1290)
   assert.equal(money.remainingOf('b'), 690)
   assert.equal(money.remainingOf('a') + money.remainingOf('b'), money.remaining)
+})
+
+test('«поровну» после чужого «своего» — равная доля счёта, остаток закрывается (смена №5, стол 4)', () => {
+  const state = {
+    personas: [persona('gleb'), persona('mila'), persona('nika')],
+    lines: [line('gleb', 'x', { price: 1510 }), line('mila', 'x', { price: 1040 }), line('nika', 'x', { price: 930 })],
+    payments: [] as { personaId: string; amount: number }[]
+  }
+  state.payments.push({ personaId: 'gleb', amount: amountFor(computeTotals(state, priceOf), 'gleb', 'own') })
+  assert.equal(amountFor(computeTotals(state, priceOf), 'mila', 'equal'), 1160, 'треть счёта')
+  state.payments.push({ personaId: 'mila', amount: 1160 })
+  const t2 = computeTotals(state, priceOf)
+  assert.equal(amountFor(t2, 'nika', 'equal'), t2.remaining, 'последняя «поровну» закрывает стол')
+})
+
+test('«поровну» у всех по очереди закрывает стол, в каком бы порядке ни платили', () => {
+  for (const order of [['gleb', 'mila', 'nika'], ['nika', 'mila', 'gleb'], ['mila', 'gleb', 'nika']]) {
+    const state = {
+      personas: [persona('gleb'), persona('mila'), persona('nika')],
+      lines: [line('gleb', 'x', { price: 1510 }), line('mila', 'x', { price: 1040 }), line('nika', 'x', { price: 930 })],
+      payments: [] as { personaId: string; amount: number }[]
+    }
+    for (const who of order) state.payments.push({ personaId: who, amount: amountFor(computeTotals(state, priceOf), who, 'equal') })
+    assert.equal(computeTotals(state, priceOf).remaining, 0, order.join(' → '))
+    assert.deepEqual(state.payments.map(p => p.amount), [1160, 1160, 1160])
+  }
+})
+
+test('«поровну» после дозаказа — каждый доплачивает до своей половины вечера (живой стол 3)', () => {
+  // Первый раунд: Настя 1 915 (с долей пиццы), Сергей 1 895 — счёт 3 810
+  const state = {
+    personas: [persona('nastya'), persona('sergey')],
+    lines: [line('nastya', 'x', { price: 1420 }), line('sergey', 'x', { price: 1400 }), line('sergey', 'p', { price: 990, shared: true, sharedWith: ['nastya', 'sergey'] })],
+    payments: [] as { personaId: string; amount: number }[]
+  }
+  assert.equal(amountFor(computeTotals(state, priceOf), 'nastya', 'equal'), 1905)
+  state.payments.push({ personaId: 'nastya', amount: 1905 })
+  // Сергей тоже «поровну» — стол закрыт без хвоста в 10 ₽
+  assert.equal(amountFor(computeTotals(state, priceOf), 'sergey', 'equal'), 1905)
+  state.payments.push({ personaId: 'sergey', amount: 1895 }, { personaId: 'nastya', amount: 10 }) // как было вживую
+
+  // Дозаказ на 3 360: «поровну» — не весь стол, а доплата до половины 7 170
+  state.lines.push(line('nastya', 'x', { price: 490 }), line('sergey', 'x', { price: 2870 }))
+  const t = computeTotals(state, priceOf)
+  assert.equal(t.remaining, 3360)
+  assert.equal(amountFor(t, 'sergey', 'equal'), 1690)
+  assert.equal(amountFor(t, 'nastya', 'equal'), 1670)
 })

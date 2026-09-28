@@ -211,9 +211,26 @@ export function amountFor(totals: MoneyTotals, personaId: string | null, scope: 
     scope === 'full'
       ? totals.remaining
       : scope === 'equal'
-        ? Math.min(totals.remaining, totals.tableTotal / totals.participants)
+        ? Math.min(totals.remaining, equalDueOf(totals, personaId))
         : Math.min(totals.remainingOf(personaId), totals.remaining)
   return absorbRounding(round2(raw), totals.remaining)
+}
+
+/**
+ * «Поровну» — равная доля всего счёта стола на всех за столом, за вычетом
+ * того, что гость уже внёс (и не больше остатка стола).
+ *
+ * Два прежних правила ломались на живом столе. «Треть счёта без учёта
+ * внесённого» после чужого «своего» недоплачивала. «Остаток на тех, кто ещё
+ * не платил» после дозаказа делил на одного — и «поровну» показывало весь
+ * стол (живой стол 3, Настя и Сергей). Равная доля с вычетом
+ * внесённого честна в любом порядке: все «поровну» по очереди закрывают стол,
+ * а после дозаказа каждый доплачивает до своей половины всего вечера.
+ */
+export function equalDueOf(totals: MoneyTotals, personaId: string | null): number {
+  const share = totals.tableTotal / Math.max(1, totals.participants)
+  const paid = personaId ? totals.paidOf(personaId) : 0
+  return Math.max(0, share - paid)
 }
 
 /**

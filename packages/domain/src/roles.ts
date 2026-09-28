@@ -11,6 +11,8 @@ export type Permission =
   | 'clean'
   | 'ready'
   | 'cash'
+  /** Вернуть переплату гостю — деньги уходят из кассы наружу. */
+  | 'refund'
   | 'table'
   | 'start'
   | 'serve'
@@ -18,6 +20,20 @@ export type Permission =
   | 'close'
   | 'reset'
   | 'log'
+  /** Стоп-лист: «закончилось» — первым узнаёт кухня или бар, не менеджер. */
+  | 'stop'
+  /** Убрать гостя, севшего по ошибке: без заказов, платежей и чаевых. */
+  | 'removeGuest'
+  /** Приставить стул: гостей больше, чем мест по плану зала. */
+  | 'addSeat'
+  /** Добавить блюдо на стол: гость попросил официанта, а не телефон. */
+  | 'addLine'
+  /** Кабинет: правка и публикация меню. */
+  | 'menu'
+  /** Кабинет: персонал — PIN, увольнение, закрепление столов. */
+  | 'staff'
+  /** Кабинет: настройки заведения, пороги тревог, способы оплаты. */
+  | 'settings'
 
 export interface Staff {
   id: string
@@ -48,12 +64,15 @@ export const ROLE_LABEL: Record<RoleName, string> = {
  *  log            — журнал действий смены
  */
 export const PERMISSIONS: Record<RoleName, Permission[]> = {
-  manager: ['hall', 'kitchen', 'table', 'start', 'ready', 'serve', 'dismiss', 'ack', 'close', 'clean', 'cash', 'reset', 'log'],
+  manager: ['hall', 'kitchen', 'table', 'start', 'ready', 'serve', 'dismiss', 'ack', 'close', 'clean', 'cash', 'refund', 'reset', 'log', 'stop', 'removeGuest', 'addSeat', 'addLine', 'menu', 'staff', 'settings'],
   // Убрать стол — работа зала: пока это делал таймер, гостей сажали за грязный
-  waiter: ['hall', 'kitchen', 'table', 'start', 'ready', 'serve', 'dismiss', 'ack', 'close', 'clean', 'cash'],
+  // Официант за стойкой — тот же бармен: «кончилось игристое» он узнаёт первым
+  waiter: ['hall', 'kitchen', 'table', 'start', 'ready', 'serve', 'dismiss', 'ack', 'close', 'clean', 'cash', 'stop', 'removeGuest', 'addSeat', 'addLine'],
   // Повар подтверждает отмену сам: снять блюдо с плиты — его работа, не менеджерская
-  // Повар доводит блюдо до раздачи; «унёс гостю» отмечает зал
-  cook: ['kitchen', 'start', 'ready', 'serve', 'dismiss']
+  // Повар доводит блюдо до раздачи. «Подано» у него оставлено намеренно: кнопка
+  // «Забрали в зал» на кухне и в баре — когда официант унёс тарелку, не отметив её
+  // (бармен сам отдаёт напиток гостю у стойки). Обычно «подано» отмечает зал
+  cook: ['kitchen', 'start', 'ready', 'serve', 'dismiss', 'stop']
 }
 
 export function can(role: RoleName | undefined | null, permission: Permission): boolean {
@@ -63,6 +82,8 @@ export function can(role: RoleName | undefined | null, permission: Permission): 
 /** Экран, с которого сотруднику логично начинать смену. */
 export function homeRoute(role: RoleName | undefined | null): string {
   if (role === ROLE.COOK) return '#/kitchen'
+  // Менеджер начинает с обзора смены: выручка и то, что требует решения
+  if (role === ROLE.MANAGER) return '#/admin/overview'
   return '#/hall'
 }
 

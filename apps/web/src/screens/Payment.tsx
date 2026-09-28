@@ -1,20 +1,484 @@
 import { useEffect, useRef, useState } from 'react'
 import { newIdemKey } from '../keys'
-import { NAVY, SBP_GRADIENT } from '../data'
-import { Avatar } from '../avatars'
-import { GhostButton, Mono, PrimaryButton, StickyFooter, WarnBanner } from '../ui'
 import { useStore } from '../store'
-import type { PayScope, PayMethod } from '../store'
-import { fmt } from '../format'
+import type { PayMethod, PayScope } from '../store'
+import { tableId } from '../api'
+import type { ServerLine, Snapshot } from '../api'
+import { fmt, listNames } from '../format'
+import { sharersOf } from '@easypay/domain/money'
+import { dishPhoto } from '../guest/showcase'
+import { SETTINGS } from '../settings'
+import { PayChecking } from './PayChecking'
 
-const METHODS: { id: PayMethod; label: string; glyph: string }[] = [
-  { id: 'card', label: 'Банковская карта', glyph: '▭' },
-  { id: 'tpay', label: 'T-Pay', glyph: 'T' },
-  { id: 'sber', label: 'SberPay', glyph: 'S' },
-  { id: 'mir', label: 'Mir Pay', glyph: 'M' }
+/**
+ * Оплата: сумма, за кого, чем — и удержание кнопки.
+ *
+ * Удержание, а не тап: деньги не должны уходить от случайного касания.
+ * Обычное нажатие — с клавиатуры, экранной читалкой или просто коротким
+ * тапом — не игнорируется, а открывает шаг «Оплатить X?»: два осознанных
+ * действия вместо одного долгого.
+ */
+
+// ── Ключ платежа ────────────────────────────────────────────────────────
+// Живёт ДО успешной оплаты — в том числе через уход на «Стол» и перезагрузку.
+// Экран ошибки сам советует «обновите экран»; ключ в памяти компонента на
+// этом терялся, и повтор после обновления становился новым платежом.
+// Сервер запоминает по ключу только успешный ответ, поэтому отказ банка
+// долгоживущий ключ не «заклинит».
+const PAY_KEY = `easypay-paykey-${tableId}`
+let memKey: { key: string; base: number } | null = null
+
+function readAttempt(): { key: string; base: number } | null {
+  try {
+    const raw = sessionStorage.getItem(PAY_KEY)
+    return raw ? JSON.parse(raw) : memKey
+  } catch {
+    return memKey
+  }
+}
+
+/** Ключ текущей попытки; `base` — сколько гость внёс ДО неё. */
+function attemptFor(myPaid: number): { key: string; base: number } {
+  const cur = readAttempt()
+  if (cur) return cur
+  const next = { key: newIdemKey(), base: myPaid }
+  memKey = next
+  try {
+    sessionStorage.setItem(PAY_KEY, JSON.stringify(next))
+  } catch {
+    /* приватный режим — живём на памяти */
+  }
+  return next
+}
+
+function finishAttempt() {
+  memKey = null
+  try {
+    sessionStorage.removeItem(PAY_KEY)
+  } catch {
+    /* нечего чистить */
+  }
+}
+
+/** Сколько гость внёс сам — по платежам снапшота, а не по остатку. */
+function paidBy(snap: Snapshot, personaId: string): number {
+  return snap.payments.filter(p => p.personaId === personaId).reduce((a, p) => a + p.amount, 0)
+}
+
+const HOLD_MS = 900
+
+const METHODS: { id: PayMethod; label: string; sub: string; glyph: string }[] = [
+  { id: 'sbp', label: 'СБП', sub: 'Откроется приложение банка · быстрее всего', glyph: 'СБП' },
+  { id: 'card', label: 'Карта', sub: 'Ввод реквизитов', glyph: '▭' },
+  { id: 'cash', label: 'Наличными официанту', sub: 'Официант подойдёт и подтвердит', glyph: '₽' }
 ]
 
-function QrStage({ amount, onBack, onPaid }: { amount: number; onBack: () => void; onPaid: () => void }) {
+const SCOPE_NAME: Record<PayScope, string> = { own: 'Своё', equal: 'Поровну', full: 'Весь стол' }
+
+/** Способы, включённые в настройках заведения: выключенный сервер всё равно не примет. */
+// С эквайером оплата двухстадийная (сначала заморозка), а СБП так не умеет: пока
+// тестовый магазин ЮKassa — карта и кошелёк. СБП вернётся с боевым эквайрингом
+const allowedMethods = (acquiring?: string | null) =>
+  METHODS.filter(m => SETTINGS.pay[m.id as 'sbp' | 'card' | 'cash'] && !(acquiring && m.id === 'sbp'))
+
+/**
+ * Делёж выключен — за столом на нескольких платят только целиком. Кто-то уже
+ * заплатил «поровну» — остальным тоже поровну: смесь «поровну» и «своё»
+ * оставляла копеечные хвосты и путала суммы (живой стол 3).
+ */
+const allowedScopes = (alone: boolean, equalMode: boolean): PayScope[] =>
+  alone ? ['own'] : !SETTINGS.pay.split ? ['full'] : equalMode ? ['equal', 'full'] : ['own', 'equal', 'full']
+
+export function Payment() {
+  const { ui, patch, me, snap, totals, pay, askCash, cancelCash, menuRev } = useStore()
+  const doneTimer = useRef<ReturnType<typeof setTimeout>>()
+  useEffect(() => () => clearTimeout(doneTimer.current), [])
+  // Менеджер выключил способ или делёж посреди ужина — выбор гостя поправляем сами
+  const alone = totals.participants <= 1
+  // Ключ, оставшийся от прошлой попытки, которая всё-таки прошла: гость с тех
+  // пор внёс больше, чем до неё, — значит, это уже новая оплата и новый ключ
+  const myPaidNow = me && snap ? paidBy(snap, me.id) : 0
+  useEffect(() => {
+    const cur = readAttempt()
+    if (cur && myPaidNow > cur.base + 0.01) finishAttempt()
+  }, [myPaidNow])
+  useEffect(() => {
+    const methods = allowedMethods(snap?.acquiring).map(m => m.id)
+    const scopes = allowedScopes(alone, totals.equalMode)
+    const fix: { payMethod?: PayMethod; payScope?: PayScope } = {}
+    if (methods.length && !methods.includes(ui.payMethod)) fix.payMethod = methods[0]
+    if (!scopes.includes(ui.payScope)) fix.payScope = scopes[0]
+    if (fix.payMethod || fix.payScope) patch(fix)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ui.payMethod, ui.payScope, alone, menuRev, totals.equalMode, snap?.acquiring])
+  if (!me || !snap) return null
+
+  const amount = totals.scopeAmount(ui.payScope)
+
+  const doPay = async () => {
+    const attempt = attemptFor(paidBy(snap, me.id))
+    patch({ payStage: 'processing', payError: null })
+    const res = await pay(ui.payScope, attempt.key, ui.payMethod)
+    // Ушли на страницу эквайера — экран «Проводим оплату» остаётся до перехода
+    if (res.redirect) return
+    if (res.paid > 0) {
+      finishAttempt() // следующая оплата — новый ключ
+      doneTimer.current = setTimeout(() => patch({ payStage: 'form', screen: 'done' }), 1400)
+      return
+    }
+    // Ключ НЕ меняем: повтор идёт тем же — двойного списания не будет.
+    // Причину показываем настоящую: «банк не подтвердил» и «связь оборвалась»
+    // это разные вещи, и во втором случае деньги могли уйти.
+    // Ключ прошлой попытки устарел (счёт с тех пор изменился) — следующая
+    // попытка пойдёт с новым, иначе старый чек «оплачивал» бы новое блюдо
+    if (res.code === 'stale key') finishAttempt()
+    patch({ payStage: 'failed', payError: res.error, payUnknown: res.unknown })
+  }
+
+  if (ui.payStage === 'checking' && ui.payIntent) return <PayChecking intentId={ui.payIntent} />
+
+  if (ui.payStage === 'processing') {
+    return (
+      <div className="g-anim-fade absolute inset-0 flex flex-col items-center justify-center gap-6 px-8 text-center">
+        <span
+          className="g-spin size-16 rounded-full"
+          style={{ border: '4px solid rgba(255,255,255,.1)', borderTopColor: 'var(--g-acc)' }}
+        />
+        <div>
+          <div className="text-[20px] font-bold">{snap.acquiring ? 'Переходим к оплате' : 'Проводим оплату'}</div>
+          <div className="mt-1.5 text-[15px] text-g-mute">Не закрывайте экран</div>
+        </div>
+      </div>
+    )
+  }
+
+  if (ui.payStage === 'qr') {
+    return <SbpCode amount={amount} onBack={() => patch({ payStage: 'form' })} onPaid={() => void doPay()} />
+  }
+
+  if (ui.payStage === 'failed') {
+    return <Failed amount={amount} onRetry={() => void doPay()} base={readAttempt()?.base ?? null} mine={paidBy(snap, me.id)} />
+  }
+
+  return <PayForm amount={amount} onPay={() => void doPay()} askCash={askCash} cancelCash={cancelCash} />
+}
+
+function PayForm({
+  amount,
+  onPay,
+  askCash,
+  cancelCash
+}: {
+  amount: number
+  onPay: () => void
+  askCash: (scope: PayScope) => Promise<number>
+  cancelCash: () => Promise<void>
+}) {
+  const { ui, patch, me, snap, totals } = useStore()
+  if (!me || !snap) return null
+
+  const cash = ui.payMethod === 'cash'
+  const sbp = ui.payMethod === 'sbp'
+  const myCashRequest = snap.cashIntent?.personaId === me.id ? snap.cashIntent : null
+  const alone = totals.participants <= 1
+  const scopes = allowedScopes(alone, totals.equalMode)
+  const otherPayments = snap.payments.filter(p => p.personaId !== me.id)
+  const nameOf = (pid: string) => snap.personas.find(p => p.id === pid)?.name ?? 'Гость'
+
+  // Три моих блюда веером — «за что я плачу» узнаётся по фото быстрее, чем по списку
+  const personaIds = snap.personas.map(p => p.id)
+  const isMine = (l: ServerLine) =>
+    !l.cancelled && l.sent && (l.personaId === me.id || (l.shared && sharersOf(l as any, personaIds).includes(me.id)))
+  const photos = Array.from(new Set(snap.lines.filter(isMine).map(l => l.dishId))).slice(0, 3)
+  const fan =
+    photos.length === 1 ? ['none'] : ['rotate(-9deg) translate(-78px,14px)', 'rotate(8deg) translate(78px,14px)', 'none']
+
+  const title = ui.payScope === 'full' ? 'К оплате за весь стол' : ui.payScope === 'equal' ? 'К оплате — поровну' : 'К оплате с вас'
+  const others = snap.personas.filter(p => p.id !== me.id).map(p => p.name)
+  const breakdown =
+    ui.payScope === 'own'
+      ? totals.myPaid > 0.01
+        ? `вы уже внесли ${fmt(totals.myPaid)}`
+        : totals.myShare > 0
+          ? `${fmt(totals.myOwn)} ваше + ${fmt(totals.myShare)} доля общих блюд`
+          : 'только ваши блюда — считает сервер'
+      : ui.payScope === 'equal'
+        ? totals.myPaid > 0.01
+          ? `${fmt(totals.tableTotal)} поровну на ${totals.equalSplit} — по ${fmt(totals.tableTotal / totals.equalSplit)}, вы уже внесли ${fmt(totals.myPaid)}`
+          : `${fmt(totals.tableTotal)} поровну на ${totals.equalSplit} — по ${fmt(totals.tableTotal / totals.equalSplit)}`
+        : others.length
+          ? `${listNames(others)} ${others.length === 1 ? 'увидит' : 'увидят'}, что стол оплачен`
+          : 'Весь счёт стола'
+
+  return (
+    <div className="g-anim-fade absolute inset-0 flex flex-col">
+      <div className="g-noscroll flex-1 overflow-y-auto pb-5">
+        <div className="relative h-70 overflow-hidden">
+          <div className="absolute top-17.5 left-1/2 size-0">
+            {photos.map((id, i) => (
+              <div
+                key={id}
+                className="absolute top-0 -left-17.5 h-43.75 w-35 overflow-hidden rounded-[22px] bg-g-s1"
+                style={{
+                  transform: fan[photos.length === 1 ? 0 : i] ?? 'none',
+                  boxShadow: '0 20px 40px -18px rgba(0,0,0,.8)',
+                  border: '3px solid var(--g-s1)'
+                }}
+              >
+                <img src={dishPhoto(id)} alt="" className="size-full object-cover" />
+              </div>
+            ))}
+          </div>
+          <div
+            className="absolute inset-0"
+            style={{ background: 'linear-gradient(to bottom, rgba(14,13,12,0) 55%, var(--g-paper) 100%)' }}
+          />
+          <button
+            aria-label="Назад к столу"
+            onClick={() => patch({ screen: 'table' })}
+            className="absolute top-3.5 left-4 size-11 rounded-full bg-g-s1 text-lg text-g-fg"
+          >
+            ←
+          </button>
+        </div>
+
+        <div className="px-5 text-center">
+          <div className="text-[15px] text-g-mute">{title}</div>
+          <div className="g-num mt-1.5 text-[48px] leading-none font-bold tracking-tight">{fmt(amount)}</div>
+          <div className="mt-2.5 text-[13px] text-balance text-g-mute">{breakdown}</div>
+          {otherPayments.length > 0 && (
+            <div className="g-num mt-2 text-[13px] text-g-soft">
+              {/* Без глагола в прошедшем времени: «Лиза внёс» из имени не угадать */}
+              уже оплачено: {otherPayments.map(p => `${nameOf(p.personaId)} ${fmt(p.amount)}`).join(', ')} · по столу
+              осталось {fmt(totals.remaining)}
+            </div>
+          )}
+          {(snap.payPending ?? []).filter(p => p.personaId !== me.id).length > 0 && (
+            <div className="g-num mt-2 text-[13px] text-g-tan">
+              сейчас платит: {snap.payPending!.filter(p => p.personaId !== me.id).map(p => `${nameOf(p.personaId)} ${fmt(p.amount)}`).join(', ')} — эта сумма уже учтена
+            </div>
+          )}
+        </div>
+
+        {scopes.length > 1 && (
+          <div className="mt-5.5 flex flex-wrap justify-center gap-2 px-4">
+            {scopes.map(s => {
+              const on = s === ui.payScope
+              return (
+                <button
+                  key={s}
+                  onClick={() => patch({ payScope: s })}
+                  aria-pressed={on}
+                  className={`g-num h-10 rounded-full px-4 text-[15px] ${on ? 'font-bold text-g-on-acc' : 'text-g-soft'}`}
+                  style={on ? { background: '#F3F0EA' } : { border: '1px solid rgba(255,255,255,.1)' }}
+                >
+                  {on ? SCOPE_NAME[s] : `${SCOPE_NAME[s]} · ${fmt(totals.scopeAmount(s))}`}
+                </button>
+              )
+            })}
+          </div>
+        )}
+
+        <div className="mx-4 mt-7 overflow-hidden rounded-3xl bg-g-s1" role="radiogroup" aria-label="Способ оплаты">
+          {allowedMethods(snap.acquiring).map((m, i) => {
+            const on = ui.payMethod === m.id
+            return (
+              <button
+                key={m.id}
+                role="radio"
+                aria-checked={on}
+                onClick={() => patch({ payMethod: m.id })}
+                className="flex w-full items-center gap-3.5 px-4 py-3.5 text-left text-g-fg"
+                style={i ? { borderTop: '1px solid rgba(255,255,255,.1)' } : undefined}
+              >
+                <span
+                  className={`flex size-10 shrink-0 items-center justify-center rounded-xl text-[12px] font-bold ${m.id === 'sbp' ? 'g-sbp' : 'bg-g-sand text-g-fg'}`}
+                >
+                  {m.glyph}
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block text-[15px] font-bold">{m.label}</span>
+                  <span className="block text-[13px] text-g-mute">{m.sub}</span>
+                </span>
+                <span
+                  className="size-5.5 shrink-0 rounded-full"
+                  style={{ border: on ? '7px solid var(--g-acc)' : '1.5px solid #6E685F' }}
+                />
+              </button>
+            )
+          })}
+        </div>
+
+        {/* Просьба про наличные видна при ЛЮБОМ выбранном способе: иначе,
+            переключившись на СБП, гость о ней забывал, а официант шёл зря */}
+        {myCashRequest && (
+          <div className="mx-4 mt-3 rounded-3xl bg-g-s1 p-4">
+            <div className="text-[17px] font-bold">{snap.waiter?.name ?? 'Официант'} идёт за наличными</div>
+            <div className="g-num mt-1 text-[15px] text-g-tan">{fmt(myCashRequest.amount)}</div>
+            <div className="mt-1.5 text-[13px] leading-normal text-g-mute">
+              В счёте пока ничего не изменилось. Официант возьмёт деньги и подтвердит — тогда оплата появится у всех за
+              столом.
+            </div>
+            <button onClick={() => void cancelCash()} className="mt-2.5 h-10 text-[15px] font-bold text-g-tan">
+              Лучше заплачу телефоном
+            </button>
+          </div>
+        )}
+      </div>
+
+      <div className="shrink-0 bg-g-paper px-4 pt-3 pb-[calc(1.125rem+env(safe-area-inset-bottom))]">
+        {cash ? (
+          <button
+            disabled={amount <= 0 || !!myCashRequest}
+            onClick={() => void askCash(ui.payScope)}
+            className="g-cta g-num h-15 w-full rounded-full text-[17px] disabled:opacity-45"
+          >
+            {myCashRequest ? 'Официант уже идёт' : `Позвать официанта · ${fmt(amount)}`}
+          </button>
+        ) : (
+          <PayButton
+            disabled={amount <= 0}
+            sbp={sbp}
+            amount={amount}
+            onDone={() => (sbp && !snap.acquiring ? patch({ payStage: 'qr' }) : onPay())}
+          />
+        )}
+      </div>
+    </div>
+  )
+}
+
+/** Удержание или «нажал → подтвердил»: оплата — всегда два осознанных действия. */
+function PayButton({
+  sbp,
+  amount,
+  disabled,
+  onDone
+}: {
+  sbp: boolean
+  amount: number
+  disabled: boolean
+  onDone: () => void
+}) {
+  const [confirming, setConfirming] = useState(false)
+  const label = `Оплатить ${sbp ? 'по СБП ' : ''}· ${fmt(amount)}`
+
+  if (confirming) {
+    return (
+      <div role="group" aria-label="Подтвердите оплату">
+        <div className="g-num mb-2.5 text-center text-[15px] text-g-fg">
+          Оплатить {fmt(amount)}
+          {sbp ? ' по СБП' : ''}?
+        </div>
+        <div className="flex gap-2">
+          <button
+            onClick={() => setConfirming(false)}
+            className="h-15 flex-1 rounded-full bg-g-s1 text-[17px] text-g-fg"
+          >
+            Отмена
+          </button>
+          <button
+            autoFocus
+            onClick={() => {
+              setConfirming(false)
+              onDone()
+            }}
+            className={`g-num h-15 flex-[2] rounded-full text-[17px] font-bold ${sbp ? 'g-sbp' : 'bg-g-sand text-g-fg'}`}
+          >
+            Да, оплатить
+          </button>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <>
+      <HoldButton
+        label={label}
+        sbp={sbp}
+        disabled={disabled}
+        onDone={onDone}
+        onTap={() => setConfirming(true)}
+      />
+      <div id="pay-hold-hint" className="mt-2 text-center text-[12px] text-g-mute">
+        Удерживайте — так не оплатите случайно. Или нажмите и подтвердите
+      </div>
+    </>
+  )
+}
+
+function HoldButton({
+  label,
+  sbp,
+  disabled,
+  onDone,
+  onTap
+}: {
+  label: string
+  sbp: boolean
+  disabled: boolean
+  onDone: () => void
+  onTap: () => void
+}) {
+  const [p, setP] = useState(0)
+  const raf = useRef(0)
+  const fired = useRef(false)
+  const holding = useRef(false)
+  useEffect(() => () => cancelAnimationFrame(raf.current), [])
+
+  const start = (e: React.PointerEvent) => {
+    // Второй палец не запускает второй цикл поверх первого
+    if (disabled || holding.current) return
+    holding.current = true
+    e.currentTarget.setPointerCapture?.(e.pointerId)
+    fired.current = false
+    const t0 = performance.now()
+    const tick = () => {
+      const v = Math.min(1, (performance.now() - t0) / HOLD_MS)
+      setP(v)
+      if (v >= 1) {
+        fired.current = true
+        holding.current = false
+        setP(0)
+        onDone()
+        return
+      }
+      raf.current = requestAnimationFrame(tick)
+    }
+    raf.current = requestAnimationFrame(tick)
+  }
+  const stop = () => {
+    cancelAnimationFrame(raf.current)
+    holding.current = false
+    if (!fired.current) setP(0)
+  }
+
+  return (
+    <button
+      disabled={disabled}
+      onPointerDown={start}
+      onPointerUp={stop}
+      onPointerCancel={stop}
+      onPointerLeave={stop}
+      // Удержание не состоялось — короткий тап, клавиатура, VoiceOver. Не
+      // игнорируем и не платим сразу: открываем подтверждение
+      onClick={() => {
+        if (!disabled && !fired.current) onTap()
+        fired.current = false
+      }}
+      aria-describedby="pay-hold-hint"
+      onContextMenu={e => e.preventDefault()}
+      className={`g-num relative h-15 w-full touch-none overflow-hidden rounded-full text-[17px] font-bold select-none disabled:opacity-45 ${sbp ? 'g-sbp' : 'bg-g-sand text-g-fg'}`}
+    >
+      <span className="absolute inset-y-0 left-0 bg-white/30" style={{ width: `${Math.round(p * 100)}%` }} />
+      <span className="relative">{p > 0 ? 'Держите…' : label}</span>
+    </button>
+  )
+}
+
+/** Оплата по СБП: код живёт пять минут, дальше его надо перевыпустить. */
+function SbpCode({ amount, onBack, onPaid }: { amount: number; onBack: () => void; onPaid: () => void }) {
   const [ttl, setTtl] = useState(299)
   useEffect(() => {
     const t = setInterval(() => setTtl(x => Math.max(0, x - 1)), 1000)
@@ -22,301 +486,134 @@ function QrStage({ amount, onBack, onPaid }: { amount: number; onBack: () => voi
   }, [])
   const mm = String(Math.floor(ttl / 60)).padStart(2, '0')
   const ss = String(ttl % 60).padStart(2, '0')
+  const expired = ttl === 0
 
   return (
-    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', padding: '18px 24px', paddingBottom: 'calc(26px + env(safe-area-inset-bottom))' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 8 }}>
-        <button onClick={onBack} style={{ width: 38, height: 38, borderRadius: '50%', border: '1px solid var(--ep-border)', background: 'var(--ep-surface)', fontSize: 18, cursor: 'pointer' }}>
+    <div className="g-anim-fade absolute inset-0 flex flex-col px-5 pt-3.5 pb-[calc(1.25rem+env(safe-area-inset-bottom))]">
+      <div className="flex items-center gap-3">
+        <button aria-label="Назад" onClick={onBack} className="size-11 rounded-full bg-g-sand text-lg text-g-fg">
           ←
         </button>
-        <div style={{ fontWeight: 640, fontSize: 18 }}>Оплата по СБП</div>
+        <h1 className="g-serif text-[34px]">оплата по СБП</h1>
       </div>
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center' }}>
-        <div style={{ width: 60, height: 24, borderRadius: 'var(--ep-r-xs)', background: SBP_GRADIENT, color: 'var(--ep-on-ink)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: 12, marginBottom: 18 }}>
-          СБП
-        </div>
-        <div style={{ padding: 18, background: 'var(--ep-surface)', borderRadius: 'var(--ep-r-lg)', boxShadow: '0 10px 30px rgba(20,18,45,.12)', marginBottom: 18 }}>
+
+      <div className="flex flex-1 flex-col items-center justify-center text-center">
+        {/* Заглушка до эквайринга: настоящий код СБП выдаёт банк. Узор нарочно
+            не сканируется — рабочий QR с выдуманной ссылкой хуже, чем никакой. */}
+        <div className="relative rounded-[28px] bg-white p-4.5" style={{ opacity: expired ? 0.3 : 1 }}>
           <div
+            className="size-55 rounded-md"
             style={{
-              width: 200,
-              height: 200,
-              borderRadius: 'var(--ep-r-sm)',
-              backgroundImage: 'repeating-conic-gradient(var(--ep-ink) 0% 25%, #fff 0% 50%)',
-              backgroundSize: '17px 17px',
-              border: '8px solid #fff'
+              backgroundImage: 'repeating-conic-gradient(#14120F 0% 25%, #FFFFFF 0% 50%)',
+              backgroundSize: '18px 18px'
             }}
           />
+          <span
+            className="g-sbp absolute top-1/2 left-1/2 flex size-14 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-[14px] text-[13px] font-bold"
+            style={{ boxShadow: '0 0 0 6px #FFFFFF' }}
+          >
+            СБП
+          </span>
         </div>
-        <div style={{ fontWeight: 300, fontSize: 34, letterSpacing: '-1px', marginBottom: 6 }}>{fmt(amount)}</div>
-        <div style={{ fontSize: 13.5, color: 'var(--ep-muted)', marginBottom: 4 }}>Наведите камеру или откройте приложение банка</div>
-        <div style={{ fontFamily: 'ui-monospace, monospace', fontSize: 12, color: '#B5249C' }}>
-          Код действителен {mm}:{ss}
+        <div className="g-num mt-6.5 text-[44px] leading-none tracking-tight">{fmt(amount)}</div>
+        <div className="mt-2.5 text-[15px] text-g-mute">Наведите камеру или откройте приложение банка</div>
+        <div className="g-num mt-1 text-[13px] text-g-mute">
+          {expired ? 'код истёк' : `код действует ${mm}:${ss}`}
         </div>
       </div>
-      <PrimaryButton onClick={onPaid} style={{ background: SBP_GRADIENT, color: '#fff', border: 'none' }}>
-        Открыть приложение банка
-      </PrimaryButton>
+
+      {expired ? (
+        <button onClick={() => setTtl(299)} className="g-cta h-15 w-full rounded-full text-[17px]">
+          Выпустить новый код
+        </button>
+      ) : (
+        <button onClick={onPaid} className="g-sbp h-15 w-full rounded-full text-[17px] font-bold">
+          Открыть приложение банка
+        </button>
+      )}
+      <button onClick={onBack} className="mt-2 h-11 text-[15px] text-g-mute">
+        Другой способ
+      </button>
     </div>
   )
 }
 
-export function Payment() {
-  const { ui, patch, me, snap, totals, pay, askCash, cancelCash } = useStore()
-  // Ключ живёт до успешной оплаты: повтор после обрыва связи не создаёт второй платёж
-  const payKey = useRef(newIdemKey())
-  if (!me || !snap) return null
-  const amount = totals.scopeAmount(ui.payScope)
-  const sbp = ui.payMethod === 'sbp'
-  const cash = ui.payMethod === 'cash'
-  // Просьба о наличных — это состояние стола, и гость обязан его видеть
-  const myCashRequest = snap.cashIntent?.personaId === me.id ? snap.cashIntent : null
+function Failed({
+  amount,
+  onRetry,
+  base,
+  mine
+}: {
+  amount: number
+  onRetry: () => void
+  /** Сколько гость внёс ДО этой попытки. */
+  base: number | null
+  /** Сколько внёс сейчас — по платежам снапшота. */
+  mine: number
+}) {
+  const { ui, patch } = useStore()
+  /**
+   * Списались деньги или нет — знает снапшот, а не мы. Но «прошла» — только
+   * если ответа не было И собственные платежи гостя выросли за эту попытку.
+   * Раньше смотрели на «личный остаток ноль»: гость, заплативший своё раньше,
+   * получал отказ банка на оплате всего стола — и видел «всё-таки прошла».
+   */
+  const grew = base !== null ? mine - base : 0
+  const settled = ui.payUnknown && grew > 0.01
+  const method = ui.payMethod === 'sbp' ? 'СБП' : ui.payMethod === 'cash' ? 'Наличные' : 'Карта'
 
-  // Кто уже оплатил (реальные платежи других гостей)
-  const otherPayments = snap.payments.filter(p => p.personaId !== me.id)
-
-  const alone = totals.participants <= 1
-  const SCOPES: { id: PayScope; label: string; sub: string; disabled?: boolean }[] = alone
-    ? [
-        {
-          id: 'own',
-          label: 'Ваш заказ',
-          sub: totals.sharedTotal > 0 ? `${fmt(totals.myOwn)} блюда + ${fmt(totals.myShare)} общие` : 'вы один за столом',
-          disabled: totals.scopeAmount('own') <= 0
-        }
-      ]
-    : [
-        {
-          id: 'own',
-          label: 'Оплатить своё',
-          sub: `${fmt(totals.myOwn)} ваше + ${fmt(totals.myShare)} доля общего`,
-          disabled: totals.scopeAmount('own') <= 0
-        },
-        {
-          id: 'equal',
-          label: 'Разделить поровну',
-          sub: `${fmt(totals.remaining)} на ${totals.participants} гостей`
-        },
-        { id: 'full', label: 'Оплатить весь стол', sub: 'весь неоплаченный остаток' }
-      ]
-
-  const doPay = async () => {
-    patch({ payStage: 'processing' })
-    const paid = await pay(ui.payScope, payKey.current, ui.payMethod)
-    if (paid > 0) {
-      payKey.current = newIdemKey() // следующая оплата — новый ключ
-      setTimeout(() => patch({ payStage: 'form', screen: 'tips' }), 1400)
-    } else {
-      patch({ payStage: 'form' })
-    }
-  }
-
-  if (ui.payStage === 'processing') {
+  if (settled) {
     return (
-      <div className="ep-screen" style={{ alignItems: 'center', justifyContent: 'center', gap: 22 }}>
-        <div className="ep-spin" style={{ width: 62, height: 62, borderRadius: '50%', border: `5px solid var(--ep-border)`, borderTopColor: NAVY }} />
-        <div style={{ textAlign: 'center' }}>
-          <div style={{ fontWeight: 600, fontSize: 19, marginBottom: 5 }}>Проводим оплату…</div>
-          <div style={{ fontSize: 14, color: 'var(--ep-muted)' }}>Не закрывайте экран</div>
+      <div className="g-anim-fade absolute inset-0 flex flex-col px-5 pt-10 pb-[calc(1.25rem+env(safe-area-inset-bottom))]">
+        <div className="flex-1">
+          <h1 className="g-serif text-[44px]">оплата всё-таки прошла</h1>
+          <div className="mt-3 text-[17px] leading-normal text-g-body">
+            Ответ потерялся по дороге, но {fmt(grew)} уже в счёте — платить ещё раз не нужно.
+          </div>
         </div>
-      </div>
-    )
-  }
-
-  if (ui.payStage === 'qr') {
-    return (
-      <div className="ep-screen">
-        <QrStage amount={amount} onBack={() => patch({ payStage: 'form' })} onPaid={() => void doPay()} />
+        <button
+          onClick={() => {
+            finishAttempt()
+            // Чека от сервера нет — ответ потерялся; сумму знаем по снапшоту
+            patch({ payStage: 'form', screen: 'done', lastPaid: grew, lastReceipt: null })
+          }}
+          className="g-cta h-15 w-full rounded-full text-[17px]"
+        >
+          К чеку
+        </button>
       </div>
     )
   }
 
   return (
-    <div className="ep-screen">
-      <div className="ep-scroll" style={{ padding: '14px 20px 20px' }}>
-        <div style={{ fontWeight: 700, fontSize: 24, letterSpacing: '-0.6px', marginBottom: 16 }}>Оплата</div>
-
-        {otherPayments.length > 0 && (
-          <div style={{ marginBottom: 16 }}>
-            <WarnBanner>
-              <Avatar animal={snap.personas.find(p => p.id === otherPayments[0].personaId)?.animal ?? 'fox'} size={26} />
-              <span style={{ fontSize: 13, lineHeight: 1.45, color: '#7A5A12' }}>
-                {otherPayments
-                  .map(p => `${snap.personas.find(x => x.id === p.personaId)?.name ?? '?'} — ${fmt(p.amount)}`)
-                  .join(', ')}{' '}
-                уже оплачено. Осталось <b style={{ fontWeight: 640 }}>{fmt(totals.remaining)}</b>
-              </span>
-            </WarnBanner>
-          </div>
-        )}
-
-        <Mono style={{ marginBottom: 9 }}>Что оплачиваем</Mono>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 9, marginBottom: 22 }}>
-          {SCOPES.map(o => {
-            const active = o.id === ui.payScope
-            const amt = totals.scopeAmount(o.id)
-            return (
-              <div
-                key={o.id}
-                role="button"
-                tabIndex={o.disabled ? -1 : 0}
-                aria-pressed={active}
-                aria-disabled={o.disabled}
-                onKeyDown={e => {
-                  if (e.key !== 'Enter' && e.key !== ' ') return
-                  e.preventDefault() // иначе пробел выбирает И прокручивает экран
-                  if (!o.disabled) patch({ payScope: o.id })
-                }}
-                onClick={() => !o.disabled && patch({ payScope: o.id })}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 12,
-                  padding: '13px 14px',
-                  borderRadius: 'var(--ep-r-card)',
-                  cursor: o.disabled ? 'not-allowed' : 'pointer',
-                  opacity: o.disabled ? 0.45 : 1,
-                  background: 'var(--ep-surface)',
-                  border: active ? `2px solid ${NAVY}` : '1px solid var(--ep-border)'
-                }}
-              >
-                <div style={{ width: 20, height: 20, borderRadius: '50%', flexShrink: 0, border: active ? `6px solid ${NAVY}` : '2px solid var(--ep-border)', background: 'var(--ep-surface)', boxSizing: 'border-box' }} />
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontWeight: 600, fontSize: 15 }}>{o.label}</div>
-                  <div style={{ fontSize: 12, color: 'var(--ep-muted)', marginTop: 2 }}>{o.disabled ? 'уже оплачено' : o.sub}</div>
-                </div>
-                <span style={{ fontWeight: 660, fontSize: 16 }}>{fmt(amt)}</span>
-              </div>
-            )
-          })}
+    <div className="g-anim-fade absolute inset-0 flex flex-col px-5 pt-10 pb-[calc(1.25rem+env(safe-area-inset-bottom))]">
+      <div className="flex-1">
+        <h1 className="g-serif text-[44px]">оплата не прошла</h1>
+        <div className="mt-3 text-[17px] leading-normal text-g-body">
+          {ui.payUnknown
+            ? 'Мы не получили ответ. Не платите вторым способом — сначала обновите экран или спросите официанта.'
+            : `${ui.payError ?? 'Банк не подтвердил платёж'}. Деньги не списаны.`}
         </div>
-
-        <Mono style={{ marginBottom: 9 }}>Способ оплаты</Mono>
-        <div
-          onClick={() => patch({ payMethod: 'sbp' })}
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 12,
-            padding: 14,
-            borderRadius: 'var(--ep-r-card)',
-            cursor: 'pointer',
-            background: sbp ? 'linear-gradient(118deg,#FBF0F8,#F4ECFB)' : 'var(--ep-surface)',
-            border: sbp ? '2px solid #B5249C' : '1px solid var(--ep-border)'
-          }}
-        >
-          <div style={{ width: 46, height: 46, borderRadius: 'var(--ep-r-sm)', background: SBP_GRADIENT, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, color: 'var(--ep-on-ink)', fontWeight: 700, fontSize: 15 }}>
-            СБП
+        <div className="mt-6 rounded-[20px] bg-g-s1 px-4.5 py-1.5">
+          <div className="flex py-3 text-[15px]">
+            <span className="flex-1 text-g-mute">Сумма</span>
+            <span className="g-num">{fmt(amount)}</span>
           </div>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
-              <span style={{ fontWeight: 620, fontSize: 15.5 }}>СБП</span>
-              <span style={{ fontFamily: 'ui-monospace, monospace', fontSize: 9, textTransform: 'uppercase', background: SBP_GRADIENT, color: 'var(--ep-on-ink)', padding: '3px 8px', borderRadius: 'var(--ep-r-pill)' }}>
-                Рекомендуем
-              </span>
-            </div>
-            <div style={{ fontSize: 12.5, color: 'var(--ep-muted)', marginTop: 2 }}>Оплата по QR или кнопке банка</div>
+          <div className="flex py-3 text-[15px]" style={{ borderTop: '1px solid rgba(255,255,255,.1)' }}>
+            <span className="flex-1 text-g-mute">Способ</span>
+            <span>{method}</span>
           </div>
-          {sbp && (
-            <div style={{ width: 22, height: 22, borderRadius: '50%', background: '#B5249C', color: 'var(--ep-on-ink)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700, flexShrink: 0 }}>
-              ✓
-            </div>
-          )}
-        </div>
-
-        {/* Наличные телефон принять не может: их берёт человек. Но выбор
-            способа и вызов официанта — разные шаги: тап выбирает наличные,
-            а зовёт официанта только кнопка внизу. Раньше касание строки
-            мгновенно отправляло просьбу, и гость об этом даже не узнавал. */}
-        <div
-          role="button"
-          aria-pressed={cash}
-          onClick={() => patch({ payMethod: 'cash' })}
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 12,
-            padding: '13px 14px',
-            marginTop: 9,
-            borderRadius: 'var(--ep-r-card)',
-            background: 'var(--ep-surface)',
-            border: cash ? `2px solid ${NAVY}` : '1px solid var(--ep-border)',
-            cursor: 'pointer'
-          }}
-        >
-          <div style={{ width: 34, height: 34, borderRadius: 'var(--ep-r-xs)', background: 'var(--ep-soft)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 600, fontSize: 14, color: 'var(--ep-text-2)', flexShrink: 0 }}>
-            ₽
+          <div className="py-3 text-[13px] text-g-ok" style={{ borderTop: '1px solid rgba(255,255,255,.1)' }}>
+            Повтор идёт той же попыткой — двойного списания не будет
           </div>
-          <div style={{ flex: 1 }}>
-            <div style={{ fontWeight: 520, fontSize: 14.5 }}>Заплачу наличными</div>
-            <div style={{ fontSize: 12, color: 'var(--ep-muted)', marginTop: 2 }}>
-              позовём официанта — он примет деньги
-            </div>
-          </div>
-          <div style={{ width: 18, height: 18, borderRadius: '50%', flexShrink: 0, border: cash ? `5px solid ${NAVY}` : '2px solid var(--ep-border)', background: 'var(--ep-surface)', boxSizing: 'border-box' }} />
-        </div>
-
-        {myCashRequest && (
-          <div style={{ marginTop: 9, padding: '12px 14px', borderRadius: 'var(--ep-r-card)', background: '#FFF6E5', border: '1px solid #E8C989' }}>
-            <div style={{ fontWeight: 600, fontSize: 14 }}>Официант идёт за наличными · {fmt(myCashRequest.amount)}</div>
-            <div style={{ fontSize: 12.5, color: 'var(--ep-muted)', marginTop: 3 }}>
-              Приготовьте деньги. Если передумали — можно оплатить телефоном.
-            </div>
-            <GhostButton style={{ marginTop: 9, padding: '9px 14px', fontSize: 13.5 }} onClick={() => void cancelCash()}>
-              Передумал, заплачу телефоном
-            </GhostButton>
-          </div>
-        )}
-
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 9 }}>
-          {METHODS.map(m => (
-            <div
-              key={m.id}
-              role="button"
-              tabIndex={0}
-              aria-pressed={ui.payMethod === m.id}
-              onKeyDown={e => {
-                if (e.key !== 'Enter' && e.key !== ' ') return
-                e.preventDefault()
-                patch({ payMethod: m.id })
-              }}
-              onClick={() => patch({ payMethod: m.id })}
-              style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '13px 14px', borderRadius: 'var(--ep-r-card)', background: 'var(--ep-surface)', border: '1px solid var(--ep-border)', cursor: 'pointer' }}
-            >
-              <div style={{ width: 34, height: 34, borderRadius: 'var(--ep-r-xs)', background: 'var(--ep-soft)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 600, fontSize: 14, color: 'var(--ep-text-2)', flexShrink: 0 }}>
-                {m.glyph}
-              </div>
-              <span style={{ flex: 1, fontWeight: 520, fontSize: 14.5 }}>{m.label}</span>
-              <div style={{ width: 18, height: 18, borderRadius: '50%', flexShrink: 0, border: ui.payMethod === m.id ? `5px solid ${NAVY}` : '2px solid var(--ep-border)', background: 'var(--ep-surface)', boxSizing: 'border-box' }} />
-            </div>
-          ))}
         </div>
       </div>
-
-      <StickyFooter>
-        <PrimaryButton
-          // Наличные не списываются с телефона: кнопка честно зовёт человека,
-          // а не притворяется оплатой
-          disabled={amount <= 0 || (cash && !!myCashRequest)}
-          onClick={() =>
-            cash
-              // Тот же scope, что на кнопке: «разделить поровну» схлопывалось
-              // в «своё», и официант шёл за другой суммой, чем видел гость
-              ? void askCash(ui.payScope)
-              : sbp
-                ? patch({ payStage: 'qr' })
-                : void doPay()
-          }
-          style={ sbp ? { background: SBP_GRADIENT, color: '#fff', border: 'none', fontSize: 17 } : { fontSize: 17 } }
-        >
-          {cash
-            ? myCashRequest
-              ? 'Официант уже идёт'
-              : `Позвать официанта · ${fmt(amount)}`
-            : sbp
-              ? `Оплатить по СБП · ${fmt(amount)}`
-              : `Оплатить ${fmt(amount)}`}
-        </PrimaryButton>
-      </StickyFooter>
+      <button onClick={onRetry} className="g-sbp g-num h-15 w-full rounded-full text-[17px] font-bold">
+        Повторить · {fmt(amount)}
+      </button>
+      <button onClick={() => patch({ payStage: 'form' })} className="mt-2 h-12 text-[15px] text-g-fg">
+        Выбрать другой способ
+      </button>
     </div>
   )
 }

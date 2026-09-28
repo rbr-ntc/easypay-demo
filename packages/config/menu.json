@@ -10,6 +10,7 @@
       "tags": [
         "вегетарианское"
       ],
+      "photo": true,
       "allergens": [
         "глютен",
         "лактоза"
@@ -23,6 +24,7 @@
       "serving": "180 г",
       "kcal": 340,
       "tags": [],
+      "photo": true,
       "allergens": [
         "яйцо",
         "глютен",
@@ -53,6 +55,7 @@
       "serving": "160 г",
       "kcal": 310,
       "tags": [],
+      "photo": true,
       "allergens": [
         "морепродукты",
         "глютен",
@@ -69,6 +72,7 @@
       "tags": [
         "веган"
       ],
+      "photo": true,
       "allergens": [
         "кунжут",
         "глютен"
@@ -84,6 +88,7 @@
       "serving": "260 г",
       "kcal": 480,
       "tags": [],
+      "photo": true,
       "allergens": [
         "рыба",
         "глютен",
@@ -101,6 +106,7 @@
       "tags": [
         "вегетарианское"
       ],
+      "photo": true,
       "allergens": [
         "лактоза"
       ]
@@ -113,6 +119,7 @@
       "serving": "240 г",
       "kcal": 390,
       "tags": [],
+      "photo": true,
       "allergens": [
         "рыба",
         "кунжут",
@@ -129,6 +136,7 @@
       "tags": [
         "вегетарианское"
       ],
+      "photo": true,
       "allergens": [
         "орехи",
         "лактоза"
@@ -172,6 +180,7 @@
       "serving": "350 г",
       "kcal": 410,
       "tags": [],
+      "photo": true,
       "options": [
         {
           "id": "sourcream",
@@ -207,6 +216,7 @@
       "tags": [
         "веган"
       ],
+      "photo": true,
       "allergens": []
     },
     {
@@ -217,6 +227,7 @@
       "serving": "380 г",
       "kcal": 290,
       "tags": [],
+      "photo": true,
       "allergens": [
         "рыба",
         "сельдерей"
@@ -303,6 +314,7 @@
       "serving": "400 г",
       "kcal": 430,
       "tags": [],
+      "photo": true,
       "allergens": [
         "рыба"
       ]
@@ -315,6 +327,7 @@
       "serving": "320 г",
       "kcal": 690,
       "tags": [],
+      "photo": true,
       "allergens": [
         "глютен",
         "лактоза",
@@ -331,6 +344,7 @@
       "tags": [
         "вегетарианское"
       ],
+      "photo": true,
       "allergens": [
         "лактоза",
         "сельдерей"
@@ -344,6 +358,7 @@
       "serving": "420 г",
       "kcal": 890,
       "tags": [],
+      "photo": true,
       "options": [
         {
           "id": "roast",
@@ -371,8 +386,8 @@
       "serving": "450 г",
       "kcal": 780,
       "tags": [],
-      "stop": true,
       "photo": true,
+      "stop": true,
       "allergens": [
         "глютен",
         "соя",
@@ -407,6 +422,7 @@
       "tags": [
         "острое"
       ],
+      "photo": true,
       "allergens": [
         "глютен",
         "лактоза"
@@ -420,6 +436,7 @@
       "serving": "300 г",
       "kcal": 720,
       "tags": [],
+      "photo": true,
       "allergens": [
         "глютен",
         "яйцо",
@@ -434,6 +451,7 @@
       "serving": "350 г",
       "kcal": 810,
       "tags": [],
+      "photo": true,
       "allergens": [
         "глютен",
         "лактоза",
@@ -453,6 +471,7 @@
       "tags": [
         "вегетарианское"
       ],
+      "photo": true,
       "options": [
         {
           "id": "sauce",
@@ -490,6 +509,7 @@
       "tags": [
         "веган"
       ],
+      "photo": true,
       "allergens": []
     },
     {
@@ -502,6 +522,7 @@
       "tags": [
         "вегетарианское"
       ],
+      "photo": true,
       "allergens": [
         "лактоза"
       ]
@@ -516,6 +537,7 @@
       "serving": "160 г",
       "kcal": 420,
       "tags": [],
+      "photo": true,
       "allergens": [
         "глютен",
         "лактоза",
@@ -530,6 +552,7 @@
       "serving": "150 г",
       "kcal": 450,
       "tags": [],
+      "photo": true,
       "allergens": [
         "глютен",
         "лактоза",
@@ -544,6 +567,7 @@
       "serving": "170 г",
       "kcal": 400,
       "tags": [],
+      "photo": true,
       "allergens": [
         "глютен",
         "лактоза",
@@ -559,6 +583,7 @@
       "serving": "150 г",
       "kcal": 300,
       "tags": [],
+      "photo": true,
       "options": [
         {
           "id": "flavor",
@@ -600,6 +625,7 @@
       "serving": "400 мл",
       "kcal": 120,
       "tags": [],
+      "photo": true,
       "options": [
         {
           "id": "ice",
@@ -621,6 +647,7 @@
       "serving": "40 мл",
       "kcal": 5,
       "tags": [],
+      "photo": true,
       "allergens": []
     },
     {
@@ -631,6 +658,7 @@
       "serving": "250 мл",
       "kcal": 130,
       "tags": [],
+      "photo": true,
       "options": [
         {
           "id": "milk",
@@ -674,6 +702,7 @@
       "serving": "500 мл",
       "kcal": 180,
       "tags": [],
+      "photo": true,
       "allergens": []
     },
     {
@@ -684,6 +713,7 @@
       "serving": "400 мл",
       "kcal": 150,
       "tags": [],
+      "photo": true,
       "allergens": []
     },
     {
@@ -694,6 +724,7 @@
       "serving": "500 мл",
       "kcal": 0,
       "tags": [],
+      "photo": true,
       "options": [
         {
           "id": "gas",
@@ -719,6 +750,7 @@
       "tags": [
         "алкоголь"
       ],
+      "photo": true,
       "options": [
         {
           "id": "volume",
@@ -748,6 +780,7 @@
       "tags": [
         "алкоголь"
       ],
+      "photo": true,
       "options": [
         {
           "id": "volume",
@@ -777,6 +810,7 @@
       "tags": [
         "алкоголь"
       ],
+      "photo": true,
       "options": [
         {
           "id": "volume",
@@ -806,6 +840,7 @@
       "tags": [
         "алкоголь"
       ],
+      "photo": true,
       "options": [],
       "allergens": [
         "глютен"
@@ -821,6 +856,7 @@
       "tags": [
         "алкоголь"
       ],
+      "photo": true,
       "options": [
         {
           "id": "ice",

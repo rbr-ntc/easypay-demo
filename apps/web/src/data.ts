@@ -30,7 +30,11 @@ export interface Dish {
   kcal?: number
   tags?: string[]
   photo?: boolean
+  /** Фото, загруженное из кабинета: `/api/menu/photo/<id>`. */
+  photoUrl?: string
   stop?: boolean
+  /** Цех явно; иначе решает категория (напитки и вино — бар). */
+  station?: 'kitchen' | 'bar'
   options?: DishOption[]
 }
 
@@ -114,8 +118,79 @@ export function defaultOptions(dish: Dish): LineOptions {
   return out
 }
 
-export const MENU = menuJson as Record<string, Dish[]>
-export const CATEGORIES = Object.keys(MENU)
+/**
+ * Меню — живое: сервер отдаёт опубликованное из кабинета (`/api/menu/live`),
+ * а menu.json в сборке — только запасной вариант, пока сервер не ответил.
+ * `let` здесь намеренно: экраны читают MENU при отрисовке, а после публикации
+ * меню подменяется целиком и все подписчики перерисовываются.
+ */
+export let MENU = menuJson as Record<string, Dish[]>
+export let CATEGORIES = Object.keys(MENU)
+/** 0 — меню из сборки; иначе версия публикации с сервера. */
+export let MENU_VERSION = 0
+
+export interface MenuDocument {
+  version: number
+  categories: { name: string; dishes: Dish[] }[]
+}
+
+const menuListeners = new Set<() => void>()
+
+export function setMenu(doc: MenuDocument) {
+  const next: Record<string, Dish[]> = {}
+  for (const c of doc.categories) {
+    const shown = c.dishes.filter(d => !(d as { hidden?: boolean }).hidden)
+    if (shown.length) next[c.name] = shown
+  }
+  MENU = next
+  CATEGORIES = Object.keys(next)
+  MENU_VERSION = doc.version
+  for (const fn of menuListeners) fn()
+}
+
+export function onMenuChange(fn: () => void): () => void {
+  menuListeners.add(fn)
+  return () => menuListeners.delete(fn)
+}
+
+let loading: Promise<boolean> | null = null
+
+/** Перечитать меню с сервера. Не вышло — остаёмся на том, что есть. */
+export function loadMenu(timeoutMs = 3000): Promise<boolean> {
+  loading ??= (async () => {
+    const stop = new AbortController()
+    const timer = setTimeout(() => stop.abort(), timeoutMs)
+    try {
+      const res = await fetch('/api/menu/live', { signal: stop.signal })
+      if (!res.ok) return false
+      const doc = (await res.json()) as MenuDocument
+      if (!Array.isArray(doc.categories) || typeof doc.version !== 'number') return false
+      setMenu(doc)
+      return true
+    } catch {
+      return false
+    } finally {
+      clearTimeout(timer)
+      loading = null
+    }
+  })()
+  return loading
+}
+
+/** Снимок пришёл с другой версией меню — значит, его только что опубликовали. */
+export function ensureMenu(version: number | null | undefined) {
+  if (typeof version === 'number' && version !== MENU_VERSION) void loadMenu()
+}
+
+/**
+ * Блюдо с живым стоп-листом. Сервер присылает актуальный список в снимке
+ * стола (`snap.stop`): кухня выключает блюда тумблером, и флаг в menu.json —
+ * только значение по умолчанию. Пока снимка нет, верим файлу.
+ */
+export function withStop(dish: Dish, live: string[] | null | undefined): Dish {
+  const stop = live ? live.includes(dish.id) : !!dish.stop
+  return stop === !!dish.stop ? dish : { ...dish, stop }
+}
 
 export function findDish(id: string): Dish | undefined {
   for (const cat of CATEGORIES) {
@@ -125,7 +200,11 @@ export function findDish(id: string): Dish | undefined {
   return undefined
 }
 
-export const RESTAURANT = HALL_CONFIG.restaurant
+/** Название заведения — из настроек кабинета; до их загрузки — из плана зала. */
+export let RESTAURANT = HALL_CONFIG.restaurant
+export function setRestaurant(name: string) {
+  RESTAURANT = name
+}
 // Зона стола берётся из плана зала (src/hall.json), а не хардкодом
 export const HALL_LABEL = (tableId ? zoneOfTable(tableId) : null) ?? 'Зал'
 export const TABLE_SEATS = tableId ? seatsOfTable(tableId) : null

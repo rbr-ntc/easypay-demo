@@ -38,29 +38,58 @@ export function StaffLogin() {
     if (key === '⌫') setPin(prev => prev.slice(0, -1))
     else if (key) setPin(prev => (prev.length >= PIN_LENGTH ? prev : prev + key))
   }
+  // На мониторе кабинета PIN набирают с клавиатуры, а не мышкой по кнопкам
+  const pressRef = useRef(press)
+  pressRef.current = press
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (/^\d$/.test(e.key)) pressRef.current(e.key)
+      else if (e.key === 'Backspace') pressRef.current('⌫')
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
 
   return (
-    <div className="ep-w-login">
-      <div className="ep-w-login-card">
-        <div className="ep-w-logo">e</div>
-        <div className="ep-w-login-title">Вход в смену</div>
-        <div className="ep-w-login-hint">
-          {wasSignedOut() ? 'Вы вышли из смены. Введите PIN, чтобы зайти под другим сотрудником.' : 'Введите свой PIN — экран откроется по вашей роли.'}
+    <div className="cab flex min-h-full flex-col justify-center p-6">
+      <div className="mx-auto w-full max-w-sm">
+        <div className="text-center">
+          <div className="mx-auto flex size-13 items-center justify-center rounded-[16px] bg-c-ink text-[22px] font-extrabold text-white">
+            e
+          </div>
+          <div className="mt-4 text-[25px] font-bold tracking-tight">Вход в смену</div>
+          <p className="mt-2 text-[15px] leading-snug text-c-mute">
+            {wasSignedOut()
+              ? 'Вы вышли из смены. Введите PIN, чтобы зайти под другим сотрудником.'
+              : 'Введите свой PIN — откроется ваше рабочее место.'}
+          </p>
         </div>
 
-        <div className="ep-s-dots">
+        <div className="mt-6.5 flex justify-center gap-3.5" aria-label={`Введено цифр: ${pin.length} из ${PIN_LENGTH}`}>
           {Array.from({ length: PIN_LENGTH }).map((_, i) => (
-            <span key={i} className={i < pin.length ? 'ep-s-dot ep-s-dot--on' : 'ep-s-dot'} />
+            <span key={i} className={`size-4 rounded-full ${i < pin.length ? 'bg-c-ink' : 'bg-c-off'}`} />
           ))}
         </div>
+        <div className="mt-2.5 text-center text-[13px] text-c-mute">
+          {busy ? 'Проверяем…' : 'Можно с клавиатуры — отправим на четвёртой цифре'}
+        </div>
 
-        {error && <div className="ep-w-error">{error}</div>}
-        {busy && <div className="ep-w-login-hint">Проверяем…</div>}
+        {error && (
+          <div role="alert" className="mt-4.5 rounded-xl border border-c-bad-line bg-c-bad-bg px-4 py-3.5 text-center text-[14px] font-bold text-c-bad-ink">
+            {error}
+          </div>
+        )}
 
-        <div className="ep-s-pad">
+        <div className="mt-5 grid grid-cols-3 gap-3">
           {KEYS.map((key, i) =>
             key ? (
-              <button key={key} className="ep-s-key" onClick={() => press(key)} disabled={busy}>
+              <button
+                key={key}
+                onClick={() => press(key)}
+                disabled={busy}
+                aria-label={key === '⌫' ? 'Стереть' : key}
+                className="c-num h-16 rounded-[18px] border border-c-line bg-c-card text-[24px] font-bold active:bg-c-chip disabled:opacity-45"
+              >
                 {key}
               </button>
             ) : (
@@ -69,7 +98,8 @@ export function StaffLogin() {
           )}
         </div>
 
-        <div className="ep-s-demo">Демо: официант 1111 · повар 4444 · менеджер 9999</div>
+        {/* PIN-коды на экране входа раздавали менеджера любому прохожему (смена №6, Б1) */}
+        <div className="mt-4 text-center text-[12px] text-c-mute">Сессия живёт 12 часов</div>
       </div>
     </div>
   )
