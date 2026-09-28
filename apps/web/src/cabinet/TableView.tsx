@@ -9,10 +9,10 @@ import { fmtDur } from '../waiter/duration'
 import { computeMetrics } from '../waiter/tableMetrics'
 import { AddDishDrawer } from './AddDishDrawer'
 import { lineStage, type LineStage } from '../lineStage'
-import { CALL_LABEL } from '@easypay/domain/hall'
 import { Avatar } from '../avatars'
 import { useCab } from './Shell'
 import { subscribeTable, tableAction, staffError } from './staffApi'
+import { CallRow, groupCalls } from './CallRow'
 import { Confirm, Empty, Panel } from './ui'
 
 /**
@@ -30,13 +30,6 @@ const STAGE: Record<LineStage | 'draft', { label: string; color: string; next?: 
 }
 
 const METHOD: Record<string, string> = { sbp: 'СБП', card: 'карта', cash: 'наличные' }
-
-/** Быстрые ответы на вызов: одно нажатие — и гость знает, чего ждать. */
-const REPLIES: { label: string; reply: string | null }[] = [
-  { label: 'Иду', reply: null },
-  { label: 'Через 2 мин', reply: 'Подойду через 2 минуты' },
-  { label: 'Уточню на кухне', reply: 'Уточню на кухне и вернусь' }
-]
 
 const time = (at: number | null | undefined) =>
   at ? new Date(at).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }) : '—'
@@ -162,40 +155,23 @@ export function TableView({ id }: { id: string }) {
       </div>
 
       {open &&
-        (snap.calls ?? []).map(c => (
-          <div
-            key={c.id ?? c.at}
-            className="flex items-center gap-3.5 rounded-2xl border border-c-bad-line bg-c-bad-bg px-4.5 py-3.5"
-          >
-            <span className="size-2.5 rounded-full bg-c-bad" />
-            <span className="flex-1 text-[15px]">
-              <b>{c.name ?? nameOf(c.personaId)}</b> {c.note ? `: ${c.note}` : CALL_LABEL[c.reason] ?? CALL_LABEL.help}
-            </span>
-            <span className="c-num text-[13px] font-bold text-c-bad-ink">{fmtDur(now - c.at)}</span>
-            {may('ack') && (
-              // Ответ гостю: «пицца через 3 минуты» — официант знает, гость видит
-              <span className="flex flex-wrap justify-end gap-1.5">
-                {REPLIES.map(r => (
-                  <button
-                    key={r.label}
-                    onClick={() => void run(`ack-${c.id}`, 'ack', { callId: c.id, reply: r.reply }, r.reply ? `Гостю: «${r.reply}»` : 'Вызов снят')}
-                    className={`h-10 rounded-xl px-3.5 text-[14px] ${r.reply ? 'border border-c-line bg-c-card' : 'bg-c-ink font-bold text-white'}`}
-                  >
-                    {r.label}
-                  </button>
-                ))}
-                <button
-                  onClick={() => {
-                    const reply = window.prompt('Ответ гостю', '')?.trim()
-                    if (reply) void run(`ack-${c.id}`, 'ack', { callId: c.id, reply }, `Гостю: «${reply}»`)
-                  }}
-                  className="h-10 rounded-xl border border-c-line bg-c-card px-3.5 text-[14px]"
-                >
-                  Ответить…
-                </button>
-              </span>
-            )}
-          </div>
+        groupCalls(snap.calls ?? [], nameOf).map(g => (
+          <CallRow
+            key={g.personaId}
+            group={g}
+            now={now}
+            canAck={may('ack')}
+            busy={busy === `ack-${g.personaId}`}
+            onAck={async reply => {
+              // У старых столов у гостя могло быть несколько вызовов — снимаем все разом
+              for (const callId of g.ids) {
+                const r = await run(`ack-${g.personaId}`, 'ack', { callId, ...(reply ? { reply } : {}) })
+                if (!r?.ok) return false
+              }
+              toast(reply ? `Гостю: «${reply}»` : 'Вызов снят')
+              return true
+            }}
+          />
         ))}
 
       {open && snap.cashIntent && (
@@ -270,7 +246,21 @@ export function TableView({ id }: { id: string }) {
         <Empty>Стол свободен — гостей ещё не было</Empty>
       ) : (
         <div className="grid items-start gap-4 lg:grid-cols-2">
-          <Panel title={`Гости · ${snap.personas.length}`}>
+          <Panel
+            title={`Гости · ${snap.personas.length} из ${snap.seats}`}
+            action={
+              open && may('addSeat') ? (
+                // Гостей больше, чем мест: третий друг пододвинул стул — пусть сядет со своего телефона
+                <button
+                  disabled={busy === 'seat'}
+                  onClick={() => void run('seat', 'addSeat', {}, 'Стул приставлен — гость может сесть')}
+                  className="h-8 rounded-lg border border-c-line px-3 text-[13px] font-bold disabled:opacity-50"
+                >
+                  + место
+                </button>
+              ) : undefined
+            }
+          >
             <div className="px-4.5 pb-2">
               {snap.personas.map(p => {
                 const pt = t.byPersona.find(x => x.personaId === p.id)

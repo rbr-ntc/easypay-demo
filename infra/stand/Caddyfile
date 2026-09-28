@@ -4,8 +4,26 @@
 }
 
 77-221-141-238.sslip.io:8443 {
-	encode gzip
-	reverse_proxy 127.0.0.1:8787
+	# Живые потоки (SSE) не сжимаем: gzip копит события в буфере, и браузер
+	# висел на «Загружаем зал…», хотя curl без Accept-Encoding всё получал
+	# Заголовки безопасности (смена №6, Б10): только HTTPS, без встраивания в чужие
+	# фреймы, без угадывания типов, без утечки адреса стола в Referer
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		-Server
+	}
+
+	@compress not path */stream
+	encode @compress gzip
+	reverse_proxy 127.0.0.1:8787 {
+		# Адрес клиента пишем сами, а не дописываем к присланному: сервер по нему
+		# считает попытки PIN, и подставной заголовок обнулял бы лимит
+		header_up X-Forwarded-For {remote_host}
+		flush_interval -1
+	}
 }
 
 # Старый адрес по IP ведёт на HTTPS с тем же путём: старые ссылки и QR не ломаются

@@ -205,6 +205,7 @@ export async function createPostgresStore(url?: string): Promise<Store> {
         price: Number(l.price),
         options: l.options ?? {},
         comment: l.comment ?? null,
+        allergenOk: l.allergen_ok ?? [],
         shared: l.shared,
         sharedWith: l.shared_with ?? [],
         personaId: l.guest_id,
@@ -255,7 +256,9 @@ export async function createPostgresStore(url?: string): Promise<Store> {
         at: ms(c.created_at) ?? 0,
         personaId: c.guest_id,
         reason: c.reason,
-        note: c.note ?? null
+        note: c.note ?? null,
+        repeats: c.repeats ?? 1,
+        lastAt: ms(c.last_at) ?? undefined
       })),
       // Счётчик позиций хранится отдельно: «последняя + 1» после удаления из
       // корзины выдавал тот же номер новой позиции, и повтор удаления после
@@ -274,6 +277,7 @@ export async function createPostgresStore(url?: string): Promise<Store> {
       })),
       cleanedAt: ms(row.cleaned_at),
       cashIntent: row.cash_intent ?? null,
+      extraSeats: Number(row.extra_seats ?? 0),
       shiftId: row.shift_id ?? null,
       db: { tableUuid: tid, sessionUuid: row.id }
     }
@@ -351,7 +355,7 @@ export async function createPostgresStore(url?: string): Promise<Store> {
         insert into order_lines (
           table_session_id, guest_id, seq, dish_id, name, price, qty, options, comment,
           shared, shared_with, sent_at, started_at, started_by, ready_at, ready_by,
-          served_at, served_by, cancelled_at, cancelled_by, cancel_reason, cancel_ack
+          served_at, served_by, cancelled_at, cancelled_by, cancel_reason, cancel_ack, allergen_ok
         ) values (
           ${sid}, ${l.personaId}, ${l.uid}, ${l.dishId}, ${dishName(l.dishId)}, ${l.price}, ${l.qty},
           ${tx.json(l.options ?? {})}, ${l.comment ?? null}, ${l.shared}, ${l.sharedWith ?? []},
@@ -359,7 +363,7 @@ export async function createPostgresStore(url?: string): Promise<Store> {
           ${staffUuid(l.startedBy)}, ${l.readyAt ? new Date(l.readyAt) : null}, ${staffUuid(l.readyBy)},
           ${l.servedAt ? new Date(l.servedAt) : null}, ${staffUuid(l.servedBy)},
           ${l.cancelledAt ? new Date(l.cancelledAt) : null}, ${staffUuid(l.cancelledBy)},
-          ${l.cancelReason ?? null}, ${!!l.cancelAck}
+          ${l.cancelReason ?? null}, ${!!l.cancelAck}, ${l.allergenOk ?? []}
         )
         on conflict (table_session_id, seq) do update set
           comment = excluded.comment,
@@ -370,6 +374,7 @@ export async function createPostgresStore(url?: string): Promise<Store> {
           shared = excluded.shared,
           shared_with = excluded.shared_with,
           sent_at = excluded.sent_at,
+          allergen_ok = excluded.allergen_ok,
           started_at = excluded.started_at,
           started_by = excluded.started_by,
           ready_at = excluded.ready_at,
@@ -429,9 +434,10 @@ export async function createPostgresStore(url?: string): Promise<Store> {
     `
     for (const c of session.calls) {
       await tx`
-        insert into calls (id, table_session_id, guest_id, reason, note, created_at)
-        values (${c.id}, ${sid}, ${c.personaId}, ${c.reason}, ${c.note ?? null}, ${new Date(c.at)})
-        on conflict (id) do update set note = coalesce(excluded.note, calls.note)
+        insert into calls (id, table_session_id, guest_id, reason, note, created_at, repeats, last_at)
+        values (${c.id}, ${sid}, ${c.personaId}, ${c.reason}, ${c.note ?? null}, ${new Date(c.at)}, ${c.repeats ?? 1}, ${c.lastAt ? new Date(c.lastAt) : null})
+        on conflict (id) do update set note = coalesce(excluded.note, calls.note), reason = excluded.reason,
+          repeats = greatest(calls.repeats, excluded.repeats), last_at = coalesce(excluded.last_at, calls.last_at)
       `
     }
 
@@ -440,6 +446,7 @@ export async function createPostgresStore(url?: string): Promise<Store> {
       update table_sessions set
         cleaned_at = ${session.cleanedAt ? new Date(session.cleanedAt) : null},
         cash_intent = ${session.cashIntent ? tx.json(session.cashIntent) : null},
+        extra_seats = ${session.extraSeats ?? 0},
         next_seq = ${session.seq}
       where id = ${sid}
     `
@@ -548,7 +555,10 @@ export async function createPostgresStore(url?: string): Promise<Store> {
         from tips t
         join table_sessions ts on ts.id = t.table_session_id
         join restaurant_tables rt on rt.id = ts.table_id
-        where rt.venue_id = ${venueId} and t.waiter_id is not null
+        join shifts sh on sh.id = ts.shift_id
+        -- Только открытая смена: без этого официант видел чаевые за всю историю,
+        -- а X-отчёт — за смену, и суммы к выдаче расходились (смена №6, О1)
+        where rt.venue_id = ${venueId} and t.waiter_id is not null and sh.closed_at is null
         group by t.waiter_id
       `
       const tipsByStaff: Record<string, number> = Object.create(null)

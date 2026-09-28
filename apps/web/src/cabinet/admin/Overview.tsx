@@ -5,6 +5,7 @@ import { go, href } from '../route'
 import { Empty, Kpi, Panel } from '../ui'
 import { errorText, fetchDecisions, fetchShift, fetchShifts, openShift, useLoad } from './adminApi'
 import { DecisionCard } from './DecisionCard'
+import { RatingsFeed } from './RatingsFeed'
 import { dayLabel, hm, HoursChart, Loading, MethodSplit } from './parts'
 
 /**
@@ -43,7 +44,21 @@ export function Overview() {
             {r.ratings && r.ratings.good + r.ratings.ok + r.ratings.bad > 0 && (
               <div className="mt-1 text-[13px] text-c-mute">
                 оценки гостей: понравилось {r.ratings.good} · нормально {r.ratings.ok}
-                {r.ratings.bad > 0 ? <b className="text-c-bad-ink"> · замечаний {r.ratings.bad}</b> : ' · замечаний нет'}
+                {r.ratings.bad > 0 ? (
+                  <a
+                    href="#ratings-feed"
+                    onClick={e => {
+                      e.preventDefault()
+                      document.getElementById('ratings-feed')?.scrollIntoView({ behavior: 'smooth' })
+                    }}
+                    className="font-bold text-c-bad-ink underline"
+                  >
+                    {' '}
+                    · замечаний {r.ratings.bad} →
+                  </a>
+                ) : (
+                  ' · замечаний нет'
+                )}
               </div>
             )}
             <div className="mt-5 grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-6">
@@ -60,6 +75,11 @@ export function Overview() {
         )}
 
         <div className="grid gap-5 lg:grid-cols-2">
+          {s && (
+            <div id="ratings-feed">
+              <RatingsFeed />
+            </div>
+          )}
           <Panel title="Выручка по часам">
             <div className="p-4.5">
               <HoursChart byHour={r.byHour} />

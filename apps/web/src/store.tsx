@@ -26,7 +26,7 @@ import {
   subscribe,
   tableId
 } from './api'
-import type { ServerPersona, Snapshot } from './api'
+import type { SendAllergy, ServerPersona, Snapshot } from './api'
 import { clearSignedOut, clearStaff, getCachedStaff, markSignedOut, setCachedStaff, setStaffToken } from './staff'
 import { can } from '@easypay/domain/roles'
 import type { Permission, Staff } from '@easypay/domain/roles'
@@ -233,7 +233,7 @@ export function humanError(err: ApiError): string {
     'kitchen pending': 'На кухне ещё готовятся блюда этого стола',
     'unknown allergen': 'Такой аллергии нет в списке — выберите из предложенных',
     'unknown table': 'Такого стола нет в зале — проверьте QR на столе',
-    'table full': 'За столом уже максимум гостей',
+    'table full': 'За столом нет свободных мест — попросите официанта приставить стул',
     // Частая причина — корзина ещё не отправлена: подсказываем, что сделать
     'nothing to pay': 'Оплачивать пока нечего — если в корзине что-то есть, сначала отправьте на кухню',
     'unknown method': 'Такой способ оплаты не поддерживается',
@@ -252,7 +252,9 @@ export function humanError(err: ApiError): string {
     'unknown dish': 'Такого блюда больше нет в меню',
     'bad qty': 'Можно заказать от 1 до 9 порций',
     'tip too large': 'Слишком большие чаевые для этого счёта',
-    'bad amount': 'Сумма чаевых указана неверно',
+    'bad amount': 'Сумма указана неверно — минимум 1 ₽',
+    'too many requests': 'Слишком много нажатий подряд — подождите минуту',
+    'equal split in progress': 'Стол уже делит счёт поровну — выберите «поровну» или «весь стол»',
     'locked or missing': 'Позиция уже уехала на кухню — её не убрать',
     'not yours': 'Это позиция другого гостя',
     'stale session': 'Стол успели закрыть — обновите страницу',
@@ -324,7 +326,8 @@ interface Ctx {
   /** Передумал: снять просьбу, чтобы официант не шёл за деньгами зря. */
   cancelCash: () => Promise<void>
   /** Возвращает, дошло ли до кухни: интерфейс не должен праздновать отказ. */
-  sendWave: (scope: 'mine' | 'all') => Promise<boolean>
+  /** ok — ушло; allergy — корзина пролежала, и в ней теперь есть чей-то аллерген. */
+  sendWave: (scope: 'mine' | 'all', confirmUids?: number[]) => Promise<{ ok: boolean; held?: boolean; allergy?: SendAllergy[] }>
   /**
    * Способ передаём серверу: иначе в платеже оседает «СБП» на любой выбор.
    * Возвращает исход целиком: экран отказа обязан знать, ЧТО ответил сервер,
@@ -600,12 +603,35 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         setUi(prev => ({ ...prev, payMethod: 'sbp' }))
         toast('Хорошо, платим телефоном')
       }, undefined),
-    sendWave: scope =>
-      guard(async () => {
-        if (!guestToken()) return false
-        await apiSend(guestToken()!, scope)
-        return true
-      }, false),
+    sendWave: async (scope, confirmUids = []) => {
+      if (!guestToken()) return { ok: false }
+      try {
+        const r = await apiSend(guestToken()!, scope, confirmUids)
+        // Чужое с аллергеном соседа и снятое в стоп остаются в корзине — говорим об этом
+        const held = r.heldBack ?? []
+        if (held.length) {
+          toastRef.current?.(
+            held
+              .map(h => (h.reason === 'stop' ? `«${h.dish}» закончилось` : `«${h.dish}» ждёт подтверждения: аллергия у ${h.people.join(', ')}`))
+              .join(' · ')
+          )
+        }
+        return { ok: r.sent > 0, held: held.length > 0 }
+      } catch (err) {
+        if (err instanceof ApiError && err.error === 'allergen warning') {
+          return { ok: false, allergy: (err.extra?.lines as SendAllergy[]) ?? [] }
+        }
+        const dishes = err instanceof ApiError ? (err.extra?.dishes as string[] | undefined) : undefined
+        toastRef.current?.(
+          dishes?.length
+            ? `${dishes.map(d => `«${d}»`).join(', ')} сегодня ${dishes.length === 1 ? 'закончилось' : 'закончились'} — уберите из корзины`
+            : err instanceof ApiError
+              ? humanError(err)
+              : 'Не получилось — проверьте связь и попробуйте ещё раз'
+        )
+        return { ok: false }
+      }
+    },
     pay: async (scope, idemKey, method) => {
       if (!guestToken()) return { paid: 0, error: 'guest token required', unknown: false }
       try {

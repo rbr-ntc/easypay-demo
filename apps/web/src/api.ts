@@ -86,6 +86,9 @@ export interface ServerCall {
       зачем идёт, а без него — «Ольга зовёт официанта» и лишний заход. */
   note?: string | null
   name?: string
+  /** Сколько раз гость позвал, пока никто не подошёл. */
+  repeats?: number
+  lastAt?: number
 }
 
 /** Итоги считает сервер — гость видит ровно то, что спишется. */
@@ -221,7 +224,19 @@ export const apiCancelMine = (guest: string, uid: number) =>
 
 export const apiRemoveLine = (guest: string, uid: number) => post<{ ok: true }>('remove', { uid }, { guest })
 
-export const apiSend = (guest: string, scope: 'mine' | 'all') => post<{ ok: true; sent: number }>('send', { scope }, { guest })
+export const apiSend = (guest: string, scope: 'mine' | 'all', confirmUids: number[] = []) =>
+  post<{ ok: true; sent: number; heldBack?: { dish: string; reason: 'stop' | 'allergy'; people: string[] }[] }>(
+    'send',
+    { scope, ...(confirmUids.length ? { confirmUids } : {}) },
+    { guest }
+  )
+
+/** Что остановило отправку: блюдо из корзины с аллергеном того, кто будет есть. */
+export interface SendAllergy {
+  uid: number
+  dish: string
+  people: { name: string; allergens: string[] }[]
+}
 
 export interface Receipt {
   no: string

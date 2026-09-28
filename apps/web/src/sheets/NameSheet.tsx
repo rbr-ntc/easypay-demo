@@ -4,7 +4,7 @@ import { findDish } from '../data'
 import type { Animal } from '../data'
 import { ANIMAL_LIST, Avatar } from '../avatars'
 import { useStore } from '../store'
-import { ALLERGENS } from '@easypay/domain/allergens'
+import { ALLERGENS, allergenHints } from '@easypay/domain/allergens'
 import { SETTINGS } from '../settings'
 
 const ANIMAL_RU: Record<Animal, string> = {
@@ -150,6 +150,11 @@ export function NameSheet() {
                 )
               })}
             </div>
+            {allergenHints(allergies).map(h => (
+              <p key={h} className="mt-2 text-[13px] text-g-tan">
+                {h}
+              </p>
+            ))}
           </>
         )}
 

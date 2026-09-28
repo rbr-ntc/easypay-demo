@@ -16,6 +16,14 @@ export function hashToken(token) {
   return crypto.createHash('sha256').update(String(token)).digest('hex')
 }
 
+// Те же перекрытия PIN, что и у сервера: EASYPAY_STAFF_PINS="max=4821,boss=7390"
+const pinOverrides = Object.fromEntries(
+  String(process.env.EASYPAY_STAFF_PINS ?? '')
+    .split(',')
+    .map(pair => pair.split('=').map(x => x.trim()))
+    .filter(([id, pin]) => id && pin)
+)
+
 export async function seed(sql, { orgName = 'EasyPay', venueName = hall.restaurant } = {}) {
   return sql.begin(async tx => {
     const [organization] = await tx`
@@ -70,12 +78,14 @@ export async function seed(sql, { orgName = 'EasyPay', venueName = hall.restaura
         (
           await tx`
             insert into staff (org_id, venue_id, name, role, pin_hash, ext_id)
-            values (${organization.id}, ${venue.id}, ${person.name}, ${person.role}, ${hashPin(person.pin)}, ${person.id})
+            values (${organization.id}, ${venue.id}, ${person.name}, ${person.role}, ${hashPin(pinOverrides[person.id] ?? person.pin)}, ${person.id})
             returning *
           `
         )[0]
 
-      await tx`update staff set pin_hash = ${hashPin(person.pin)}, ext_id = ${person.id} where id = ${row.id}`
+      // PIN уже заведённого сотрудника не трогаем: менеджер мог сменить его в кабинете,
+      // а повторный сид молча возвращал публичные демо-коды (смена №6, Б1)
+      await tx`update staff set ext_id = ${person.id} where id = ${row.id}`
 
       await tx`delete from staff_tables where staff_id = ${row.id}`
       for (const number of person.tables ?? []) {

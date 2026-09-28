@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { ticketUrgency, ticketWait } from '@easypay/domain/kitchen'
+import { passWait, ticketUrgency, ticketWait } from '@easypay/domain/kitchen'
 import type { KitchenTicket } from '@easypay/domain/kitchen'
 import { dismissCancelled, handOver, markReady, subscribeKitchen, takeToWork } from '../kitchenApi'
 import type { KitchenPayload } from '../kitchenApi'
@@ -166,7 +166,8 @@ function TicketCard({
 }) {
   const col = colOf(t)
   const urgency = ticketUrgency(t, now)
-  const mins = Math.floor(ticketWait(t, now) / 60_000)
+  // На раздаче важно, сколько тарелка стоит и остывает, а не сколько её готовили
+  const mins = Math.floor((t.readyAt ? passWait(t, now) : ticketWait(t, now)) / 60_000)
   const frame =
     urgency === 'danger' ? '1.5px solid #D9876F' : urgency === 'warn' ? '1.5px solid #E3C27A' : '1px solid #E6E2DA'
   const timeColor = urgency === 'danger' ? '#B03A1E' : urgency === 'warn' ? '#9A6A0B' : '#6B665E'
@@ -186,30 +187,38 @@ function TicketCard({
         <span className="text-[12px] text-c-mute">{t.zoneName}</span>
         <span className="flex-1" />
         <span className="c-num text-[15px] font-bold" style={{ color: timeColor }}>
-          {mins} мин
+          {t.readyAt ? `на раздаче ${mins} мин` : `${mins} мин`}
         </span>
       </div>
       <div className="mt-1.5 text-[17px] leading-tight font-bold">
         {t.name}
         {t.qty > 1 ? ` ×${t.qty}` : ''}
       </div>
-      {/* Вариант, снимающий аллерген, — не пожелание, а запрет */}
-      {/* Аллергия едока — первым делом: это не пожелание, а запрет */}
-      {(t.guestAllergies ?? []).map(g => (
-        <div key={g.name} className="mt-2 rounded-lg bg-c-bad px-2.5 py-2 text-[13px] font-bold text-white">
-          АЛЛЕРГИЯ · {g.name}: {g.allergies.join(', ')}
-        </div>
-      ))}
+      {/* Иерархия по смене №6 (А4): реальное попадание аллергена — самое громкое
+          на карточке; аллергия гостя без попадания — спокойная справка; вариант,
+          снимающий аллерген, — чёткое указание повару, но не тревога */}
       {(t.allergyHits ?? []).length > 0 && (
-        <div className="mt-1.5 rounded-lg border border-c-bad-line bg-c-bad-bg px-2.5 py-1.5 text-[12px] font-bold text-c-bad-ink">
-          В блюде есть {t.allergyHits!.join(', ')} — гость предупреждён и подтвердил. Уточните у официанта.
+        <div className="mt-2 rounded-lg bg-c-bad px-2.5 py-2 text-[14px] leading-snug font-bold text-white">
+          ⚠ В БЛЮДЕ {t.allergyHits!.join(', ').toUpperCase()}
+          {(() => {
+            const who = (t.guestAllergies ?? []).filter(g => g.allergies.some(a => t.allergyHits!.includes(a))).map(g => g.name)
+            return who.length ? ` — аллергия у ${who.join(', ')}` : ''
+          })()}
+          <div className="mt-0.5 text-[12px] font-normal">Гость предупреждён и согласился. Отдельная посуда, уточните у официанта.</div>
         </div>
       )}
       {(t.removedAllergens ?? []).map(r => (
-        <div key={r.id} className="mt-2 rounded-lg bg-c-bad px-2.5 py-2 text-[13px] font-bold text-white">
+        <div key={r.id} className="mt-2 rounded-lg bg-c-ink px-2.5 py-2 text-[13px] font-bold text-white">
           {r.choice.toUpperCase()} — снимает {r.removes.map(allergenAccusative).join(' и ')}
         </div>
       ))}
+      {(t.guestAllergies ?? [])
+        .filter(g => !g.allergies.some(a => (t.allergyHits ?? []).includes(a)))
+        .map(g => (
+          <div key={g.name} className="mt-1.5 rounded-lg border border-c-bad-line px-2.5 py-1 text-[12px] text-c-bad-ink">
+            аллергия гостя · {g.name}: {g.allergies.join(', ')}
+          </div>
+        ))}
       {t.repeat && (
         <div className="mt-1.5 rounded-lg bg-c-warn-bg px-2.5 py-1.5 text-[12px] font-bold text-c-warn-fg">
           Повтор: гость уже заказывал это только что — уточните у официанта

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { ALLERGENS } from '@easypay/domain/allergens'
+import { ALLERGENS, allergenHints } from '@easypay/domain/allergens'
 import { useStore } from '../store'
 
 /**
@@ -53,6 +53,11 @@ export function AllergySheet() {
             )
           })}
         </div>
+        {allergenHints(picked).map(h => (
+          <p key={h} className="mt-2 text-[13px] text-g-tan">
+            {h}
+          </p>
+        ))}
         <button onClick={() => void save()} disabled={busy} className="g-cta mt-6 h-14 w-full rounded-full text-[17px] disabled:opacity-40">
           {busy ? 'Секунду…' : picked.length ? 'Сохранить' : 'Аллергий нет'}
         </button>

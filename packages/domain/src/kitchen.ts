@@ -86,9 +86,17 @@ export function ticketWait(ticket: KitchenTicket, now: number): number {
   return ticket.sentAt ? Math.max(0, now - ticket.sentAt) : 0
 }
 
+/**
+ * Готовое на раздаче ждёт уже не кухню, а зал: считаем от «готово» и по своим
+ * порогам. Раньше тарелка краснела от времени заказа, и «кухня тормозит»
+ * загоралось, когда блюдо просто не забирали (смена №6, К3).
+ */
+export const PASS_THRESHOLDS = { warnMs: 2 * 60 * 1000, dangerMs: 5 * 60 * 1000 }
+
 export function ticketUrgency(ticket: KitchenTicket, now: number): TicketUrgency {
-  const wait = ticketWait(ticket, now)
-  const limits = thresholdsFor(ticket.station)
+  const onPass = !!ticket.readyAt
+  const wait = onPass ? passWait(ticket, now) : ticketWait(ticket, now)
+  const limits = onPass ? PASS_THRESHOLDS : thresholdsFor(ticket.station)
   if (wait >= limits.dangerMs) return 'danger'
   if (wait >= limits.warnMs) return 'warn'
   return 'ok'
@@ -113,6 +121,7 @@ export function summarizeKitchen(tickets: KitchenTicket[], now: number): Kitchen
     positions: tickets.reduce((s, t) => s + (Number(t.qty) || 0), 0),
     tables: tables.size,
     oldestWaitMs: waits.length ? Math.max(...waits) : null,
-    overdue: tickets.filter(t => ticketUrgency(t, now) === 'danger').length
+    // Просрочка кухни — только то, что ещё у неё: остывшее на раздаче считает зал
+    overdue: tickets.filter(t => !t.readyAt && ticketUrgency(t, now) === 'danger').length
   }
 }

@@ -52,7 +52,8 @@ import {
   sweepSessions,
   waiterOfTable
 } from './staff.ts'
-import type { Actor, AuditEntry, MutationResult, PayMethod, Persona, TableSession } from './types.ts'
+import { createRateLimiter } from './rateLimit.ts'
+import type { Actor, AuditEntry, Call, MutationResult, PayMethod, Persona, TableSession } from './types.ts'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const DIST = path.join(__dirname, '..', '..', 'web', 'dist')
@@ -98,8 +99,10 @@ const hashToken = (token: unknown) => crypto.createHash('sha256').update(String(
  * EventSource не умеет слать заголовки, поэтому для SSE токен принимаем и из query.
  */
 function actorFrom(req: any, url?: URL | null): Actor | null {
-  const token =
-    req.headers['x-staff-token'] ?? req.headers['x-manager-token'] ?? (url ? url.searchParams.get('token') : null)
+  // Токен в адресе — только для чтения потоков: он оседает в истории и логах,
+  // и раньше им же можно было менять меню, настройки и персонал (смена №6, Б6)
+  const fromQuery = url && req.method === 'GET' && url.pathname.endsWith('/stream') ? url.searchParams.get('token') : null
+  const token = req.headers['x-staff-token'] ?? req.headers['x-manager-token'] ?? fromQuery
   if (!token) return null
   if (tokenMatches(token)) return { id: 'token', name: 'Менеджер (токен)', role: 'manager', tables: [], sessionId: null }
   return sessionStaff(token)
@@ -163,6 +166,8 @@ const MAX_STAFF_STREAMS = 20
 const MAX_IDEM = 2000
 const IDEM_TTL = 10 * 60 * 1000
 const MAX_CALLS = 5
+/** Больше четырёх стульев к столу не приставить — это уже другой стол. */
+const MAX_EXTRA_SEATS = 4
 const MAX_LINES = 200
 
 const sweeper = setInterval(() => {
@@ -197,6 +202,7 @@ function openSessionInPlace(t: TableSession) {
   // Принятые вызовы прошлой посадки новым гостям не показываем
   t.callAcks = []
   t.ratings = []
+  t.extraSeats = 0
   t.seq = 1
   t.overpaid = 0
   if (t.db) t.db.sessionUuid = null // в БД это будет новая строка сессии
@@ -281,6 +287,8 @@ function snapshot(t: TableSession, id: string) {
       personaId: c.personaId,
       reason: c.reason,
       note: c.note ?? null,
+      repeats: c.repeats ?? 1,
+      lastAt: c.lastAt ?? c.at,
       name: nameOf(c.personaId)
     })),
     call: t.calls[0] ? { ...t.calls[0], name: nameOf(t.calls[0].personaId) } : null,
@@ -293,7 +301,7 @@ function snapshot(t: TableSession, id: string) {
     cashIntent: t.cashIntent
       ? { ...t.cashIntent, amount: round2(amountFor(money, t.cashIntent.personaId, t.cashIntent.scope as PayScope)) }
       : null,
-    seats: seatsOf(id),
+    seats: seatsOf(id) + (t.extraSeats ?? 0),
     totals: {
       tableTotal: round2(money.tableTotal),
       paidTotal: round2(money.paidTotal),
@@ -377,11 +385,25 @@ function guestOf(t: TableSession, token: unknown): Persona | null {
   return t.personas.find(p => p.secretHash === hash) ?? null
 }
 
+/**
+ * Права персонала на поток перепроверяются на каждой рассылке: раньше токен
+ * смотрели только при подключении, и вышедший или уволенный продолжал получать
+ * зал, кухню и счета гостей, пока не закроет вкладку (смена №6, Б3).
+ */
+function stillEntitled(res: any): boolean {
+  return typeof res.epRecheck !== 'function' || res.epRecheck()
+}
+
 function pushTo(subscribers: Set<any>, payload: unknown) {
   if (subscribers.size === 0) return
   const data = `data: ${JSON.stringify(payload)}\n\n`
   for (const res of subscribers) {
     try {
+      if (!stillEntitled(res)) {
+        subscribers.delete(res)
+        res.end()
+        continue
+      }
       res.write(data)
     } catch {
       subscribers.delete(res)
@@ -427,6 +449,12 @@ async function broadcast(store: Store, id: string) {
     for (const res of subs) {
       try {
         const r = res as any
+        // Сотрудник вышел или уволен — поток закрываем, а не показываем пустой стол
+        if (r.epStaff && !stillEntitled(r)) {
+          subs.delete(res)
+          res.end()
+          continue
+        }
         const stillFull = r.epFullView && (r.epStaff || !!guestOf(session, r.epGuestToken))
         // Был своим, перестал (убрали, стол пересел): говорим прямо, чтобы
         // клиент забыл личность, а не принял это за запоздавший кадр
@@ -514,7 +542,7 @@ const NAME_MAX = 30
 const ANIMALS = new Set(['fox', 'bear', 'panda', 'raccoon', 'owl', 'cat'])
 const TABLE_RE = /^[A-Za-z0-9_-]{1,24}$/
 const STAFF_ACTIONS = new Set([
-  'serve', 'ready', 'start', 'close', 'reset', 'ack', 'dismiss', 'clean', 'cash', 'refund', 'removeGuest', 'addLine'
+  'serve', 'ready', 'start', 'close', 'reset', 'ack', 'dismiss', 'clean', 'cash', 'refund', 'removeGuest', 'addSeat', 'addLine'
 ])
 const GUEST_ACTIONS = new Set([
   'lines', 'remove', 'send', 'pay', 'tip', 'call', 'cancelMine', 'cashIntent', 'cancelCash', 'leave', 'allergies', 'rate'
@@ -548,8 +576,9 @@ const NOTE_MAX = 200
 
 /** Заметка гостя: живой текст, но без разметки и управляющих символов. */
 function sanitizeNote(note: unknown): string | null {
-  if (note === undefined || note === null) return null
-  const clean = String(note)
+  // Только строка: объект превращался в «[object Object]» у гостя и в журнале
+  if (typeof note !== 'string') return null
+  const clean = note
     .replace(TAGS, ' ')
     .replace(/[<>]/g, '')
     // eslint-disable-next-line no-control-regex
@@ -602,7 +631,9 @@ export function mutate(
   // Гостю и персоналу нужны разные слова: сотрудник просто перезагрузит экран,
   // а гость с полной тарелкой должен понять, что стол закрыли и надо позвать человека.
   if (body.sessionId && t.sessionId && body.sessionId !== t.sessionId) {
-    return fail(409, actor ? 'stale session' : 'session ended', { sessionId: t.sessionId })
+    // Номер новой посадки — только персоналу: заглушка стола его прячет, и 409
+    // не должен выдавать его постороннему (смена №6, Б17)
+    return fail(409, actor ? 'stale session' : 'session ended', actor ? { sessionId: t.sessionId } : {})
   }
 
   if (STAFF_ACTIONS.has(action)) return staffAction(t, tableId, action, body, actor)
@@ -621,7 +652,7 @@ export function mutate(
     // Гость с полной тарелкой видел приложение, которое утверждает, что его тут нет.
     const stale = body.sessionId && t.sessionId && body.sessionId !== t.sessionId
     if (stale || t.status !== 'open') {
-      return fail(409, 'session ended', { sessionId: t.sessionId })
+      return fail(409, 'session ended')
     }
     return fail(403, 'unknown guest')
   }
@@ -632,7 +663,11 @@ export function mutate(
   const TIP_AFTER_CLOSE_MS = 30 * 60_000
   const justClosed = t.status === 'closed' && t.closedAt && Date.now() - t.closedAt < TIP_AFTER_CLOSE_MS
   // Чаевые и оценку оставляют и после закрытия стола — гость ещё на экране «Спасибо»
-  if (t.status !== 'open' && !((action === 'tip' || action === 'rate') && justClosed)) return fail(409, 'table closed')
+  // Повтор уже прошедшей оплаты (обрыв связи, а официант тем временем закрыл стол)
+  // получает свой чек, а не «стол закрыт» — иначе гость думает, что деньги пропали
+  const replayOfPaid =
+    action === 'pay' && !!asId(body.idemKey) && t.payments.some(p => p.idemKey === `${persona.id}:${asId(body.idemKey)}`)
+  if (t.status !== 'open' && !((action === 'tip' || action === 'rate' || replayOfPaid) && justClosed)) return fail(409, 'table closed')
 
   return guestAction(t, tableId, action, body, persona)
 }
@@ -645,7 +680,7 @@ function joinGuest(t: TableSession, tableId: string, body: any): MutationResult 
   if (body.animal !== undefined && !ANIMALS.has(body.animal)) {
     return fail(400, 'unknown animal', { allowed: [...ANIMALS] })
   }
-  const seats = seatsOf(tableId)
+  const seats = seatsOf(tableId) + (t.status === 'open' ? (t.extraSeats ?? 0) : 0)
   const seated = t.status === 'open' ? t.personas.length : 0
   if (seated >= seats) return fail(400, 'table full', { seats })
 
@@ -691,6 +726,28 @@ function joinGuest(t: TableSession, tableId: string, body: any): MutationResult 
  * доля в общих блюдах переходит к остальным: он их не ел. Раньше такой
  * «призрак» навсегда входил в делёж и в число гостей смены.
  */
+/** Кто-то заплатил «поровну» — дальше только поровну или весь стол (правило 6), и наличными тоже. */
+function equalLocked(t: TableSession): boolean {
+  return t.payments.some(p => p.scope === 'equal')
+}
+
+/**
+ * Оплатили — вызов «счёт» снимается. Но в склеенном вызове под «счётом» мог
+ * лежать текст «аллергия, подойдите»: такой вызов остаётся просьбой о помощи.
+ */
+function settleBillCalls(calls: Call[], paidBy: (c: Call) => boolean): Call[] {
+  return calls.flatMap(c => (c.reason === 'bill' && paidBy(c) ? (c.note ? [{ ...c, reason: 'help' }] : []) : [c]))
+}
+
+/** Ключ согласия с аллергеном: кто именно согласился и на что. */
+const okKey = (personaId: string, allergen: string) => `${personaId}:${allergen}`
+
+/** Число из тела запроса — только число: `true` и `[10]` раньше молча становились 1 и 10. */
+function numberOf(value: unknown, fallback: number): number {
+  if (value === undefined) return fallback
+  return typeof value === 'number' ? value : Number.NaN
+}
+
 function removePersona(t: TableSession, persona: Persona): string | null {
   const ownSent = t.lines.some(l => l.personaId === persona.id && l.sent && !l.cancelled)
   if (ownSent) return 'guest has orders'
@@ -714,7 +771,10 @@ function guestAction(t: TableSession, tableId: string, action: string, body: any
     const rating = body.rating
     if (rating !== 'good' && rating !== 'ok' && rating !== 'bad') return fail(400, 'bad rating', { allowed: ['good', 'ok', 'bad'] })
     const note = sanitizeNote(body.note)
+    const prev = (t.ratings ?? []).find(r => r.personaId === persona.id)
     t.ratings = [...(t.ratings ?? []).filter(r => r.personaId !== persona.id), { personaId: persona.id, rating, note, at: Date.now() }]
+    // Повтор той же оценки журнал не засоряет: ломатель писал десятки одинаковых строк
+    if (prev && prev.rating === rating && prev.note === note) return ok({ ok: true })
     audit(null, 'оценил визит', tableId, `${persona.name}: ${{ good: 'всё отлично', ok: 'нормально', bad: 'есть замечание' }[rating]}${note ? ` — ${note}` : ''}`, null, persona)
     return ok({ ok: true })
   }
@@ -741,7 +801,7 @@ function guestAction(t: TableSession, tableId: string, action: string, body: any
     if (!dish) return fail(400, 'unknown dish')
     if (isStopped(dish.id)) return fail(400, 'dish in stop list', { dish: dish.name })
 
-    const qty = Number(body.qty ?? 1)
+    const qty = numberOf(body.qty, 1)
     if (!Number.isInteger(qty) || qty < 1 || qty > MAX_QTY) return fail(400, 'bad qty', { min: 1, max: MAX_QTY })
 
     const checked = checkOptions(dish, body.options)
@@ -756,9 +816,11 @@ function guestAction(t: TableSession, tableId: string, action: string, body: any
     // Общее блюдо касается всех за столом: брускетта «на всех» при соседе с
     // лактозой — это его тарелка тоже, а раньше проверялся только заказавший
     const dishAllergens = allergensOf(dish.id, checked.options ?? {})
-    const concerned = body.shared ? t.personas : [persona]
+    // Строгое true: строка "false" раньше делала блюдо общим (смена №6, Б16)
+    const shared = body.shared === true
+    const concerned = shared ? t.personas : [persona]
     const people = concerned
-      .map(p => ({ name: p.name, self: p.id === persona.id, allergens: dishAllergens.filter(a => (p.allergies ?? []).includes(a)) }))
+      .map(p => ({ id: p.id, name: p.name, self: p.id === persona.id, allergens: dishAllergens.filter(a => (p.allergies ?? []).includes(a)) }))
       .filter(p => p.allergens.length > 0)
     const hits = [...new Set(people.flatMap(p => p.allergens))]
     if (hits.length > 0 && body.confirmAllergen !== true) {
@@ -773,7 +835,8 @@ function guestAction(t: TableSession, tableId: string, action: string, body: any
       price: priceWithOptions(dish.id, checked.options ?? {}),
       options: checked.options ?? {},
       comment,
-      shared: !!body.shared,
+      allergenOk: people.flatMap(p => p.allergens.map(a => okKey(p.id, a))),
+      shared,
       sharedWith: [] as string[],
       personaId: persona.id,
       sent: false,
@@ -803,10 +866,54 @@ function guestAction(t: TableSession, tableId: string, action: string, body: any
     const scope = body.scope === 'all' ? 'all' : 'mine'
     const now = Date.now()
     const sharers = t.personas.map(p => p.id)
+    const drafts = t.lines.filter(l => !l.sent && !l.cancelled && (scope === 'all' || l.personaId === persona.id))
+    // Корзина могла пролежать: блюдо сняли в стоп или гость указал аллергию уже
+    // после того, как положил его. Проверка при заказе тут не спасает — смена №6
+    const stopped = drafts.filter(l => isStopped(l.dishId))
+    const stoppedMine = stopped.filter(l => l.personaId === persona.id)
+    if (stoppedMine.length) return fail(409, 'dish in stop list', { dishes: [...new Set(stoppedMine.map(l => dishName(l.dishId)))] })
+    const risky = drafts.flatMap(l => {
+      const eaters = l.shared ? t.personas : t.personas.filter(p => p.id === l.personaId)
+      const dishAllergens = allergensOf(l.dishId, l.options ?? {})
+      const people = eaters
+        .map(p => ({
+          id: p.id,
+          name: p.name,
+          allergens: dishAllergens.filter(a => (p.allergies ?? []).includes(a) && !(l.allergenOk ?? []).includes(okKey(p.id, a)))
+        }))
+        .filter(p => p.allergens.length > 0)
+      return people.length ? [{ uid: l.uid, dish: dishName(l.dishId), people }] : []
+    })
+    // Согласиться с аллергеном может только тот, у кого он: черновик с аллергеном
+    // соседа остаётся в корзине, а не уходит по согласию отправившего
+    const foreign = risky.filter(r => r.people.some(p => p.id !== persona.id))
+    const mine = risky.filter(r => !foreign.includes(r))
+    // Согласие — на показанные строки: блюдо, добавленное соседом, пока открыт
+    // диалог, этим согласием не покрывается
+    const confirmed = new Set<number>(
+      Array.isArray(body.confirmUids)
+        ? body.confirmUids.filter((x: unknown) => typeof x === 'number')
+        : body.confirmAllergen === true
+          ? mine.map(r => r.uid)
+          : []
+    )
+    const unconfirmed = mine.filter(r => !confirmed.has(r.uid))
+    if (unconfirmed.length) {
+      return fail(409, 'allergen warning', {
+        allergens: [...new Set(unconfirmed.flatMap(r => r.people.flatMap(p => p.allergens)))],
+        lines: unconfirmed
+      })
+    }
+    const held = new Set([...stopped.map(l => l.uid), ...foreign.map(r => r.uid)])
+    const outgoing = drafts.filter(l => !held.has(l.uid))
+    const heldBack = [
+      ...stopped.map(l => ({ dish: dishName(l.dishId), reason: 'stop' as const, people: [] as string[] })),
+      ...foreign.map(r => ({ dish: r.dish, reason: 'allergy' as const, people: r.people.map(p => p.name) }))
+    ]
     let sent = 0
-    for (const line of t.lines) {
-      if (line.sent || line.cancelled) continue
-      if (scope === 'mine' && line.personaId !== persona.id) continue
+    for (const line of outgoing) {
+      const agreed = mine.find(r => r.uid === line.uid)
+      if (agreed) line.allergenOk = [...new Set([...(line.allergenOk ?? []), ...agreed.people.flatMap(p => p.allergens.map(a => okKey(p.id, a)))])]
       line.sent = true
       line.sentAt = now
       // Доля общего блюда фиксируется здесь: делят те, кто за столом в момент заказа
@@ -815,9 +922,10 @@ function guestAction(t: TableSession, tableId: string, action: string, body: any
     }
     // Гость с плохой связью жмёт кнопку дважды: заказ уже на кухне, и сказать
     // об этом надо спокойно, а не красной ошибкой на успешном действии
-    if (sent === 0) return ok({ ok: true, sent: 0, alreadySent: true })
+    if (sent === 0) return ok({ ok: true, sent: 0, alreadySent: heldBack.length === 0, heldBack })
     audit(null, 'отправил на кухню', tableId, `${persona.name}: ${sent} поз.`, null, persona)
-    return ok({ ok: true, sent })
+    // Отложенное — не ошибка: чужой черновик с аллергеном соседа или снятое в стоп ждёт хозяина
+    return ok({ ok: true, sent, heldBack })
   }
 
   if (action === 'pay') {
@@ -865,6 +973,9 @@ function guestAction(t: TableSession, tableId: string, action: string, body: any
         }
       })
     }
+    // Кто-то уже заплатил «поровну» — дальше только поровну или весь стол. Раньше это
+    // держал лишь экран: «своё» после чужого «поровну» оставляло хвосты (смена №6, столы 2 и 4)
+    if (scope === 'own' && equalLocked(t)) return fail(409, 'equal split in progress', { allowed: ['equal', 'full'] })
     // С телефона платят только безналом: наличные принимает официант и подтверждает сам.
     // Способ берём тот, который гость выбрал на экране: раньше любой выбор
     // записывался как СБП, и список оплат врал официанту в лицо.
@@ -876,6 +987,9 @@ function guestAction(t: TableSession, tableId: string, action: string, body: any
     const money = computeTotals(t, priceOf)
     const amount = round2(amountFor(money, persona.id, scope))
     if (amount <= 0) return fail(400, 'nothing to pay')
+    // Внесённое гостем ДО этого платежа: paidOf читает живой список платежей,
+    // и после push первый же чек писал «ранее внесено» суммой текущей оплаты
+    const mineBefore = round2(money.paidOf(persona.id))
     // Состав чека фиксируем в момент оплаты: за что именно списаны деньги
     const payment = {
       id: crypto.randomUUID(),
@@ -895,12 +1009,12 @@ function guestAction(t: TableSession, tableId: string, action: string, body: any
     const left = round2(paidNow.remaining)
     // Гость расплатился за себя — его «счёт» снимаем сразу, не дожидаясь всего стола
     if (paidNow.remainingOf(persona.id) <= 0.01) {
-      t.calls = t.calls.filter(c => !(c.reason === 'bill' && c.personaId === persona.id))
+      t.calls = settleBillCalls(t.calls, c => c.personaId === persona.id)
     }
     // Причина вызова исчезла — снимаем его сам, иначе официант идёт с папкой
     // к гостю, который уже расплатился, а красный чип приучает игнорировать зал
     if (left <= 0.01) {
-      t.calls = t.calls.filter(c => c.reason !== 'bill')
+      t.calls = settleBillCalls(t.calls, () => true)
       // И просьба о наличных тоже: гость передумал и заплатил телефоном,
       // а официант всё ещё шёл к нему за купюрами, и стол горел красным
       t.cashIntent = null
@@ -925,16 +1039,18 @@ function guestAction(t: TableSession, tableId: string, action: string, body: any
         // Показываем, почему, — иначе чек выглядит как ошибка кассы
         tableTotal: round2(money.tableTotal),
         paidBefore: round2(money.paidTotal),
-        paidBeforeMine: round2(money.paidOf(persona.id)),
-        note: receiptNote(money, persona, scope, amount)
+        paidBeforeMine: mineBefore,
+        note: receiptNote(money, scope, mineBefore)
       }
     })
   }
 
   if (action === 'tip') {
     if (!currentSettings().pay.tips) return fail(409, 'tips disabled')
-    const raw = Number(body.amount)
-    if (!Number.isFinite(raw) || raw <= 0) return fail(400, 'bad amount')
+    // Проверяем уже округлённое: 0,004 ₽ проходило «> 0», округлялось в ноль
+    // и роняло запись в базе (500) — смена №6
+    const raw = typeof body.amount === 'number' ? body.amount : Number.NaN
+    if (!Number.isFinite(raw) || round2(raw) < 1) return fail(400, 'bad amount', { min: 1 })
     const money = computeTotals(t, priceOf)
     // Потолок привязан к счёту и считается по СУММЕ чаевых стола: иначе обходится циклом
     const cap = Math.max(5000, round2(money.tableTotal))
@@ -998,6 +1114,7 @@ function guestAction(t: TableSession, tableId: string, action: string, body: any
     if (!PAY_SCOPES.includes(wanted as PayScope)) return fail(400, 'unknown pay scope', { allowed: PAY_SCOPES })
     if (!currentSettings().pay.cash) return fail(409, 'method disabled')
     if (!currentSettings().pay.split && wanted !== 'full' && t.personas.length > 1) return fail(409, 'split disabled')
+    if (wanted === 'own' && equalLocked(t)) return fail(409, 'equal split in progress', { allowed: ['equal', 'full'] })
 
     const money = computeTotals(t, priceOf)
     const amount = round2(amountFor(money, persona.id, wanted as PayScope))
@@ -1034,14 +1151,23 @@ function guestAction(t: TableSession, tableId: string, action: string, body: any
   // Текст вызова — единственный способ гостя сказать «у меня аллергия». Раньше он
   // приходил в reason, не проходил вайтлист и исчезал с ответом ok
   const note = sanitizeNote(body.note ?? body.message)
-  if (t.calls.length >= MAX_CALLS) return fail(400, 'too many calls')
 
-  const existing = t.calls.find(c => c.personaId === persona.id && c.reason === reason)
+  // У гостя один открытый вызов: повтор копится в нём счётчиком и свежим текстом.
+  // Раньше каждая новая причина — новая строка, и пять нажатий забивали очередь стола
+  const existing = t.calls.find(c => c.personaId === persona.id)
   if (existing) {
-    // Повтор — не ошибка и не тишина: гость должен видеть, что его услышали
-    if (note && !existing.note) existing.note = note
-    return ok({ ok: true, callId: existing.id, at: existing.at, repeated: true })
+    const merged = {
+      ...existing,
+      // «Счёт» важнее «помогите»: официант должен идти с папкой
+      reason: reason === 'bill' ? 'bill' : existing.reason,
+      note: note ?? existing.note ?? null,
+      repeats: (existing.repeats ?? 1) + 1,
+      lastAt: Date.now()
+    }
+    t.calls = t.calls.map(c => (c === existing ? merged : c))
+    return ok({ ok: true, callId: existing.id, at: existing.at, repeated: true, repeats: merged.repeats })
   }
+  if (t.calls.length >= MAX_CALLS) return fail(400, 'too many calls')
 
   const call = { id: crypto.randomUUID(), at: Date.now(), personaId: persona.id, reason, note }
   t.calls.push(call)
@@ -1068,7 +1194,7 @@ function staffAction(t: TableSession, tableId: string, action: string, body: any
     const dish = getDish(asId(body.dishId))
     if (!dish) return fail(400, 'unknown dish')
     if (isStopped(dish.id)) return fail(400, 'dish in stop list', { dish: dish.name })
-    const qty = Number(body.qty ?? 1)
+    const qty = numberOf(body.qty, 1)
     if (!Number.isInteger(qty) || qty < 1 || qty > MAX_QTY) return fail(400, 'bad qty', { min: 1, max: MAX_QTY })
     const checked = checkOptions(dish, body.options)
     if (checked.error) return fail(400, checked.error)
@@ -1121,6 +1247,15 @@ function staffAction(t: TableSession, tableId: string, action: string, body: any
     t.lines.push(line)
     audit(actor, 'добавил на стол', tableId, `${shared ? 'на стол' : persona.name}: ${dish.name}${qty > 1 ? ` ×${qty}` : ''}`, round2(line.price * qty))
     return ok({ ok: true, uid: line.uid, line: publicLine(line) })
+  }
+
+  if (action === 'addSeat') {
+    if (t.status !== 'open') return fail(409, 'table closed')
+    const extra = t.extraSeats ?? 0
+    if (extra >= MAX_EXTRA_SEATS) return fail(409, 'too many seats', { max: MAX_EXTRA_SEATS })
+    t.extraSeats = extra + 1
+    audit(actor, 'приставил стул', tableId, `мест: ${seatsOf(tableId) + t.extraSeats}`)
+    return ok({ ok: true, seats: seatsOf(tableId) + t.extraSeats })
   }
 
   if (action === 'removeGuest') {
@@ -1183,8 +1318,8 @@ function staffAction(t: TableSession, tableId: string, action: string, body: any
     const overpaid = round2(t.overpaid ?? 0)
     if (overpaid <= 0.01) return fail(409, 'nothing to refund')
 
-    const wanted = body.amount === undefined ? overpaid : Number(body.amount)
-    if (!Number.isFinite(wanted) || wanted <= 0) return fail(400, 'bad amount')
+    const wanted = numberOf(body.amount, overpaid)
+    if (!Number.isFinite(wanted) || round2(wanted) <= 0) return fail(400, 'bad amount')
     const amount = round2(Math.min(wanted, overpaid))
 
     /**
@@ -1234,10 +1369,11 @@ function staffAction(t: TableSession, tableId: string, action: string, body: any
       (body.scope as PayScope) ??
       (persona ? 'own' : 'full')
     if (!PAY_SCOPES.includes(scope)) return fail(400, 'unknown pay scope', { allowed: PAY_SCOPES })
+    if (scope === 'own' && equalLocked(t)) return fail(409, 'equal split in progress', { allowed: ['equal', 'full'] })
 
     // Сумму считает сервер и клампит остатком: сдача — не повод списать лишнее
-    const wanted = body.amount === undefined ? amountFor(money, persona?.id ?? null, scope) : Number(body.amount)
-    if (!Number.isFinite(wanted) || wanted <= 0) return fail(400, 'bad amount')
+    const wanted = numberOf(body.amount, amountFor(money, persona?.id ?? null, scope))
+    if (!Number.isFinite(wanted) || round2(wanted) <= 0) return fail(400, 'bad amount')
     const amount = round2(Math.min(wanted, money.remaining))
     if (amount <= 0) return fail(400, 'nothing to pay')
 
@@ -1261,9 +1397,7 @@ function staffAction(t: TableSession, tableId: string, action: string, body: any
     const left = round2(after.remaining)
     // Вызов «счёт» снимается у того, кто расплатился, а не только когда оплачен
     // весь стол: Ника заплатила наличными, а её красный вызов висел до конца
-    t.calls = t.calls.filter(
-      c => c.reason !== 'bill' || (left > 0.01 && !(persona && c.personaId === persona.id && after.remainingOf(persona.id) <= 0.01))
-    )
+    t.calls = settleBillCalls(t.calls, c => !(left > 0.01 && !(persona && c.personaId === persona.id && after.remainingOf(persona.id) <= 0.01)))
     return ok({ ok: true, amount, remaining: left })
   }
 
@@ -1291,8 +1425,13 @@ function staffAction(t: TableSession, tableId: string, action: string, body: any
   }
 
   if (action === 'ack') {
-    if (t.calls.length === 0) return fail(400, 'no call')
+    // Кривой callId раньше значил «первый в очереди» — и снимал чужой вызов
+    if (body.callId !== undefined && !asId(body.callId)) return fail(400, 'bad callId')
     const callId = asId(body.callId)
+    // Коллега уже принял — говорим кто, а не безликое «нет вызова»
+    const taken = callId ? (t.callAcks ?? []).find(a => a.id === callId) : undefined
+    if (taken) return fail(409, 'already acked', { by: taken.byName })
+    if (t.calls.length === 0) return fail(400, 'no call')
     const call = callId ? t.calls.find(c => c.id === callId) : t.calls[0]
     if (!call) return fail(404, 'call not found')
     t.calls = t.calls.filter(c => c !== call)
@@ -1424,7 +1563,9 @@ async function staffFeed(
 
   res.writeHead(200, {
     'Content-Type': 'text/event-stream',
-    'Cache-Control': 'no-store',
+    // no-transform и X-Accel-Buffering: прокси не должен сжимать и копить поток (смена №6, Б15)
+    'Cache-Control': 'no-store, no-transform',
+    'X-Accel-Buffering': 'no',
     Connection: 'keep-alive'
   })
   res.write(`data: ${JSON.stringify(await payloadFn())}\n\n`)
@@ -1432,9 +1573,15 @@ async function staffFeed(
     res.end()
     return
   }
+  ;(res as any).epRecheck = () => allowed(actorFrom(req, url), permission)
   subscribers.add(res)
   const ping = setInterval(() => {
     try {
+      if (!stillEntitled(res)) {
+        subscribers.delete(res)
+        res.end()
+        return
+      }
       res.write(': ping\n\n')
     } catch {
       /* closed */
@@ -1447,12 +1594,42 @@ async function staffFeed(
 }
 
 // --- Роутер API ---
+// Гость: 60 действий в минуту на человека (или на адрес, пока он не сел).
+// Адрес целиком: 600 — за одним роутером сидит весь зал
+const guestLimiter = createRateLimiter(60, 60_000)
+const addressLimiter = createRateLimiter(600, 60_000)
+
+/**
+ * Адрес гостя, а не прокси. За Caddy все запросы приходят с 127.0.0.1, и лимит
+ * подбора PIN по адресу был общим на весь интернет (смена №6, Б2). Caddy
+ * перезаписывает X-Forwarded-For адресом клиента — доверяем ему, только если
+ * запрос пришёл с этой же машины.
+ */
+function clientIp(req: any): string {
+  const socket = String(req.socket.remoteAddress ?? 'unknown')
+  const local = socket === '127.0.0.1' || socket === '::1' || socket === '::ffff:127.0.0.1'
+  // Последний адрес в цепочке — тот, что дописал сам Caddy: первый клиент может подставить сам
+  const forwarded = String(req.headers['x-forwarded-for'] ?? '').split(',').pop()!.trim()
+  return local && forwarded ? forwarded : socket
+}
+
+/**
+ * Запрос пришёл из сети, а не с этой машины: снаружи всё идёт либо через прокси
+ * (Caddy ставит X-Forwarded-For), либо напрямую с чужого адреса. Локальные
+ * вызовы — тесты, разработка — лимитами не режем.
+ */
+function fromOutside(req: any): boolean {
+  const socket = String(req.socket.remoteAddress ?? '')
+  const local = socket === '127.0.0.1' || socket === '::1' || socket === '::ffff:127.0.0.1'
+  return !local || !!req.headers['x-forwarded-for']
+}
+
 async function handleApi(req: any, res: any, url: URL) {
   const store = await getStore()
 
   if (url.pathname === '/api/staff/login') {
     if (req.method !== 'POST') return json(res, 405, { error: 'method' })
-    const ip = req.socket.remoteAddress ?? 'unknown'
+    const ip = clientIp(req)
     // Устройство важнее адреса: в ресторане вся смена за одним роутером,
     // и промахи одного планшета не должны запирать вход остальным
     const device = asId(req.headers['x-device-id'])
@@ -1635,7 +1812,8 @@ async function handleApi(req: any, res: any, url: URL) {
 
     res.writeHead(200, {
       'Content-Type': 'text/event-stream',
-      'Cache-Control': 'no-store',
+      'Cache-Control': 'no-store, no-transform',
+      'X-Accel-Buffering': 'no',
       Connection: 'keep-alive'
     })
     const view = (session: TableSession) => (full ? snapshot(session, tableId) : publicStub(session, tableId))
@@ -1648,6 +1826,7 @@ async function handleApi(req: any, res: any, url: URL) {
     // (removeGuest, «я здесь по ошибке») иначе продолжал получать чужие имена,
     // блюда, платежи и аллергии до конца подписки
     ;(res as any).epStaff = staffFull
+    if (staffFull) (res as any).epRecheck = () => allowed(actorFrom(req, url), 'table')
     ;(res as any).epGuestToken = staffFull ? null : token ?? null
     if (subs.size >= MAX_STREAMS_PER_TABLE) {
       res.end()
@@ -1669,6 +1848,18 @@ async function handleApi(req: any, res: any, url: URL) {
   }
 
   if (req.method !== 'POST') return json(res, 405, { error: 'method' })
+  // Гость — не скрипт: минута его работы укладывается в десяток действий.
+  // Персонал не ограничиваем — официант на запаре не должен упираться в 429
+  if (!actorFrom(req) && fromOutside(req)) {
+    const guestKey = asId(req.headers['x-guest-token'])
+    const ip = clientIp(req)
+    // Сначала личный лимит, адресный — только если личный пропустил: иначе один
+    // буйный гость на Wi-Fi ресторана выжигал общий бюджет всего зала. Оплату
+    // адресным лимитом не режем вовсе — деньги важнее защиты от шума
+    const own = guestLimiter.hit(guestKey ? `g:${guestKey}` : `ip:${ip}`)
+    const wait = own > 0 ? own : action === 'pay' ? 0 : addressLimiter.hit(ip)
+    if (wait > 0) return json(res, 429, { error: 'too many requests', retryAfterSec: wait })
+  }
   const body = await readBody(req).catch(() => null)
   if (body === null) return json(res, 400, { error: 'bad json' })
 
@@ -1716,7 +1907,22 @@ async function handleApi(req: any, res: any, url: URL) {
 
   const actor = actorFrom(req)
   const work = (async () => {
-    const result = await store.withTable(tableId, session => mutate(session, tableId, action, body, actor, req))
+    // Записи журнала этой мутации ловим отдельно: мутация синхронна, так что всё,
+    // что попало в журнал за её время, — её. Упала транзакция — записи выбрасываем,
+    // а раньше они оставались в общей очереди и уезжали в журнал со следующим
+    // чужим запросом: «чаевые 0 ₽», которых не было (смена №6, О3)
+    let own: AuditEntry[] = []
+    const result = await store.withTable(tableId, session => {
+      const before = pendingAudit
+      pendingAudit = []
+      try {
+        return mutate(session, tableId, action, body, actor, req)
+      } finally {
+        own = pendingAudit
+        pendingAudit = before
+      }
+    })
+    for (const entry of own) await store.audit(entry)
     await flushAudit(store)
     if (cacheKey && cacheable && result.status === 200) idemRemember(cacheKey, result.status, result.body)
     return result

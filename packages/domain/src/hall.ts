@@ -263,7 +263,7 @@ export function summarizeHall(cards: HallCard[], shift: HallShift | null, now: n
   const closedTables = shift?.tables ?? 0
   // Средний чек — по столам, где были деньги, иначе пустые закрытия занижают его
   const withRevenue = shift?.tablesWithRevenue ?? 0
-  const avgCheck = withRevenue > 0 ? closedRevenue / withRevenue : null
+  const avgCheck = withRevenue > 0 ? round2(closedRevenue / withRevenue) : null
   const seatsTotal = cards.reduce((s, c) => s + (c.seats ?? 0), 0)
 
   return {

@@ -22,6 +22,24 @@ export interface AllergenDish {
   options?: AllergenDishOption[]
 }
 
+/**
+ * Аллергены, которые гости путают. Отметившая «орехи» считала себя защищённой
+ * от арахиса в пад тае, а это бобовое и отдельная позиция перечня (смена №6, А2).
+ */
+const LOOKALIKES: Record<string, { other: string; why: string }> = {
+  орехи: { other: 'арахис', why: 'арахис — бобовое, не орех, отмечается отдельно' },
+  рыба: { other: 'морепродукты', why: 'креветки и мидии — не рыба, отмечаются отдельно' },
+  морепродукты: { other: 'рыба', why: 'рыба отмечается отдельно от морепродуктов' }
+}
+
+/** Подсказки к выбору: «вы отметили орехи — а арахис?». */
+export function allergenHints(picked: string[]): string[] {
+  return picked.flatMap(a => {
+    const l = LOOKALIKES[a]
+    return l && !picked.includes(l.other) ? [`Отметили «${a}»: ${l.why}.`] : []
+  })
+}
+
 /** Перечень по ТР ТС 022/2011 в объёме, который встречается в нашем меню. */
 export const ALLERGENS: string[] = [
   'глютен',

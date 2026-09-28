@@ -37,7 +37,7 @@ export function hallCard(id: string, table: TableSession) {
     id,
     zoneId: meta?.zoneId ?? 'other',
     zoneName: meta?.zoneName ?? 'Вне плана',
-    seats: meta?.seats ?? 0,
+    seats: (meta?.seats ?? 0) + (table.status === 'open' ? (table.extraSeats ?? 0) : 0),
     waiterId: waiter?.id ?? null,
     waiterName: waiter?.name ?? null,
     status: table.status,
@@ -161,12 +161,16 @@ export function kitchenPayload(tables: Map<string, TableSession>) {
         sharedNames: line.shared ? eaters.map(p => p.name) : null,
         // Тот же гость, то же блюдо, недавно — может быть и заказ, и двойное нажатие:
         // повар не отличит по тикету, официанту стоит уточнить
-        // Порядок — по позиции в счёте: двойное нажатие уходит одной отправкой с одним временем
+        // Порядок — по времени отправки, при равном времени — по позиции в счёте
+        // (двойное нажатие уходит одной отправкой). Только по позиции пометка
+        // доставалась тикету, который ушёл раньше и уже готовился (смена №6, К2)
         repeat:
           !line.shared &&
           table.lines.some(
             (o, i) =>
-              i < table.lines.indexOf(line) &&
+              o.sentAt != null &&
+              line.sentAt != null &&
+              (o.sentAt < line.sentAt || (o.sentAt === line.sentAt && i < table.lines.indexOf(line))) &&
               !o.shared &&
               !o.cancelled &&
               o.sent &&

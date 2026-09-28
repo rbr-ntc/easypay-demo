@@ -84,6 +84,7 @@ const methodOf = (m: string): PayMethodKey => (m === 'cash' ? 'cash' : m === 'ca
 export function buildShiftReport(checks: ReportCheck[], menu: string[] = []): ShiftReport {
   const closed = checks.filter(c => c.closedAt !== null)
   const open = checks.filter(c => c.closedAt === null)
+  const billed = closed.filter(c => c.total > 0 || c.payments.length > 0)
 
   const byMethod: Record<PayMethodKey, number> = { sbp: 0, card: 0, cash: 0 }
   const hours = new Map<number, number>()
@@ -138,12 +139,13 @@ export function buildShiftReport(checks: ReportCheck[], menu: string[] = []): Sh
     revenue,
     netRevenue: round2(revenue - refunds),
     byMethod,
-    checks: closed.length,
+    // Пустая посадка (сели и ушли, 0 ₽) — не чек: она занижала средний чек (смена №6, О4)
+    checks: billed.length,
     guests: checks.reduce((a, c) => a + c.guests, 0),
     // Средний чек — по той же базе, что и «Чеков»: закрытые столы, их счёт.
     // Раньше делилось на все столы с деньгами, включая открытые, и рядом
     // стояло «чеков 2, средний 4 077,5» при выручке 16 310
-    avgCheck: closed.length ? round2(closed.reduce((a, c) => a + c.total, 0) / closed.length) : 0,
+    avgCheck: billed.length ? round2(billed.reduce((a, c) => a + c.total, 0) / billed.length) : 0,
     tips: round2([...tipsMap.values()].reduce((a, x) => a + x, 0)),
     tipsByWaiter: [...tipsMap.entries()].map(([name, amount]) => ({ name, amount })).sort((a, b) => b.amount - a.amount),
     debt: round2(closed.reduce((a, c) => a + c.debt, 0)),

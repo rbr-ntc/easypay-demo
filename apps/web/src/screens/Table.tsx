@@ -9,6 +9,7 @@ import { fmtDur } from '../waiter/duration'
 import { lineStage } from '../lineStage'
 import { sharersOf, splitRounded } from '@easypay/domain/money'
 import { artSet, dishPhoto, dishThumb } from '../guest/showcase'
+import type { SendAllergy } from '../api'
 import { AvatarStack, Slideshow } from '../guest/parts'
 
 /**
@@ -34,6 +35,8 @@ export function Table() {
   const [sending, setSending] = useState(false)
   // Подтверждение «отправить и соседей»: их черновики — чужой выбор
   const [confirmAll, setConfirmAll] = useState(false)
+  // Корзина пролежала, а аллергию указали позже: спрашиваем до кухни, а не после
+  const [allergy, setAllergy] = useState<{ which: 'mine' | 'all'; lines: SendAllergy[] } | null>(null)
   // Секундный тик нужен только таймерам стадий на этом экране — раньше он
   // жил в корне гостя и перерисовывал всё меню каждую секунду
   const [now, setNow] = useState(Date.now())
@@ -94,15 +97,17 @@ export function Table() {
     if (sending) return
     // Отправить чужой черновик — решить за соседа, что он выбрал. Это
     // предупреждение жило в шторке отправки 3.0 и пропало вместе с ней
-    if (which === 'all' && othersDrafting.length > 0 && !confirmAll) {
+    if (which === 'all' && othersDrafting.length > 0 && !confirmAll && allergy === null) {
       setConfirmAll(true)
       return
     }
     setSending(true)
-    const ok = await sendWave(which)
+    const r = await sendWave(which, allergy?.lines.map(l => l.uid) ?? [])
     setSending(false)
     setConfirmAll(false)
-    if (ok) toast('Ушло на кухню')
+    if (r.allergy?.length) return setAllergy({ which, lines: r.allergy })
+    setAllergy(null)
+    if (r.ok && !r.held) toast('Ушло на кухню')
   }
 
   const guests = snap.personas.length
@@ -185,7 +190,8 @@ export function Table() {
                 }}
                 className="h-12 w-full px-3 text-left text-[15px] text-g-fg"
               >
-                Мои аллергии{me.allergies?.length ? ` · ${me.allergies.join(', ')}` : ''}
+                Мои аллергии
+                {me.allergies?.length ? ` · ${me.allergies.join(', ')}` : ''}
               </button>
               {/* Сел по ошибке — второй телефон, чужое имя: выйти, пока за тобой ничего нет */}
               {!snap.lines.some(l => l.personaId === me.id && l.sent && !l.cancelled) &&
@@ -281,7 +287,34 @@ export function Table() {
                 )
               })}
             </div>
-            {confirmAll ? (
+            {allergy ? (
+              <div role="alert" className="mt-3.5 rounded-[20px] p-3.5" style={{ border: '1px solid rgba(232,120,100,.55)' }}>
+                {allergy.lines.map(l => (
+                  <div key={l.uid} className="text-[15px] font-bold text-g-tan">
+                    {l.dish}: {l.people.map(p => `${p.name} — ${p.allergens.join(', ')}`).join('; ')}
+                  </div>
+                ))}
+                <div className="mt-1 text-[13px] text-g-mute">
+                  В корзине блюдо с аллергеном того, кто будет его есть. Уберите его — или отправьте, если это осознанно: кухня увидит предупреждение.
+                </div>
+                <div className="mt-3 flex gap-2">
+                  <button
+                    onClick={() => setAllergy(null)}
+                    disabled={sending}
+                    className="h-12 flex-1 rounded-full bg-g-sand text-[15px] text-g-fg disabled:opacity-50"
+                  >
+                    Не отправлять
+                  </button>
+                  <button
+                    onClick={() => void send(allergy.which)}
+                    disabled={sending}
+                    className="g-cta h-12 flex-1 rounded-full text-[15px] disabled:opacity-50"
+                  >
+                    Отправить, я знаю
+                  </button>
+                </div>
+              </div>
+            ) : confirmAll ? (
               <div className="mt-3.5 rounded-[20px] p-3.5" style={{ border: '1px solid rgba(232,201,168,.4)' }}>
                 <div className="text-[15px] font-bold text-g-tan">
                   {listNames(othersDrafting.map(p => p.name))} ещё {othersDrafting.length === 1 ? 'выбирает' : 'выбирают'}

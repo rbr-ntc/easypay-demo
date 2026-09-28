@@ -206,8 +206,9 @@ export function sweepSessions() {
 // включая управляющего. По IP оставлен грубый предохранитель с большим потолком —
 // он ловит настоящий перебор, а не заплетающиеся пальцы.
 const MAX_ATTEMPTS = 6
-const MAX_ATTEMPTS_PER_IP = 40
-const ATTEMPT_WINDOW = 5 * 60 * 1000
+// За одним роутером вся смена: адресный потолок — грубый предохранитель, основной — по устройству
+const MAX_ATTEMPTS_PER_IP = 100
+const ATTEMPT_WINDOW = 15 * 60 * 1000
 /** @type {Map<string, {count: number, until: number}>} */
 const attempts = new Map<string, { count: number; until: number }>()
 // Погашенные токены помним, чтобы сказать человеку, ПОЧЕМУ его выкинуло:
@@ -268,9 +269,9 @@ export function loginByPin(pin: unknown, ip: string, device: unknown = null) {
     noteFailure(ip, label)
     return null
   }
-  // Успешный вход снимает счётчик и с устройства, и с адреса
+  // Успешный вход снимает счётчик только с устройства. Адресный не трогаем:
+  // иначе известный PIN официанта через раз обнулял перебор PIN менеджера (смена №6, Б2)
   attempts.delete(deviceKey(ip, label))
-  attempts.delete(ipKey(ip))
   const session = createSession(found, label)
   return { staff: publicStaff(found), token: session.token, sessionId: session.sessionId, device: label }
 }

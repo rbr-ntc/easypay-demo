@@ -98,8 +98,8 @@ export function StaffLogin() {
           )}
         </div>
 
-        <div className="mt-4 text-center text-[12px] text-c-mute">Демо: официант 1111 · повар 4444 · менеджер 9999</div>
-        <div className="mt-1 text-center text-[12px] text-c-mute">Сессия живёт 12 часов</div>
+        {/* PIN-коды на экране входа раздавали менеджера любому прохожему (смена №6, Б1) */}
+        <div className="mt-4 text-center text-[12px] text-c-mute">Сессия живёт 12 часов</div>
       </div>
     </div>
   )

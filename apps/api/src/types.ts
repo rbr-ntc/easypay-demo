@@ -41,6 +41,8 @@ export interface Line {
   cancelAck?: boolean
   /** Живой текст гостя к блюду: «без орехов, аллергия». Доезжает до повара. */
   comment?: string | null
+  /** Аллергены, на которые гость осознанно согласился при заказе. */
+  allergenOk?: string[]
 }
 
 export type PayMethod = 'sbp' | 'card' | 'cash' | 'tpay' | 'sber' | 'mir'
@@ -90,6 +92,9 @@ export interface Call {
   reason: string
   /** Текст гостя к вызову: «аллергия на орехи». */
   note?: string | null
+  /** Сколько раз гость позвал, пока никто не подошёл: один вызов, а не стена строк. */
+  repeats?: number
+  lastAt?: number
 }
 
 export interface TableSession {
@@ -97,6 +102,8 @@ export interface TableSession {
   cleanedAt?: number | null
   /** Гость просит принять наличные — ждём подтверждения от официанта. */
   cashIntent?: { personaId: string; scope: string; amount: number; at: number } | null
+  /** Приставленные стулья сверх плана зала — живут до конца посадки. */
+  extraSeats?: number
   sessionId: string | null
   status: 'open' | 'closed'
   openedAt: number | null

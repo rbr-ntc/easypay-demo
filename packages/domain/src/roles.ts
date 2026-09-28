@@ -24,6 +24,8 @@ export type Permission =
   | 'stop'
   /** Убрать гостя, севшего по ошибке: без заказов, платежей и чаевых. */
   | 'removeGuest'
+  /** Приставить стул: гостей больше, чем мест по плану зала. */
+  | 'addSeat'
   /** Добавить блюдо на стол: гость попросил официанта, а не телефон. */
   | 'addLine'
   /** Кабинет: правка и публикация меню. */
@@ -62,10 +64,10 @@ export const ROLE_LABEL: Record<RoleName, string> = {
  *  log            — журнал действий смены
  */
 export const PERMISSIONS: Record<RoleName, Permission[]> = {
-  manager: ['hall', 'kitchen', 'table', 'start', 'ready', 'serve', 'dismiss', 'ack', 'close', 'clean', 'cash', 'refund', 'reset', 'log', 'stop', 'removeGuest', 'addLine', 'menu', 'staff', 'settings'],
+  manager: ['hall', 'kitchen', 'table', 'start', 'ready', 'serve', 'dismiss', 'ack', 'close', 'clean', 'cash', 'refund', 'reset', 'log', 'stop', 'removeGuest', 'addSeat', 'addLine', 'menu', 'staff', 'settings'],
   // Убрать стол — работа зала: пока это делал таймер, гостей сажали за грязный
   // Официант за стойкой — тот же бармен: «кончилось игристое» он узнаёт первым
-  waiter: ['hall', 'kitchen', 'table', 'start', 'ready', 'serve', 'dismiss', 'ack', 'close', 'clean', 'cash', 'stop', 'removeGuest', 'addLine'],
+  waiter: ['hall', 'kitchen', 'table', 'start', 'ready', 'serve', 'dismiss', 'ack', 'close', 'clean', 'cash', 'stop', 'removeGuest', 'addSeat', 'addLine'],
   // Повар подтверждает отмену сам: снять блюдо с плиты — его работа, не менеджерская
   // Повар доводит блюдо до раздачи; «унёс гостю» отмечает зал
   cook: ['kitchen', 'start', 'ready', 'serve', 'dismiss', 'stop']

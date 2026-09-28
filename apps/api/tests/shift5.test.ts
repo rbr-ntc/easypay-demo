@@ -174,7 +174,8 @@ test('чеки: доплата и «поровну» с пометкой, нал
 
   const snap = await fetch(`${base}/api/t/${table}`, { headers: { 'x-staff-token': M } }).then(r => r.json())
   const nikaId = snap.personas.find((p: any) => p.name === 'Ника').id
-  await post(`/api/t/${table}/cash`, { personaId: nikaId, scope: 'own', sessionId: snap.sessionId }, { staff: M })
+  // После чужого «поровну» — только поровну или весь стол, наличными тоже (правило 6, смена №6)
+  await post(`/api/t/${table}/cash`, { personaId: nikaId, scope: 'equal', sessionId: snap.sessionId }, { staff: M })
   const after = await fetch(`${base}/api/t/${table}`, { headers: { 'x-staff-token': M } }).then(r => r.json())
   const cash = after.payments.find((p: any) => p.method === 'cash')
   assert.ok(cash.lines.length > 0, 'у наличных есть состав')
