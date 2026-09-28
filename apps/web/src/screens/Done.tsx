@@ -92,7 +92,10 @@ export function Done() {
         </div>
         <div className="mt-1 text-[13px] text-g-mute">напрямую официанту, мимо счёта</div>
 
-        {tipSent > 0 ? (
+        {/* С настоящим эквайером чаевые с телефона пока не принимаем: без банка это были бы пустые деньги */}
+        {snap?.acquiring ? (
+          <div className="mt-4 text-[15px] text-g-body">Чаевые можно оставить наличными — официант будет рад</div>
+        ) : tipSent > 0 ? (
           <div className="mt-4 text-[15px] font-bold text-g-tan">✓ {fmt(tipSent)} ушли официанту — спасибо!</div>
         ) : (
           <>

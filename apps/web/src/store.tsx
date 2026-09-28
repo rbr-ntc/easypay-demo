@@ -233,7 +233,8 @@ export function computeTotals(snap: Snapshot | null, myId: string | null): Total
   } as any
   const scopeAmount = (scope: PayScope) => (participants > 0 ? amountFor(moneyView, myId, scope) : 0)
   const equalSplit = participants
-  const equalMode = (snap?.payments ?? []).some(p => p.scope === 'equal')
+  // «Поровну» уже идёт — и оплаченное, и в пути: сервер «своё» не примет (смена №7, П4)
+  const equalMode = (snap?.payments ?? []).some(p => p.scope === 'equal') || (snap?.payPending ?? []).some(p => p.scope === 'equal')
 
   return {
     participants,
@@ -301,6 +302,7 @@ export function humanError(err: ApiError): string {
     'payment in progress': 'Оплата уже идёт — завершите её на странице банка или подождите пару минут',
     'payment provider unavailable': 'Платёжный сервис не ответил — попробуйте ещё раз через минуту',
     'public url not configured': 'Оплата с телефона временно недоступна — позовите официанта',
+    'tips via phone unavailable': 'Чаевые с телефона пока недоступны — оставьте наличными официанту',
     'too many requests': 'Слишком много нажатий подряд — подождите минуту',
     'equal split in progress': 'Стол уже делит счёт поровну — выберите «поровну» или «весь стол»',
     'locked or missing': 'Позиция уже уехала на кухню — её не убрать',

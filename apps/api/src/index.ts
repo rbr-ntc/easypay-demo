@@ -56,6 +56,7 @@ import {
 } from './staff.ts'
 import { createRateLimiter } from './rateLimit.ts'
 import { paymentProvider } from './payments/index.ts'
+import { isYooKassaIp } from './payments/webhookIps.ts'
 import { cancelIntent, equalInFlight, isReserving, openIntent, pendingPaysOf, reservedTotals, reservedView, settleIntent, startAtProvider, type PayFlowDeps } from './payFlow.ts'
 import type { Actor, AuditEntry, Call, MutationResult, PayMethod, Persona, TableSession } from './types.ts'
 
@@ -170,6 +171,8 @@ const MAX_STAFF_STREAMS = 20
 const MAX_IDEM = 2000
 const IDEM_TTL = 10 * 60 * 1000
 const MAX_CALLS = 5
+/** Причина вызова словами — для журнала. */
+const CALL_LABELS: Record<string, string> = { help: 'помощь', bill: 'счёт', water: 'вода' }
 /** Больше четырёх стульев к столу не приставить — это уже другой стол. */
 const MAX_EXTRA_SEATS = 4
 const MAX_LINES = 200
@@ -314,7 +317,8 @@ function snapshot(t: TableSession, id: string) {
     cashIntent: t.cashIntent
       ? { ...t.cashIntent, amount: round2(amountFor(money, t.cashIntent.personaId, t.cashIntent.scope as PayScope)) }
       : null,
-    seats: seatsOf(id) + (t.extraSeats ?? 0),
+    // Приставленный стул живёт до конца посадки: у закрытого стола — снова по плану зала
+    seats: seatsOf(id) + (t.status === 'open' ? (t.extraSeats ?? 0) : 0),
     totals: {
       tableTotal: round2(money.tableTotal),
       paidTotal: round2(money.paidTotal),
@@ -1121,6 +1125,10 @@ function guestAction(t: TableSession, tableId: string, action: string, body: any
 
   if (action === 'tip') {
     if (!currentSettings().pay.tips) return fail(409, 'tips disabled')
+    // С телефона чаевые «картой» просто записывались: при настоящем эквайере это
+    // деньги, которых никто не платил (смена №7, Ч1). Пока чаевые через эквайер
+    // не подключены (CloudTips / чаевые Т-Банка) — только наличными официанту
+    if (paymentProvider()) return fail(409, 'tips via phone unavailable')
     // Проверяем уже округлённое: 0,004 ₽ проходило «> 0», округлялось в ноль
     // и роняло запись в базе (500) — смена №6
     const raw = typeof body.amount === 'number' ? body.amount : Number.NaN
@@ -1242,6 +1250,10 @@ function guestAction(t: TableSession, tableId: string, action: string, body: any
       lastAt: Date.now()
     }
     t.calls = t.calls.map(c => (c === existing ? merged : c))
+    // Новая причина или новый текст — в журнал: «звал трижды и в итоге попросил счёт» видно управляющей
+    if (merged.reason !== existing.reason || (note && note !== existing.note)) {
+      audit(null, 'позвал ещё раз', tableId, `${persona.name} · ${CALL_LABELS[merged.reason] ?? merged.reason} ×${merged.repeats}${note ? `: ${note}` : ''}`, null, persona)
+    }
     return ok({ ok: true, callId: existing.id, at: existing.at, repeated: true, repeats: merged.repeats })
   }
   if (t.calls.length >= MAX_CALLS) return fail(400, 'too many calls')
@@ -1450,6 +1462,11 @@ function staffAction(t: TableSession, tableId: string, action: string, body: any
     if (scope === 'own' && equalLocked(t)) return fail(409, 'equal split in progress', { allowed: ['equal', 'full'] })
 
     // Сумму считает сервер и клампит остатком: сдача — не повод списать лишнее
+    // Нечего брать, потому что остальное сейчас платят картой — говорим это, а не «bad amount» (смена №7)
+    const inFlight = pendingPaysOf(t)
+    if (inFlight.length && body.amount === undefined && round2(money.remaining) <= 0.01 && computeTotals(t, priceOf).remaining > 0.01) {
+      return fail(409, 'payment in progress', { pending: inFlight.map(p => ({ ...p, name: t.personas.find(x => x.id === p.personaId)?.name ?? 'гость' })) })
+    }
     const wanted = numberOf(body.amount, amountFor(money, persona?.id ?? null, scope))
     if (!Number.isFinite(wanted) || round2(wanted) <= 0) return fail(400, 'bad amount')
     const amount = round2(Math.min(wanted, money.remaining))
@@ -1505,6 +1522,8 @@ function staffAction(t: TableSession, tableId: string, action: string, body: any
   if (action === 'ack') {
     // Кривой callId раньше значил «первый в очереди» — и снимал чужой вызов
     if (body.callId !== undefined && !asId(body.callId)) return fail(400, 'bad callId')
+    // Ответ не текстом раньше молча пропадал вместе с вызовом — и сказать гостю было уже нечем (смена №7)
+    if (body.reply !== undefined && body.reply !== null && typeof body.reply !== 'string') return fail(400, 'reply must be text')
     const callId = asId(body.callId)
     // Коллега уже принял — говорим кто, а не безликое «нет вызова»
     const taken = callId ? (t.callAcks ?? []).find(a => a.id === callId) : undefined
@@ -1532,7 +1551,20 @@ function staffAction(t: TableSession, tableId: string, action: string, body: any
     // Ожидание официанта — для «Гости и качество»; след для гостя выше живёт 15 минут, это — всю посадку
     if (actor) t.callWaits = [...(t.callWaits ?? []), Date.now() - call.at]
     const replied = t.callAcks.at(-1)?.reply
-    audit(actor, 'принял вызов', tableId, [t.personas.find(p => p.id === call.personaId)?.name, replied && `ответ: ${replied}`].filter(Boolean).join(' · ') || null)
+    audit(
+      actor,
+      'принял вызов',
+      tableId,
+      [
+        t.personas.find(p => p.id === call.personaId)?.name,
+        CALL_LABELS[call.reason] ?? call.reason,
+        (call.repeats ?? 1) > 1 && `звал ×${call.repeats}`,
+        call.note && `«${call.note}»`,
+        replied && `ответ: ${replied}`
+      ]
+        .filter(Boolean)
+        .join(' · ') || null
+    )
     return ok({ ok: true, left: t.calls.length })
   }
 
@@ -1542,7 +1574,9 @@ function staffAction(t: TableSession, tableId: string, action: string, body: any
     if (closing && t.status !== 'open') return fail(409, 'already closed', { closedAt: t.closedAt ?? null })
     // Гость сейчас на странице оплаты — закрыть стол значит потерять его деньги из счёта
     if (t.status === 'open' && (t.payIntents ?? []).some(i => isReserving(i)) && body.force !== true) {
-      return fail(409, 'payment in progress', { pending: pendingPaysOf(t) })
+      return fail(409, 'payment in progress', {
+        pending: pendingPaysOf(t).map(p => ({ ...p, name: t.personas.find(x => x.id === p.personaId)?.name ?? 'гость' }))
+      })
     }
     if (t.status === 'open') {
       const money = computeTotals(t, priceOf)
@@ -1727,6 +1761,8 @@ async function handleApi(req: any, res: any, url: URL) {
   // Уведомление ЮKassa: только повод перечитать платёж из API — телу не верим
   if (url.pathname === '/api/pay/yookassa/webhook') {
     if (req.method !== 'POST') return json(res, 405, { error: 'method' })
+    // Только с адресов ЮKassa: иначе каждое поддельное уведомление — запрос к API эквайера
+    if (fromOutside(req) && process.env.EASYPAY_WEBHOOK_ANY_IP !== '1' && !isYooKassaIp(clientIp(req))) return json(res, 403, { error: 'forbidden' })
     const body = await readBody(req).catch(() => null)
     const meta = body?.object?.metadata ?? {}
     const tableId = typeof meta.tableId === 'string' ? meta.tableId : null
@@ -1737,7 +1773,7 @@ async function handleApi(req: any, res: any, url: URL) {
       const hint = typeof body?.object?.id === 'string' ? body.object.id : null
       const out = await settleIntent(payDeps(store), tableId, intentId, { hintProviderId: hint, force: true })
       // Деньги без стола — запись в журнале; 200, чтобы уведомление не повторялось сутки
-      if (out.status !== 200) console.error('уведомление ЮKassa:', out.status, JSON.stringify(out.body))
+      if (out.status !== 200 && out.status !== 404) console.error('уведомление ЮKassa:', out.status, JSON.stringify(out.body))
       return json(res, 200, { ok: true })
     } catch (err) {
       // 5xx — эквайер повторит уведомление позже

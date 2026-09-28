@@ -98,8 +98,9 @@ test('повторные вызовы гостя копятся в одном (�
   assert.equal(snap.calls[0].repeats, 3)
   assert.equal(snap.calls[0].reason, 'bill', 'счёт важнее «помогите»')
   assert.equal(snap.calls[0].note, 'воды')
-  await post(`/api/t/${table}/ack`, { callId: a.callId, reply: { x: 1 } }, { staff: M })
-  assert.equal((await snapshot(table, g)).acked.at(-1).reply, null, 'объект не превращается в «[object Object]»')
+  // Ответ не текстом — отказ, и вызов остаётся: иначе ответ пропадал, а вызов сгорал (смена №7)
+  assert.equal((await post(`/api/t/${table}/ack`, { callId: a.callId, reply: { x: 1 } }, { staff: M })).status, 400)
+  assert.equal((await snapshot(table, g)).calls.length, 1)
 })
 
 test('кривой callId не снимает чужой вызов (В4), повторный ack говорит, кто принял (В5)', async () => {

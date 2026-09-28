@@ -6,6 +6,7 @@ import { dishName, priceOf, stationOf, allergensOf, removedAllergensOf, stopList
 import { settingsVersion } from './settings.ts'
 import { HALL, metaOf, planTables } from './hallplan.ts'
 import { waiterOfTable } from './staff.ts'
+import { pendingPaysOf } from './payFlow.ts'
 import type { Call, TableSession } from './types.ts'
 
 
@@ -62,6 +63,8 @@ export function hallCard(id: string, table: TableSession) {
     tipsTotal: round2(table.tips.reduce((s, t) => s + t.amount, 0)),
     call: firstCall(table),
     calls: (table.calls ?? []).length,
+    callRepeats: (table.calls ?? [])[0]?.repeats ?? 1,
+    paying: round2(pendingPaysOf(table).reduce((s, p) => s + p.amount, 0)),
     // Гость просит принять наличные: официант должен увидеть это в зале,
     // а не проваливаться в каждый стол по очереди
     cashIntent: table.cashIntent

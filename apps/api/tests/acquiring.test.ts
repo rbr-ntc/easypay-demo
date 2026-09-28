@@ -301,3 +301,42 @@ test('после сбоя связи проверка статуса сама д
   assert.ok(intentId)
   assert.equal(payments.size, before)
 })
+
+test('отменённая гостем оплата не списывается, даже если банк её подтвердил позже', async () => {
+  const table = fresh()
+  const anya = await join(table, 'Аня')
+  const dima = await join(table, 'Дима')
+  await order(table, anya, 'espresso')
+  await order(table, dima, 'caesar')
+  const r = await pay(table, anya, 'own')
+  await post(`/api/t/${table}/cancelPay`, {}, { guest: anya })
+  // Гость всё-таки дожал оплату на старой вкладке банка — у стола ещё есть остаток Димы
+  finish(ykOf(r.body.confirmationUrl), 'succeeded')
+  const s = await status(table, anya, r.body.intentId)
+  assert.equal(s.status, 'canceled')
+  assert.ok(canceledHolds.includes(ykOf(r.body.confirmationUrl)), 'заморозка снята')
+  assert.equal((await snapshot(table, anya)).payments.length, 0)
+})
+
+test('с эквайером чаевые с телефона не принимаются — без банка это пустые деньги', async () => {
+  const table = fresh()
+  const g = await join(table, 'Глеб')
+  await order(table, g, 'espresso')
+  const r = await post(`/api/t/${table}/tip`, { amount: 100, method: 'card', idemKey: fresh() }, { guest: g })
+  assert.equal(r.status, 409)
+  assert.equal((await r.json()).error, 'tips via phone unavailable')
+})
+
+test('зал видит оплату картой в пути; наличными — внятный отказ, а не «bad amount»', async () => {
+  const table = fresh()
+  const g = await join(table, 'Аня')
+  await order(table, g, 'espresso')
+  await pay(table, g)
+  const hall = await fetch(`${base}/api/hall`, { headers: { 'x-staff-token': M } }).then(x => x.json())
+  assert.equal(hall.tables.find((t: any) => t.id === table).paying, 180)
+  const cash = await post(`/api/t/${table}/cash`, { scope: 'full' }, { staff: M })
+  assert.equal(cash.status, 409)
+  const body = await cash.json()
+  assert.equal(body.error, 'payment in progress')
+  assert.equal(body.pending[0].name, 'Аня')
+})

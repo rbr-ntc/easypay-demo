@@ -41,15 +41,34 @@ function useAutoNav() {
   const fullyPaid = totals.tableTotal > 0 && totals.remaining <= 0.01
   const prevUnsent = useRef(hasUnsent)
   const prevPaid = useRef(fullyPaid)
+  const seenCash = useRef(new Set((snap?.payments ?? []).filter(p => p.method === 'cash' && p.receiptNo).map(p => p.receiptNo!)))
 
   useEffect(() => {
     const unsentJustGone = prevUnsent.current && !hasUnsent && anySent
     prevUnsent.current = hasUnsent
     prevPaid.current = fullyPaid
     if (!me) return
+    // Официант только что принял мои наличные — это моя оплата, а не «стол оплачен кем-то»:
+    // показываем «Спасибо» с чеком из снимка, ответа pay у наличных нет (смена №7, П3)
+    // Только наличные, появившиеся с прошлого снимка: старый чек не должен уводить
+    // гостя с оплаты, когда он через пару минут платит за соседа
+    const fresh = (snap?.payments ?? []).filter(p => p.method === 'cash' && p.receiptNo && !seenCash.current.has(p.receiptNo))
+    fresh.forEach(p => seenCash.current.add(p.receiptNo!))
+    const myCash = [...fresh].reverse().find(p => p.personaId === me.id)
+    if (myCash && ui.screen === 'payment' && ui.payStage !== 'processing' && ui.payStage !== 'checking') {
+      patch({
+        screen: 'done',
+        payStage: 'form',
+        payMethod: 'cash',
+        sheet: null,
+        lastPaid: myCash.amount,
+        lastReceipt: { no: myCash.receiptNo!, at: myCash.at, amount: myCash.amount, scope: myCash.scope, guest: me.name, table: tableId ?? '', lines: myCash.lines ?? [] }
+      })
+      return
+    }
     // Стол полностью оплачен (кем-то другим), а я на экране оплаты и сам не
     // платил — уводить с оплаты некуда, кроме стола
-    if (fullyPaid && ui.screen === 'payment' && ui.payStage !== 'processing' && ui.lastPaid === 0) {
+    if (fullyPaid && ui.screen === 'payment' && ui.payStage !== 'processing' && ui.payStage !== 'checking' && ui.lastPaid === 0) {
       patch({ screen: 'table', payStage: 'form', sheet: null })
       toast('Стол уже полностью оплачен')
       return
@@ -60,7 +79,7 @@ function useAutoNav() {
       toast('Заказ отправлен на кухню')
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hasUnsent, fullyPaid, ui.screen])
+  }, [hasUnsent, fullyPaid, ui.screen, snap?.payments.length])
 }
 
 function Guest() {

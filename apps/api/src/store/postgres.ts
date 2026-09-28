@@ -620,9 +620,11 @@ export async function createPostgresStore(url?: string): Promise<Store> {
       const done = await sql`
         update guest_ratings set resolved_at = now(), resolved_by = ${staffUuid(byStaffId)}, resolution = ${resolution}
         where table_session_id = ${sessionId} and guest_id = ${guestId}
-        returning 1
+        returning
+          (select rt.number from table_sessions ts join restaurant_tables rt on rt.id = ts.table_id where ts.id = guest_ratings.table_session_id) as table_id,
+          (select g.name from guests g where g.id = guest_ratings.guest_id) as guest
       `
-      return done.length > 0
+      return done.length ? { tableId: String(done[0].table_id), guest: done[0].guest ?? null } : null
     },
 
     async read(tableId) {

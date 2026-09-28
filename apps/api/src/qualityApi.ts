@@ -23,11 +23,18 @@ const DAY = 24 * 60 * 60 * 1000
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 /** Больше посадок за период не берём: отчёт — для глаз, а не выгрузка. */
 const VISITS_LIMIT = 3000
-export const QUALITY_PERIODS = ['shift', 'today', '7d', '30d'] as const
+export const QUALITY_PERIODS = ['shift', 'prev', 'today', '7d', '30d'] as const
 export type QualityPeriod = (typeof QUALITY_PERIODS)[number]
 
 /** Окно периода: смена — от закрытия прошлой до сейчас; дни — по часовому поясу заведения. */
 async function periodWindow(store: Store, period: QualityPeriod, now = Date.now()): Promise<{ from: number; to: number }> {
+  // Прошлая смена: после закрытия её отзывы не должны пропадать из виду (смена №7)
+  if (period === 'prev') {
+    const last = (await store.shiftHistory(5)).find(s => s.closedAt !== null) ?? null
+    if (!last) return { from: now + 1, to: now + 1 }
+    const w = await windowOf(store, last)
+    return { from: w.from > 0 ? w.from : last.openedAt, to: last.closedAt ?? now + 1 }
+  }
   if (period === 'shift') {
     const shift = (await store.currentShift()) ?? (await store.shiftHistory(1))[0] ?? null
     if (!shift) return { from: startOfDay(now, VENUE_TZ), to: now + 1 }
@@ -90,7 +97,8 @@ export function createQualityRoutes(deps: QualityDeps) {
       json(res, 404, { error: 'rating not found' })
       return true
     }
-    if (text.length < 3) {
+    // «...» и пробелы — не разбор: нужно хотя бы три буквы, это прочтёт владелец
+    if ((text.match(/\p{L}/gu) ?? []).length < 3) {
       json(res, 400, { error: 'resolution required', hint: 'напишите, что сделали: «позвонили, извинились»' })
       return true
     }
@@ -99,7 +107,7 @@ export function createQualityRoutes(deps: QualityDeps) {
       json(res, 404, { error: 'rating not found' })
       return true
     }
-    deps.audit(actor, 'разобрал замечание', null, text)
+    deps.audit(actor, 'разобрал замечание', done.tableId, `${done.guest ?? 'гость'}: ${text}`)
     await deps.flushAudit(store)
     json(res, 200, { ok: true })
     return true

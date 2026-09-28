@@ -97,6 +97,9 @@ export interface ServerPayment {
   amount: number
   scope: string
   at: number
+  /** Номер и состав чека: у наличных гость получает его из снимка, ответа pay нет. */
+  receiptNo?: string | null
+  lines?: Receipt['lines']
 }
 
 export interface ServerTip {
@@ -162,7 +165,7 @@ export interface Snapshot {
   /** Эквайер стола (`yookassa`) или null — демо, где оплата записывается сразу. */
   acquiring?: string | null
   /** Кто сейчас на странице оплаты и сколько зарезервировано. */
-  payPending?: { personaId: string; amount: number; at: number }[]
+  payPending?: { personaId: string; amount: number; scope?: string; at: number }[]
   /** Остатки с учётом оплат в пути — по ним считается сумма к оплате. */
   reserved?: { remaining: number; byPersona: { personaId: string; paid: number; remaining: number }[] } | null
   /** Кто из гостей уже оценил визит (сама оценка — только управляющей). */

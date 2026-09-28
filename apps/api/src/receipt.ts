@@ -20,7 +20,8 @@ import type { Persona, TableSession } from './types.ts'
 export function receiptNoOf(tableId: string, kind: 'pay' | 'tip' = 'pay'): string {
   const stamp = Date.now().toString(36).toUpperCase()
   const salt = crypto.randomBytes(2).toString('hex').toUpperCase()
-  return `${tableId}-${kind === 'tip' ? 'Ч' : ''}${stamp}-${salt}`
+  // Латиница целиком: «Ч» среди латиницы путалась при диктовке номера (смена №6–7)
+  return `${tableId}-${kind === 'tip' ? 'T' : ''}${stamp}-${salt}`
 }
 
 /** Реквизиты заведения из настроек: без них чек — просто список блюд. */

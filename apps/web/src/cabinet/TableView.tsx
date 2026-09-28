@@ -79,8 +79,11 @@ export function TableView({ id }: { id: string }) {
     return r
   }
 
+  const paying = snap.payPending ?? []
   const askClose = () => {
     const reasons: string[] = []
+    // Гость на странице оплаты картой: закрыть — значит сорвать его оплату (смена №7, З1)
+    if (paying.length) reasons.push(`сейчас платят картой: ${paying.map(p => `${nameOf(p.personaId)} ${fmt(p.amount)}`).join(', ')} — оплата сорвётся`)
     if (t.remaining > 0.01) reasons.push(`не оплачено ${fmt(t.remaining)}`)
     const pending = snap.lines.filter(l => l.sent && !l.served && !l.cancelled)
     if (pending.length) reasons.push(`на кухне ещё: ${listNames(pending.map(l => findDish(l.dishId)?.name ?? l.dishId))}`)
@@ -173,6 +176,17 @@ export function TableView({ id }: { id: string }) {
             }}
           />
         ))}
+
+      {open && paying.length > 0 && (
+        // Оплата картой в пути: стол не должник, а ждёт банк — закрывать и брать наличные за то же нельзя
+        <div className="flex items-center gap-3.5 rounded-2xl border border-c-line bg-c-card px-4.5 py-3.5">
+          <span className="size-2.5 rounded-full" style={{ background: '#2E8A55' }} />
+          <span className="flex-1 text-[15px]">
+            <b>Платят картой:</b> {paying.map(p => `${nameOf(p.personaId)} ${fmt(p.amount)}`).join(', ')}
+            <span className="block text-[13px] text-c-mute">ждём подтверждения банка — эти суммы уже не берите наличными</span>
+          </span>
+        </div>
+      )}
 
       {open && snap.cashIntent && (
         <div className="flex items-center gap-3.5 rounded-2xl border border-c-warn-line bg-c-warn-bg px-4.5 py-3.5">

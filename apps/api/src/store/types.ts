@@ -104,8 +104,8 @@ export interface Store {
 
   /** Визиты за период для «Гости и качество»: оценки, ожидание вызова и кухни, чаевые. */
   qualityVisits(from: number, to: number, limit: number): Promise<QualityVisit[]>
-  /** Отметить замечание разобранным. false — такой оценки нет. */
-  resolveRating(sessionId: string, guestId: string, byStaffId: string | null, resolution: string): Promise<boolean>
+  /** Отметить замечание разобранным. null — такой оценки нет; иначе — чей это отзыв, для журнала. */
+  resolveRating(sessionId: string, guestId: string, byStaffId: string | null, resolution: string): Promise<{ tableId: string; guest: string | null } | null>
   close(): Promise<void>
 }
 

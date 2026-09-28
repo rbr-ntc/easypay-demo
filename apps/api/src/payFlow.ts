@@ -26,6 +26,8 @@ const KEEP_MS = 24 * 60 * 60_000
 const CREATING_MS = 30_000
 /** Чаще не переспрашиваем эквайера об одном платеже: квота API не бесконечна. */
 const RECHECK_MS = Number(process.env.EASYPAY_PAY_RECHECK_MS ?? 2_000)
+/** Отмена гостем: такая заморозка только снимается, никогда не списывается. */
+export const GUEST_CANCELED = 'гость отменил оплату'
 /** Сколько сверх резерва держит сумму заморозка, которую решили списать. */
 const AUTHORIZED_MS = 10 * 60_000
 
@@ -141,6 +143,12 @@ export async function startAtProvider(deps: PayFlowDeps, tableId: string, intent
       if (!cur) return fail(404, 'payment not found')
       // Пока ходили к эквайеру, уведомление могло уже всё решить — назад не откатываем
       if (cur.status === 'creating') patchIntent(s, intent.id, { providerId: pp.id, confirmationUrl: pp.confirmationUrl, status: 'pending' })
+      // Гость отменил, пока создавался платёж: номер всё равно запоминаем — чтобы снять
+      // заморозку, если он всё же заплатит, — а ссылку на оплату не отдаём
+      else if (cur.status === 'canceled') {
+        patchIntent(s, intent.id, { providerId: pp.id })
+        return ok({ ok: true, status: 'canceled', reason: cur.cancelReason ?? 'оплата отменена' })
+      }
       return ok(pendingBody({ ...cur, providerId: pp.id, confirmationUrl: pp.confirmationUrl }, false))
     })
     await deps.after(tableId)
@@ -206,6 +214,9 @@ function decideCapture(t: TableSession, intentId: string, pp: ProviderPayment): 
   const intent = intentOf(t, intentId)
   if (!intent) return { cancel: 'стол уже закрыт — деньги не списаны' }
   if (intent.status === 'succeeded' || t.payments.some(p => p.providerId === pp.id)) return { done: true }
+  // Гость сам отменил и заплатил иначе — даже если дожал оплату на старой вкладке
+  // банка, списывать нельзя: иначе его карта закрыла бы долю соседей (смена №7, П1)
+  if (intent.status === 'canceled' && intent.cancelReason === GUEST_CANCELED) return { cancel: 'оплата картой была отменена — деньги не списаны' }
   if (t.status !== 'open') return { cancel: 'стол уже закрыт — деньги не списаны' }
   const left = round2(reservedTotals(t, intent.id).remaining)
   const amount = round2(Math.min(pp.amount, left))
@@ -272,7 +283,9 @@ export async function settleIntent(
 
   if (!intent) {
     if (provider && opts.hintProviderId) {
-      const pp = await provider.get(opts.hintProviderId)
+      // Номер из уведомления может быть выдуманным — это не ошибка сервера, а «не найдено»
+      const pp = await provider.get(opts.hintProviderId).catch(() => null)
+      if (!pp) return fail(404, 'payment not found')
       if (pp.metadata.intentId === intentId && pp.metadata.tableId === tableId) {
         // Стол закрыли и пересадили, а заморозка осталась: снимаем, чтобы деньги вернулись гостю
         if (pp.status === 'waiting_for_capture') await provider.cancel(pp.id, `${intentId}-cancel`)
@@ -311,7 +324,11 @@ export async function settleIntent(
   const pp = await provider.get(intent.providerId)
   if (pp.id !== intent.providerId || (pp.metadata.intentId && pp.metadata.intentId !== intent.id)) return fail(409, 'payment mismatch')
 
-  if (pp.status === 'pending') return ok({ ok: true, status: 'pending', confirmationUrl: intent.confirmationUrl })
+  if (pp.status === 'pending') {
+    // Отменённое гостем больше не предлагаем оплатить: ссылка банка может быть жива, но это уже не наш платёж
+    if (intent.status === 'canceled') return ok({ ok: true, status: 'canceled', reason: intent.cancelReason ?? 'платёж отменён' })
+    return ok({ ok: true, status: 'pending', confirmationUrl: intent.confirmationUrl })
+  }
 
   if (pp.status === 'canceled') {
     const res = await deps.withTable(tableId, s => markCanceled(deps, s, tableId, intent.id, pp.cancelReason ?? 'платёж не прошёл'))
@@ -346,7 +363,7 @@ export async function settleIntent(
 /** Для снимка стола: кто сейчас платит и сколько зарезервировано. Без ссылок на оплату. */
 export function pendingPaysOf(t: TableSession) {
   const now = Date.now()
-  return (t.payIntents ?? []).filter(i => isReserving(i, now)).map(i => ({ personaId: i.personaId, amount: i.amount, at: i.at }))
+  return (t.payIntents ?? []).filter(i => isReserving(i, now)).map(i => ({ personaId: i.personaId, amount: i.amount, scope: i.scope, at: i.at }))
 }
 
 /** Остатки с учётом резерва: столько сервер и спишет, если гость нажмёт «Оплатить». */
@@ -366,7 +383,7 @@ export function reservedView(t: TableSession) {
 export function cancelIntent(t: TableSession, tableId: string, persona: Persona, audit: PayFlowDeps['audit']): MutationResult {
   const mine = (t.payIntents ?? []).filter(i => i.personaId === persona.id && isReserving(i) && i.status !== 'authorized')
   if (!mine.length) return fail(409, 'nothing to cancel')
-  for (const i of mine) patchIntent(t, i.id, { status: 'canceled', cancelReason: 'гость отменил оплату' })
+  for (const i of mine) patchIntent(t, i.id, { status: 'canceled', cancelReason: GUEST_CANCELED })
   audit('отменил оплату картой', tableId, persona.name, mine.reduce((a, i) => a + i.amount, 0), persona)
   return ok({ ok: true })
 }

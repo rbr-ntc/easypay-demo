@@ -39,7 +39,10 @@ export function lookOf(card: Card, now: number): Look {
 
   // Вызов — текстом гостя: «хлеб и бокал» или «сдачи с 1100», официант идёт не вслепую
   if (card.call) {
-    const more = (card.calls ?? 1) > 1 ? ` · ещё ${(card.calls ?? 1) - 1}` : ''
+    const more = [
+      (card.callRepeats ?? 1) > 1 ? ` ×${card.callRepeats}` : '',
+      (card.calls ?? 1) > 1 ? ` · ещё ${(card.calls ?? 1) - 1}` : ''
+    ].join('')
     return { color: C.call, state: `${labelOf('call-waiter') ?? 'Зовут официанта'}${more}`, alert: 'зовут', alertColor: C.call }
   }
   // Гость сидит с деньгами и ждёт — это срочно, и видно кто и сколько
@@ -55,6 +58,10 @@ export function lookOf(card: Card, now: number): Look {
   const ready = card.readyCount ?? 0
   if (ready > 0) {
     return { color: C.warn, state: `Готово на раздаче: ${ready} — унести · ${tail}`, alert: `унести ${ready}`, alertColor: '#9A6A0B' }
+  }
+  // Остывающая тарелка важнее — поэтому после раздачи. Гости на странице оплаты картой — стол не должник, а ждёт банк (смена №7, З2)
+  if ((card.paying ?? 0) > 0) {
+    return { color: C.paid, state: `Платят картой · ${fmt(card.paying!)} · ${tail}`, alert: 'оплата', alertColor: C.paid }
   }
   if (status === TABLE_STATUS.PAID) return { color: C.paid, state: `Оплачен, гости сидят · ${tail}`, alert: '', alertColor: '' }
   const hot = alerts.find(a => a.severity === 'danger' || a.severity === 'warn')

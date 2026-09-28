@@ -47,6 +47,10 @@ export interface HallCard {
   call: { id?: string; at: number; reason: string; note?: string | null; name: string } | null
   /** Сколько вызовов от стола ждёт: в зале виден только первый. */
   calls?: number
+  /** Сколько раз позвал гость первого вызова: «×3» — не строка, а сигнал. */
+  callRepeats?: number
+  /** Гости сейчас на странице оплаты картой: сумма в пути (без неё стол выглядел должником). */
+  paying?: number
   /** «Хочу заплатить наличными» — деньги ждут официанта у стола. */
   cashIntent?: { amount: number; at: number; scope: string; personaId: string; name: string } | null
 }

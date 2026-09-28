@@ -138,7 +138,7 @@ export const settleDebt = (sessionId: string, kind: 'collected' | 'written_off',
   staffPost('/api/decisions/settle', { sessionId, kind, ...opts })
 export const noteDecision = (key: string, text: string) => staffPost('/api/decisions/note', { key, text })
 
-export type QualityPeriod = 'shift' | 'today' | '7d' | '30d'
+export type QualityPeriod = 'shift' | 'prev' | 'today' | '7d' | '30d'
 export const fetchQuality = (period: QualityPeriod) =>
   getJson<{ period: QualityPeriod; from: number; to: number; truncated: boolean; report: QualityReport }>(`/api/quality?period=${period}`)
 export const resolveRemark = (sessionId: string, guestId: string, resolution: string) =>
@@ -187,7 +187,9 @@ export const errorText = (r: StaffResult): string => {
     'stale session': 'За столом уже новые гости — верните переплату на кассе и отметьте в журнале',
     'nothing to refund': 'Переплату уже вернули',
     'rating not found': 'Отзыв не найден — обновите страницу',
-    'resolution required': 'Напишите, что сделали — это прочтёт владелец'
+    'resolution required': 'Напишите, что сделали — это прочтёт владелец',
+    'payment in progress': 'Гость сейчас платит картой — дождитесь банка или попросите гостя отменить оплату',
+    'reply must be text': 'Ответ гостю — только текстом'
   }
   return map[r.error ?? ''] ?? staffError(r)
 }

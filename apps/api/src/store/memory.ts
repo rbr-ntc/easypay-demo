@@ -220,12 +220,12 @@ export function createMemoryStore(): Store {
     },
 
     async resolveRating(sessionId, guestId, byStaffId, resolution) {
-      const known = [...visits.values(), ...[...tables.entries()].map(([id, t]) => visitOf(id, t, resolutions))].some(
+      const visit = [...visits.values(), ...[...tables.entries()].map(([id, t]) => visitOf(id, t, resolutions))].find(
         v => v?.sessionId === sessionId && v.ratings.some(r => r.guestId === guestId)
       )
-      if (!known) return false
+      if (!visit) return null
       resolutions.set(resolutionKey(sessionId, guestId), { at: Date.now(), by: staffName(byStaffId) ?? null, text: resolution })
-      return true
+      return { tableId: visit.tableId, guest: visit.ratings.find(r => r.guestId === guestId)?.guest ?? null }
     },
 
     async read(tableId) {

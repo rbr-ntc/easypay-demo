@@ -6,6 +6,7 @@ import { ByDay, ByTable, ByWaiter, IndexValue, RatingBar, Remarks } from './Qual
 
 const PERIODS: { id: QualityPeriod; label: string }[] = [
   { id: 'shift', label: 'Смена' },
+  { id: 'prev', label: 'Прошлая смена' },
   { id: 'today', label: 'Сегодня' },
   { id: '7d', label: '7 дней' },
   { id: '30d', label: '30 дней' }
