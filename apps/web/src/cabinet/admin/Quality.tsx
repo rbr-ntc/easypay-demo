@@ -48,7 +48,7 @@ function Body({ data, reload }: { data: NonNullable<Awaited<ReturnType<typeof fe
       <section className="c-card p-5.5">
         <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-6">
           <Kpi label="Гостей" value={t.guests} hint={`${t.visits} посадок`} />
-          <Kpi label="Оценили" value={t.rated} hint={t.responseRate === null ? 'нет гостей' : `${t.responseRate}% гостей`} />
+          <Kpi label="Оценили" value={t.rated} hint={t.responseRate === null ? 'столы ещё открыты' : `${t.responseRate}% гостей закрытых столов`} />
           <Kpi label="Индекс качества" value={<IndexValue index={t.index} />} hint="понравилось − замечания" />
           <Kpi label="Замечаний" value={t.bad} tone={t.openRemarks > 0 ? 'bad' : undefined} hint={t.openRemarks > 0 ? `к разбору отзывов: ${t.openRemarks}` : 'всё разобрано'} />
           <Kpi label="Ответ на вызов" value={t.callAvgSec === null ? '—' : t.callAvgSec < 90 ? `${t.callAvgSec} с` : `${Math.round(t.callAvgSec / 60)} мин`} hint="в среднем" />

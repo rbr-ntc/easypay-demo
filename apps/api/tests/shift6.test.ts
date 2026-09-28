@@ -155,7 +155,7 @@ test('официант приставляет стул — третий гост
   await join(table, 'Аня')
   await join(table, 'Дима')
   const full = await post(`/api/t/${table}/join`, { name: 'Лёша', animal: 'fox', idemKey: fresh() })
-  assert.equal(full.status, 400)
+  assert.equal(full.status, 409)
   assert.equal((await post(`/api/t/${table}/addSeat`, {}, { staff: M })).status, 200)
   assert.equal((await post(`/api/t/${table}/join`, { name: 'Лёша', animal: 'fox', idemKey: fresh() })).status, 200)
   await post(`/api/t/${table}/reset`, { force: true }, { staff: M })

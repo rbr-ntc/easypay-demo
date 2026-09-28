@@ -209,6 +209,7 @@ export async function createPostgresStore(url?: string): Promise<Store> {
         options: l.options ?? {},
         comment: l.comment ?? null,
         allergenOk: l.allergen_ok ?? [],
+        optedOut: l.opted_out ?? [],
         shared: l.shared,
         sharedWith: l.shared_with ?? [],
         personaId: l.guest_id,
@@ -269,7 +270,7 @@ export async function createPostgresStore(url?: string): Promise<Store> {
         const byId = staffExt(c.ack_by)
         return { id: c.id, personaId: c.guest_id, reason: c.reason, at: ms(c.ack_at) ?? 0, byId, byName: staffName(byId) ?? c.ack_name ?? null, reply: c.ack_reply ?? null }
       }),
-      ratings: ratings.map((r: any) => ({ personaId: r.guest_id, rating: r.rating, note: r.note ?? null, at: ms(r.created_at) ?? 0 })),
+      ratings: ratings.map((r: any) => ({ personaId: r.guest_id, rating: r.rating, note: r.note ?? null, at: ms(r.created_at) ?? 0, history: r.history ?? [] })),
       calls: calls.map((c: any) => ({
         id: c.id,
         at: ms(c.created_at) ?? 0,
@@ -374,7 +375,7 @@ export async function createPostgresStore(url?: string): Promise<Store> {
         insert into order_lines (
           table_session_id, guest_id, seq, dish_id, name, price, qty, options, comment,
           shared, shared_with, sent_at, started_at, started_by, ready_at, ready_by,
-          served_at, served_by, cancelled_at, cancelled_by, cancel_reason, cancel_ack, allergen_ok
+          served_at, served_by, cancelled_at, cancelled_by, cancel_reason, cancel_ack, allergen_ok, opted_out
         ) values (
           ${sid}, ${l.personaId}, ${l.uid}, ${l.dishId}, ${dishName(l.dishId)}, ${l.price}, ${l.qty},
           ${tx.json(l.options ?? {})}, ${l.comment ?? null}, ${l.shared}, ${l.sharedWith ?? []},
@@ -382,7 +383,7 @@ export async function createPostgresStore(url?: string): Promise<Store> {
           ${staffUuid(l.startedBy)}, ${l.readyAt ? new Date(l.readyAt) : null}, ${staffUuid(l.readyBy)},
           ${l.servedAt ? new Date(l.servedAt) : null}, ${staffUuid(l.servedBy)},
           ${l.cancelledAt ? new Date(l.cancelledAt) : null}, ${staffUuid(l.cancelledBy)},
-          ${l.cancelReason ?? null}, ${!!l.cancelAck}, ${l.allergenOk ?? []}
+          ${l.cancelReason ?? null}, ${!!l.cancelAck}, ${l.allergenOk ?? []}, ${l.optedOut ?? []}
         )
         on conflict (table_session_id, seq) do update set
           comment = excluded.comment,
@@ -394,6 +395,7 @@ export async function createPostgresStore(url?: string): Promise<Store> {
           shared_with = excluded.shared_with,
           sent_at = excluded.sent_at,
           allergen_ok = excluded.allergen_ok,
+          opted_out = excluded.opted_out,
           started_at = excluded.started_at,
           started_by = excluded.started_by,
           ready_at = excluded.ready_at,
@@ -462,9 +464,10 @@ export async function createPostgresStore(url?: string): Promise<Store> {
     }
     for (const r of session.ratings ?? []) {
       await tx`
-        insert into guest_ratings (table_session_id, guest_id, rating, note, created_at)
-        values (${sid}, ${r.personaId}, ${r.rating}, ${r.note}, ${new Date(r.at)})
+        insert into guest_ratings (table_session_id, guest_id, rating, note, created_at, history)
+        values (${sid}, ${r.personaId}, ${r.rating}, ${r.note}, ${new Date(r.at)}, ${tx.json(r.history ?? [])})
         on conflict (table_session_id, guest_id) do update set rating = excluded.rating, note = excluded.note, created_at = excluded.created_at,
+          history = excluded.history,
           -- Гость переоценил — старое «разобрано» к новой жалобе не относится
           resolved_at = case when guest_ratings.rating is distinct from excluded.rating or guest_ratings.note is distinct from excluded.note then null else guest_ratings.resolved_at end,
           resolved_by = case when guest_ratings.rating is distinct from excluded.rating or guest_ratings.note is distinct from excluded.note then null else guest_ratings.resolved_by end,
@@ -545,7 +548,7 @@ export async function createPostgresStore(url?: string): Promise<Store> {
       const ids = rows.map((r: any) => r.id)
       const [ratings, calls, lines, tipWaiters] = await Promise.all([
         sql`
-          select gr.table_session_id, gr.guest_id, gr.rating, gr.note, gr.created_at, gr.resolved_at, gr.resolution,
+          select gr.table_session_id, gr.guest_id, gr.rating, gr.note, gr.created_at, gr.resolved_at, gr.resolution, gr.history,
                  g.name as guest_name, st.name as resolver
           from guest_ratings gr
           left join guests g on g.id = gr.guest_id
@@ -607,7 +610,8 @@ export async function createPostgresStore(url?: string): Promise<Store> {
             at: new Date(x.created_at).getTime(),
             resolvedAt: x.resolved_at ? new Date(x.resolved_at).getTime() : null,
             resolvedBy: x.resolver ?? null,
-            resolution: x.resolution ?? null
+            resolution: x.resolution ?? null,
+            history: x.history ?? []
           })),
           callWaits: (cs.get(r.id) ?? []).map((x: any) => Math.max(0, Number(x.ms))),
           kitchenWaits: (ls.get(r.id) ?? []).map((x: any) => Math.max(0, Number(x.ms))),

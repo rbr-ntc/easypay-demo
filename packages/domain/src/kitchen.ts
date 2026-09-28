@@ -111,7 +111,8 @@ export function summarizeKitchen(tickets: KitchenTicket[], now: number): Kitchen
   const queued = tickets.filter(t => ticketState(t) === TICKET_STATE.QUEUED)
   const cooking = tickets.filter(t => ticketState(t) === TICKET_STATE.COOKING)
   const ready = tickets.filter(t => ticketState(t) === TICKET_STATE.READY)
-  const waits = tickets.map(t => ticketWait(t, now))
+  // Дольше всех ждёт то, что ещё у кухни: тарелка на раздаче — забота зала (смена №7, К1)
+  const waits = tickets.filter(t => !t.readyAt).map(t => ticketWait(t, now))
   const tables = new Set(tickets.map(t => t.tableId))
   return {
     queued: queued.length,

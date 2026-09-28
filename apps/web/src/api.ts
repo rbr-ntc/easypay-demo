@@ -67,6 +67,11 @@ export interface ServerPersona {
 }
 
 export interface ServerLine {
+  /** Общий черновик: кто отказался и чьего решения по аллергену ждёт. */
+  optedOut?: string[]
+  awaitingConsent?: string[]
+  /** Аллергены позиции с учётом модификаторов — считает сервер. */
+  allergens?: string[]
   uid: number
   dishId: string
   name?: string
@@ -259,6 +264,10 @@ export const apiAddLine = (
   )
 
 /** Отменить своё блюдо, пока кухня не взяла его в работу. */
+/** Общее блюдо соседа: «я это не ем» или «буду есть, знаю про аллерген». */
+export const apiSharedChoice = (guest: string, uid: number, choice: 'out' | 'consent' | 'back') =>
+  post<{ ok: true }>(choice === 'consent' ? 'sharedConsent' : 'sharedOptOut', choice === 'back' ? { uid, out: false } : { uid }, { guest })
+
 export const apiCancelMine = (guest: string, uid: number) =>
   post<{ ok: true }>('cancelMine', { uid }, { guest })
 
@@ -328,6 +337,9 @@ export const apiPay = (
     pending?: boolean
     intentId?: string
     confirmationUrl?: string | null
+    /** Оплата уже была начата раньше — с этим scope. */
+    resumed?: boolean
+    scope?: string
   }>(
     'pay',
     { scope, idemKey, method },

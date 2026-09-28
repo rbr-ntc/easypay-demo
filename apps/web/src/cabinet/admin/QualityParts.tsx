@@ -158,6 +158,11 @@ export function Remarks({ rows, onDone }: { rows: QualityRemark[]; onDone: () =>
               <span className="flex-1" />
             </div>
             {r.note && <div className="mt-1 text-[15px]">«{r.note}»</div>}
+            {r.history.length > 0 && (
+              <div className="mt-1 text-[13px] text-c-mute">
+                раньше: {r.history.map(h => `${RATING[h.rating].toLowerCase()}${h.note ? ` «${h.note}»` : ''}`).join(' → ')}
+              </div>
+            )}
             <div className="mt-1 text-[12px] text-c-mute">
               кухня → стол {min(r.kitchenAvgMin)} · ответ на вызов {sec(r.callAvgSec)}
             </div>

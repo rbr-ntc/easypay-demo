@@ -43,6 +43,8 @@ export interface Line {
   comment?: string | null
   /** Аллергены, на которые гость осознанно согласился при заказе. */
   allergenOk?: string[]
+  /** Кто отказался от общего блюда до отправки: не делит и не платит (А2). */
+  optedOut?: string[]
 }
 
 export type PayMethod = 'sbp' | 'card' | 'cash' | 'tpay' | 'sber' | 'mir'
@@ -158,7 +160,14 @@ export interface TableSession {
     calledAt?: number
   }[]
   /** Оценка визита: одна на гостя, последняя побеждает. */
-  ratings?: { personaId: string; rating: 'good' | 'ok' | 'bad'; note: string | null; at: number }[]
+  ratings?: {
+    personaId: string
+    rating: 'good' | 'ok' | 'bad'
+    note: string | null
+    at: number
+    /** Прежние оценки этого гостя: переоценка не стирает первое замечание. */
+    history?: { rating: 'good' | 'ok' | 'bad'; note: string | null; at: number }[]
+  }[]
   seq: number
   /** Долг, с которым стол закрыли — измеряется до отмены неподанного. */
   closedWithDebt?: number

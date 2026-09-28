@@ -62,7 +62,17 @@ function useAutoNav() {
         payMethod: 'cash',
         sheet: null,
         lastPaid: myCash.amount,
-        lastReceipt: { no: myCash.receiptNo!, at: myCash.at, amount: myCash.amount, scope: myCash.scope, guest: me.name, table: tableId ?? '', lines: myCash.lines ?? [] }
+        lastReceipt: {
+          no: myCash.receiptNo!,
+          at: myCash.at,
+          amount: myCash.amount,
+          scope: myCash.scope,
+          guest: me.name,
+          table: tableId ?? '',
+          lines: myCash.lines ?? [],
+          // Почему в чеке строк больше, чем заплачено: «поровну» и «весь стол» перечисляют весь стол (П8)
+          note: myCash.scope === 'equal' ? 'поровну: ваша доля счёта; в чеке — весь стол' : myCash.scope === 'full' ? 'оплачен остаток по столу' : null
+        }
       })
       return
     }

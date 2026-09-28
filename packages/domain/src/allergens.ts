@@ -32,6 +32,16 @@ const LOOKALIKES: Record<string, { other: string; why: string }> = {
   морепродукты: { other: 'рыба', why: 'рыба отмечается отдельно от морепродуктов' }
 }
 
+/**
+ * Аллергии для предупреждений: отметившая «орехи» получает предупреждение и про
+ * арахис — многие с аллергией на орехи его тоже не едят, а пад тай с арахисом
+ * проходил молча (смена №7, А3). Спросить лишний раз дешевле, чем промолчать.
+ */
+export function effectiveAllergies(list: string[] | undefined | null): string[] {
+  const own = list ?? []
+  return own.includes('орехи') && !own.includes('арахис') ? [...own, 'арахис'] : own
+}
+
 /** Подсказки к выбору: «вы отметили орехи — а арахис?». */
 export function allergenHints(picked: string[]): string[] {
   return picked.flatMap(a => {

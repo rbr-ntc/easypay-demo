@@ -17,6 +17,8 @@ export interface QualityRating {
   resolvedAt: number | null
   resolvedBy: string | null
   resolution: string | null
+  /** Прежние оценки гостя до переоценки. */
+  history?: { rating: Rating; note: string | null; at: number }[]
 }
 
 /** Одна посадка за столом — всё, что нужно для качества, без денег. */
@@ -43,7 +45,7 @@ export interface QualityCounts {
   good: number
   ok: number
   bad: number
-  /** Доля оценивших, % — насколько вообще можно верить оценкам. */
+  /** Доля оценивших среди гостей ЗАКРЫТЫХ посадок, % — сидящие ещё не успели оценить (смена №7, Г4). */
   responseRate: number | null
   /** Индекс качества: доля «понравилось» минус доля замечаний, от −100 до 100. */
   index: number | null
@@ -61,6 +63,8 @@ export interface QualityRemark {
   resolvedAt: number | null
   resolvedBy: string | null
   resolution: string | null
+  /** Что гость говорил раньше, до переоценки. */
+  history: { rating: Rating; note: string | null; at: number }[]
   /** Сигналы визита рядом с оценкой: почему могли поставить «замечание». */
   kitchenAvgMin: number | null
   callAvgSec: number | null
@@ -84,13 +88,16 @@ function counts(visits: QualityVisit[]): QualityCounts {
   const ok = ratings.filter(r => r.rating === 'ok').length
   const bad = ratings.filter(r => r.rating === 'bad').length
   const rated = ratings.length
+  const closed = visits.filter(v => v.closedAt !== null)
+  const closedGuests = closed.reduce((a, v) => a + v.guests, 0)
+  const closedRated = closed.reduce((a, v) => a + v.ratings.length, 0)
   return {
     guests,
     rated,
     good,
     ok,
     bad,
-    responseRate: guests > 0 ? Math.round((rated / guests) * 100) : null,
+    responseRate: closedGuests > 0 ? Math.min(100, Math.round((closedRated / closedGuests) * 100)) : null,
     index: rated > 0 ? Math.round(((good - bad) / rated) * 100) : null
   }
 }
@@ -145,6 +152,7 @@ export function buildQualityReport(visits: QualityVisit[], tz = VENUE_TZ): Quali
         resolvedAt: r.resolvedAt,
         resolvedBy: r.resolvedBy,
         resolution: r.resolution,
+        history: r.history ?? [],
         kitchenAvgMin: kitchenMin([v]),
         callAvgSec: callSec([v])
       }))

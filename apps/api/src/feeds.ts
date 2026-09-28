@@ -7,6 +7,7 @@ import { settingsVersion } from './settings.ts'
 import { HALL, metaOf, planTables } from './hallplan.ts'
 import { waiterOfTable } from './staff.ts'
 import { pendingPaysOf } from './payFlow.ts'
+import { effectiveAllergies } from '@easypay/domain/allergens'
 import type { Call, TableSession } from './types.ts'
 
 
@@ -122,6 +123,16 @@ function emptyLike(): TableSession {
   return { sessionId: null, status: 'closed', openedAt: null, closedAt: null, personas: [], lines: [], payments: [], tips: [], calls: [], seq: 1 }
 }
 
+/** Сколько неотправленных корзин держит каждое блюдо из стоп-листа. */
+function cartsWith(tables: Map<string, TableSession>, stopped: Set<string>): Record<string, number> {
+  const counts: Record<string, number> = {}
+  for (const t of tables.values()) {
+    if (t.status !== 'open') continue
+    for (const l of t.lines) if (!l.sent && !l.cancelled && stopped.has(l.dishId)) counts[l.dishId] = (counts[l.dishId] ?? 0) + 1
+  }
+  return counts
+}
+
 /** Тикет = отправленная, но ещё не поданная позиция. Кухня видит весь ресторан сразу. */
 export function kitchenPayload(tables: Map<string, TableSession>) {
   const now = Date.now()
@@ -146,7 +157,8 @@ export function kitchenPayload(tables: Map<string, TableSession>) {
       const guestAllergies = eaters
         .filter(p => (p.allergies ?? []).length > 0)
         .map(p => ({ name: p.name, allergies: p.allergies ?? [] }))
-      const allergyHits = [...new Set(guestAllergies.flatMap(g => g.allergies))].filter(a => dishAllergens.includes(a))
+      // Попадание — по аллергиям для предупреждений: «орехи» ловят и арахис (А3)
+      const allergyHits = [...new Set(eaters.flatMap(p => effectiveAllergies(p.allergies)))].filter(a => dishAllergens.includes(a))
       const base = {
         tableId: id,
         sessionId: table.sessionId,
@@ -231,7 +243,8 @@ export function kitchenPayload(tables: Map<string, TableSession>) {
       // «Подгорает» — это всё, что уже вышло из нормы: и жёлтые, и красные.
       // Считая одни жёлтые, счётчик показывал ноль при горящей красной карточке
       // — ровно наоборот тому, зачем он нужен повару и менеджеру.
-      warn: sorted.filter(x => ticketUrgency(x as any, now) !== 'ok').length,
+      // Раздачу не считаем: остывающую тарелку забирает зал, это не «кухня подгорает» (смена №7, К1)
+      warn: sorted.filter(x => !x.readyAt && ticketUrgency(x as any, now) !== 'ok').length,
       // Сколько тарелок стоит на раздаче и ждёт официанта
       ready: sorted.filter(x => x.readyAt).length
     },
@@ -239,6 +252,8 @@ export function kitchenPayload(tables: Map<string, TableSession>) {
     stop: stopList(),
     // Кто и когда поставил в стоп — или «по умолчанию в меню»
     stopInfo: stopInfo(),
+    // Снятое в стоп, но лежащее в неотправленных корзинах: эти гости скоро упрутся в «закончилось» (К3)
+    inCarts: cartsWith(tables, new Set(stopList())),
     // Меню опубликовали — экран кухни перечитает его для стоп-листа
     menuVersion: menuVersion(),
     // Порог «блюдо на кухне дольше» — из настроек

@@ -56,17 +56,21 @@ test('замечание гостя попадает в ленту, «разоб
   assert.equal(body.report.totals.openRemarks, openBefore - 1)
 })
 
-test('отклик считается от гостей: двое за столом, оценил один — 50% по этому столу', async () => {
+test('отклик — по закрытым посадкам: пока стол открыт, процента нет; закрыли — 50%', async () => {
   const table = fresh()
   const g = await join(table, 'Аня')
   await join(table, 'Дима')
   await post(`/api/t/${table}/rate`, { rating: 'good' }, { guest: g })
-  const body = await (await quality()).json()
-  const row = body.report.byTable.find((t: any) => t.tableId === table)
+  let body = await (await quality()).json()
+  let row = body.report.byTable.find((t: any) => t.tableId === table)
   assert.equal(row.guests, 2)
   assert.equal(row.rated, 1)
-  assert.equal(row.responseRate, 50)
+  assert.equal(row.responseRate, null, 'сидящие ещё не успели оценить')
   assert.equal(row.index, 100)
+  await post(`/api/t/${table}/close`, { force: true }, { staff: M })
+  body = await (await quality()).json()
+  row = body.report.byTable.find((t: any) => t.tableId === table)
+  assert.equal(row.responseRate, 50)
 })
 
 test('ожидание официанта: от вызова до «иду»', async () => {

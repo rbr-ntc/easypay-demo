@@ -28,7 +28,7 @@ import {
   setStopOverride,
   stopList
 } from './menu.ts'
-import { ALLERGENS } from '@easypay/domain/allergens'
+import { ALLERGENS, effectiveAllergies } from '@easypay/domain/allergens'
 import { isKnownTable, planTables, seatsOf } from './hallplan.ts'
 import { describeQrCheck, keyMatches, qrRequired, tableKey } from './tableKey.ts'
 import { hallPayload, kitchenPayload } from './feeds.ts'
@@ -219,6 +219,22 @@ function openSessionInPlace(t: TableSession) {
 }
 
 /** Публичная позиция: без внутренних полей, зато с названием блюда. */
+/**
+ * Общий черновик: кто отказался («я это не ем») и чьего согласия ждёт аллерген.
+ * Раньше аллергик не знал, что общий десерт соседки завис из-за него (смена №7, А1).
+ */
+function sharedDraftInfo(t: TableSession, l: TableSession['lines'][number]) {
+  if (!l.shared || l.sent || l.cancelled) return {}
+  const out = l.optedOut ?? []
+  const dishAllergens = allergensOf(l.dishId, l.options ?? {})
+  // Заказавшего не спрашиваем: его риск ловит диалог при отправке, а «не ем» своё — это «убрать»
+  const awaitingConsent = t.personas
+    .filter(p => !out.includes(p.id) && p.id !== l.personaId)
+    .filter(p => dishAllergens.some(a => effectiveAllergies(p.allergies).includes(a) && !(l.allergenOk ?? []).includes(okKey(p.id, a))))
+    .map(p => p.id)
+  return { optedOut: out, awaitingConsent }
+}
+
 function publicLine(line: any) {
   return {
     uid: line.uid,
@@ -272,7 +288,7 @@ function snapshot(t: TableSession, id: string) {
       joinedAt: p.joinedAt,
       allergies: p.allergies ?? []
     })),
-    lines: t.lines.map(publicLine),
+    lines: t.lines.map(l => ({ ...publicLine(l), ...sharedDraftInfo(t, l) })),
     payments: t.payments.map(p => ({
       personaId: p.personaId,
       amount: p.amount,
@@ -411,6 +427,18 @@ function guestOf(t: TableSession, token: unknown): Persona | null {
  */
 function stillEntitled(res: any): boolean {
   return typeof res.epRecheck !== 'function' || res.epRecheck()
+}
+
+/** Закрыть потоки персонала, чьи права больше не действуют: выход, увольнение, смена PIN. */
+function dropRevokedStreams() {
+  for (const set of [hallStreams, kitchenStreams, ...streams.values()]) {
+    for (const res of set as Set<any>) {
+      if (res.epRecheck && !stillEntitled(res)) {
+        set.delete(res)
+        res.end()
+      }
+    }
+  }
 }
 
 function pushTo(subscribers: Set<any>, payload: unknown) {
@@ -564,7 +592,7 @@ const STAFF_ACTIONS = new Set([
   'serve', 'ready', 'start', 'close', 'reset', 'ack', 'dismiss', 'clean', 'cash', 'refund', 'removeGuest', 'addSeat', 'addLine'
 ])
 const GUEST_ACTIONS = new Set([
-  'lines', 'remove', 'send', 'pay', 'tip', 'call', 'cancelMine', 'cashIntent', 'cancelCash', 'leave', 'allergies', 'rate', 'cancelPay'
+  'lines', 'remove', 'send', 'pay', 'tip', 'call', 'cancelMine', 'cashIntent', 'cancelCash', 'leave', 'allergies', 'rate', 'cancelPay', 'sharedOptOut', 'sharedConsent'
 ])
 const IDEMPOTENT_ACTIONS = new Set(['join', 'lines', 'pay', 'tip', 'refund', 'addLine'])
 const CALL_REASONS = new Set(['help', 'bill', 'water'])
@@ -703,7 +731,8 @@ function joinGuest(t: TableSession, tableId: string, body: any): MutationResult 
   }
   const seats = seatsOf(tableId) + (t.status === 'open' ? (t.extraSeats ?? 0) : 0)
   const seated = t.status === 'open' ? t.personas.length : 0
-  if (seated >= seats) return fail(400, 'table full', { seats })
+  // Места кончились — гость не виноват: подсказываем, как получить стул (смена №7, З3)
+  if (seated >= seats) return fail(409, 'table full', { seats, hint: 'попросите соседа по столу позвать официанта — он приставит стул' })
 
   // Молчаливое выбрасывание чужого значения — та же болезнь, что была у /call:
   // гость пишет «молоко», система оставляет пустой список, и оба уверены,
@@ -807,6 +836,31 @@ function publicUrlOf(req: any): string | null {
   return `${proto}://${host}`
 }
 
+/**
+ * Гость у общего черновика: «я это не ем» (не делит и не платит) или «буду есть,
+ * знаю про аллерген». Только до отправки: после отправки доли зафиксированы.
+ */
+function sharedChoice(t: TableSession, tableId: string, action: string, body: any, persona: Persona): MutationResult {
+  const uid = typeof body.uid === 'number' ? body.uid : Number.NaN
+  const line = t.lines.find(l => l.uid === uid)
+  if (!line || !line.shared) return fail(404, 'shared line not found')
+  if (line.sent || line.cancelled) return fail(409, 'already sent to kitchen')
+  const name = dishName(line.dishId)
+  if (action === 'sharedOptOut') {
+    if (line.personaId === persona.id) return fail(409, 'your own order', { hint: 'своё общее блюдо просто уберите из корзины' })
+    const out = body.out !== false
+    line.optedOut = out ? [...new Set([...(line.optedOut ?? []), persona.id])] : (line.optedOut ?? []).filter(id => id !== persona.id)
+    audit(null, out ? 'не будет есть общее блюдо' : 'снова делит общее блюдо', tableId, `${persona.name}: ${name}`, null, persona)
+    return ok({ ok: true, optedOut: line.optedOut })
+  }
+  const hits = allergensOf(line.dishId, line.options ?? {}).filter(a => effectiveAllergies(persona.allergies).includes(a))
+  if (!hits.length) return fail(409, 'nothing to confirm')
+  line.allergenOk = [...new Set([...(line.allergenOk ?? []), ...hits.map(a => okKey(persona.id, a))])]
+  line.optedOut = (line.optedOut ?? []).filter(id => id !== persona.id)
+  audit(null, 'согласился на аллерген', tableId, `${persona.name}: ${name} — ${hits.join(', ')}`, null, persona)
+  return ok({ ok: true })
+}
+
 /** Кто-то заплатил «поровну» — дальше только поровну или весь стол (правило 6), и наличными тоже. */
 function equalLocked(t: TableSession): boolean {
   return t.payments.some(p => p.scope === 'equal') || equalInFlight(t)
@@ -847,6 +901,8 @@ function removePersona(t: TableSession, persona: Persona): string | null {
 }
 
 function guestAction(t: TableSession, tableId: string, action: string, body: any, persona: Persona): MutationResult {
+  if (action === 'sharedOptOut' || action === 'sharedConsent') return sharedChoice(t, tableId, action, body, persona)
+
   if (action === 'cancelPay') return cancelIntent(t, tableId, persona, (a, tid, detail, amount, p) => audit(null, a, tid, detail, amount, p))
 
   if (action === 'rate') {
@@ -855,7 +911,10 @@ function guestAction(t: TableSession, tableId: string, action: string, body: any
     if (rating !== 'good' && rating !== 'ok' && rating !== 'bad') return fail(400, 'bad rating', { allowed: ['good', 'ok', 'bad'] })
     const note = sanitizeNote(body.note)
     const prev = (t.ratings ?? []).find(r => r.personaId === persona.id)
-    t.ratings = [...(t.ratings ?? []).filter(r => r.personaId !== persona.id), { personaId: persona.id, rating, note, at: Date.now() }]
+    const changed = prev && (prev.rating !== rating || prev.note !== note)
+    // Прежняя оценка уходит в историю, а не в никуда: первое замечание — самое честное (Г2)
+    const history = [...(prev?.history ?? []), ...(changed ? [{ rating: prev!.rating, note: prev!.note, at: prev!.at }] : [])].slice(-5)
+    t.ratings = [...(t.ratings ?? []).filter(r => r.personaId !== persona.id), { personaId: persona.id, rating, note, at: Date.now(), history }]
     // Повтор той же оценки журнал не засоряет: ломатель писал десятки одинаковых строк
     if (prev && prev.rating === rating && prev.note === note) return ok({ ok: true })
     audit(null, 'оценил визит', tableId, `${persona.name}: ${{ good: 'всё отлично', ok: 'нормально', bad: 'есть замечание' }[rating]}${note ? ` — ${note}` : ''}`, null, persona)
@@ -867,15 +926,21 @@ function guestAction(t: TableSession, tableId: string, action: string, body: any
     if (!Array.isArray(body.allergies)) return fail(400, 'allergies must be a list', { allowed: ALLERGENS })
     const unknown = (body.allergies as unknown[]).filter(a => typeof a !== 'string' || !ALLERGENS.includes(a))
     if (unknown.length) return fail(400, 'unknown allergen', { unknown: unknown.map(String), allowed: ALLERGENS })
+    // Список заменяется целиком (экран шлёт всё отмеченное) — а в журнал пишем, что именно
+    // добавили и сняли: снятая аллергия так же важна для кухни, как новая (смена №7, А4)
+    const before = persona.allergies ?? []
     persona.allergies = ALLERGENS.filter(a => (body.allergies as string[]).includes(a))
-    audit(null, 'указал аллергии', tableId, `${persona.name}: ${persona.allergies.join(', ') || 'нет'}`, null, persona)
+    const added = persona.allergies.filter(a => !before.includes(a))
+    const removed = before.filter(a => !persona.allergies!.includes(a))
+    const change = [added.length && `добавил(а): ${added.join(', ')}`, removed.length && `снял(а): ${removed.join(', ')}`].filter(Boolean).join('; ')
+    audit(null, 'указал аллергии', tableId, `${persona.name}: ${change || persona.allergies.join(', ') || 'нет'}`, null, persona)
     return ok({ ok: true, allergies: persona.allergies })
   }
 
   if (action === 'leave') {
     const why = removePersona(t, persona)
     if (why) return fail(409, why)
-    audit(null, 'вышел из-за стола', tableId, persona.name, null)
+    audit(null, 'вышел из-за стола', tableId, persona.name, null, persona)
     return ok()
   }
 
@@ -903,7 +968,7 @@ function guestAction(t: TableSession, tableId: string, action: string, body: any
     const shared = body.shared === true
     const concerned = shared ? t.personas : [persona]
     const people = concerned
-      .map(p => ({ id: p.id, name: p.name, self: p.id === persona.id, allergens: dishAllergens.filter(a => (p.allergies ?? []).includes(a)) }))
+      .map(p => ({ id: p.id, name: p.name, self: p.id === persona.id, allergens: dishAllergens.filter(a => effectiveAllergies(p.allergies).includes(a)) }))
       .filter(p => p.allergens.length > 0)
     const hits = [...new Set(people.flatMap(p => p.allergens))]
     if (hits.length > 0 && body.confirmAllergen !== true) {
@@ -918,7 +983,9 @@ function guestAction(t: TableSession, tableId: string, action: string, body: any
       price: priceWithOptions(dish.id, checked.options ?? {}),
       options: checked.options ?? {},
       comment,
-      allergenOk: people.flatMap(p => p.allergens.map(a => okKey(p.id, a))),
+      // Согласие — только своё: за соседа-аллергика заказавший общее блюдо не решает,
+      // его спросят отдельно (баннер «ждёт вашего решения»), иначе он не узнал бы вовсе
+      allergenOk: people.filter(p => p.self).flatMap(p => p.allergens.map(a => okKey(p.id, a))),
       shared,
       sharedWith: [] as string[],
       personaId: persona.id,
@@ -956,13 +1023,13 @@ function guestAction(t: TableSession, tableId: string, action: string, body: any
     const stoppedMine = stopped.filter(l => l.personaId === persona.id)
     if (stoppedMine.length) return fail(409, 'dish in stop list', { dishes: [...new Set(stoppedMine.map(l => dishName(l.dishId)))] })
     const risky = drafts.flatMap(l => {
-      const eaters = l.shared ? t.personas : t.personas.filter(p => p.id === l.personaId)
+      const eaters = l.shared ? t.personas.filter(p => !(l.optedOut ?? []).includes(p.id)) : t.personas.filter(p => p.id === l.personaId)
       const dishAllergens = allergensOf(l.dishId, l.options ?? {})
       const people = eaters
         .map(p => ({
           id: p.id,
           name: p.name,
-          allergens: dishAllergens.filter(a => (p.allergies ?? []).includes(a) && !(l.allergenOk ?? []).includes(okKey(p.id, a)))
+          allergens: dishAllergens.filter(a => effectiveAllergies(p.allergies).includes(a) && !(l.allergenOk ?? []).includes(okKey(p.id, a)))
         }))
         .filter(p => p.allergens.length > 0)
       return people.length ? [{ uid: l.uid, dish: dishName(l.dishId), people }] : []
@@ -1000,7 +1067,8 @@ function guestAction(t: TableSession, tableId: string, action: string, body: any
       line.sent = true
       line.sentAt = now
       // Доля общего блюда фиксируется здесь: делят те, кто за столом в момент заказа
-      if (line.shared) line.sharedWith = sharers
+      // Отказавшийся («я это не ем») общее блюдо не делит и не платит за него (А2)
+      if (line.shared) line.sharedWith = sharers.filter(id => !(line.optedOut ?? []).includes(id))
       sent += 1
     }
     // Гость с плохой связью жмёт кнопку дважды: заказ уже на кухне, и сказать
@@ -1075,7 +1143,11 @@ function guestAction(t: TableSession, tableId: string, action: string, body: any
       // «Нечего платить», потому что свой платёж уже в пути — отдаём его, а не ошибку
       const mine = acquiring ? (t.payIntents ?? []).find(i => i.personaId === persona.id && isReserving(i)) : undefined
       if (mine) return openIntent(t, tableId, persona, { amount: mine.amount, scope, method, idem, lines: mine.lines })
-      return fail(400, 'nothing to pay')
+      // Счёт есть, а платить нечего — значит, за гостя уже заплатили: сказать это, а не про корзину (П7)
+      // «За вас заплатили» — только если гость был должен, а остаток стола это погасил;
+      // не отправил своё или уже заплатил сам — это другое, и врать про деньги нельзя
+      const owed = round2(money.totalOf(persona.id) - money.paidOf(persona.id)) > 0.01
+      return fail(400, 'nothing to pay', { covered: owed && money.remaining <= 0.01 })
     }
     if (acquiring) return openIntent(t, tableId, persona, { amount, scope, method, idem, lines: receiptLines(t, money, persona, scope) })
     // Внесённое гостем ДО этого платежа: paidOf читает живой список платежей,
@@ -1308,7 +1380,7 @@ function staffAction(t: TableSession, tableId: string, action: string, body: any
     const dishAllergens = allergensOf(dish.id, checked.options ?? {})
     const eaters = shared ? t.personas : [persona]
     const people = eaters
-      .map(p => ({ name: p.name, allergens: dishAllergens.filter(a => (p.allergies ?? []).includes(a)) }))
+      .map(p => ({ name: p.name, allergens: dishAllergens.filter(a => effectiveAllergies(p.allergies).includes(a)) }))
       .filter(p => p.allergens.length > 0)
     if (people.length > 0 && body.confirmAllergen !== true) {
       return fail(409, 'allergen warning', { allergens: [...new Set(people.flatMap(p => p.allergens))], dish: dish.name, people })
@@ -1816,11 +1888,17 @@ async function handleApi(req: any, res: any, url: URL) {
     if (req.method !== 'POST') return json(res, 405, { error: 'method' })
     dropSession(req.headers['x-staff-token'])
     await flushAudit(store)
+    // Потоки вышедшего закрываем сразу, а не на следующем пинге через 25 с (смена №7, Б2)
+    dropRevokedStreams()
     return json(res, 200, { ok: true })
   }
 
   // Персонал из кабинета: список, новый сотрудник, PIN, увольнение
-  if (await staffRoutes(req, res, url, store)) return
+  if (await staffRoutes(req, res, url, store)) {
+    // Уволили или сменили PIN — живые потоки этого человека гаснут сразу
+    dropRevokedStreams()
+    return
+  }
   // Настройки заведения: читают все, меняет менеджер
   if (await settingsRoutes(req, res, url, store)) return
 

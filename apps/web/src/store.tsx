@@ -18,6 +18,7 @@ import {
   apiPay,
   apiPayStatus,
   apiCancelPay,
+  apiSharedChoice,
   apiCancelMine,
   apiCancelCash,
   apiCashIntent,
@@ -279,7 +280,7 @@ export function humanError(err: ApiError): string {
     'unknown allergen': 'Такой аллергии нет в списке — выберите из предложенных',
     'unknown table': 'Такого стола нет в зале — проверьте QR на столе',
     'table key required': 'Отсканируйте QR-код на столе: по ссылке без него за стол не сесть',
-    'table full': 'За столом нет свободных мест — попросите официанта приставить стул',
+    'table full': 'За столом нет свободных мест — попросите соседа по столу позвать официанта, он приставит стул',
     // Частая причина — корзина ещё не отправлена: подсказываем, что сделать
     'nothing to pay': 'Оплачивать пока нечего — если в корзине что-то есть, сначала отправьте на кухню',
     'unknown method': 'Такой способ оплаты не поддерживается',
@@ -373,6 +374,8 @@ interface Ctx {
   removeLine: (uid: number) => Promise<void>
   /** Отменить своё блюдо, пока кухня не взяла его в работу. */
   cancelMine: (uid: number) => Promise<void>
+  /** Общее блюдо соседа: не ем (не делю и не плачу) или согласна на аллерген. */
+  sharedChoice: (uid: number, choice: 'out' | 'consent' | 'back') => Promise<void>
   /** Позвать официанта с наличными: сумма ждёт подтверждения человека. */
   askCash: (scope: PayScope) => Promise<number>
   /** Передумал: снять просьбу, чтобы официант не шёл за деньгами зря. */
@@ -645,6 +648,14 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         if (!guestToken()) return
         await apiRemoveLine(guestToken()!, uid)
       }, undefined),
+    sharedChoice: (uid, choice) =>
+      guard(async () => {
+        if (!guestToken()) return
+        await apiSharedChoice(guestToken()!, uid, choice)
+        toastRef.current?.(
+          choice === 'out' ? 'Хорошо — это блюдо делят без вас' : choice === 'back' ? 'Вы снова делите это блюдо' : 'Отметили: блюдо уйдёт на кухню с пометкой для повара'
+        )
+      }, undefined),
     cancelMine: uid =>
       guard(async () => {
         if (!guestToken()) return
@@ -700,6 +711,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       try {
         const r = await apiPay(guestToken()!, scope, idemKey, method)
         if (r.pending && r.intentId) {
+          // Уже начатая оплата другим способом — говорим, а не подменяем выбор молча
+          if (r.resumed && r.scope && r.scope !== scope) toastRef.current?.(`У вас уже начата оплата на ${r.amount} ₽ — продолжим её`)
           rememberPayIntent(r.intentId)
           // Кнопка «Назад» с сайта эквайера вернёт на проверку, а не на вечное «Проводим оплату»
           patch({ payStage: 'checking', payIntent: r.intentId })
@@ -713,7 +726,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         // Таймаут и обрыв: запрос ушёл, ответа нет. Платёж мог пройти —
         // говорить «деньги не списаны» здесь было бы враньём про чужие деньги.
         const unknown = !api || api.status === 0 || api.status >= 500
-        return { paid: 0, error: api ? humanError(api) : 'Не получилось — проверьте связь', unknown, code: api?.error ?? null }
+        const covered = api?.error === 'nothing to pay' && api.extra?.covered
+        return {
+          paid: 0,
+          error: covered ? 'За вас уже заплатили — платить ничего не нужно' : api ? humanError(api) : 'Не получилось — проверьте связь',
+          unknown,
+          code: api?.error ?? null
+        }
       }
     },
     forgetPayIntent: () => rememberPayIntent(null),

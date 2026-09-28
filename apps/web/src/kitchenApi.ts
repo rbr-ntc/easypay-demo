@@ -9,6 +9,8 @@ export interface KitchenPayload {
   /** Что сейчас в стопе — с учётом тумблеров кухни, а не только menu.json. */
   stop?: string[]
   stopInfo?: Record<string, { by: string | null; at: number | null; byMenu: boolean }>
+  /** Снятое в стоп, но лежащее в неотправленных корзинах гостей. */
+  inCarts?: Record<string, number>
   menuVersion?: number
   settingsVersion?: number
   /** Открыта ли смена — повару /api/shift недоступен. */

@@ -1,3 +1,4 @@
+import { effectiveAllergies } from '@easypay/domain/allergens'
 import { allergensFor } from '@easypay/domain/allergens'
 import type { Dish, LineOptions } from '../data'
 
@@ -39,7 +40,9 @@ export function rescues(dish: Dish, blocked: string[] | null, mine: string[]) {
 /** Что из аллергий гостя есть в блюде при выбранных вариантах. */
 export function allergyHits(dish: Dish, mine: string[], options: LineOptions = defaults(dish)): string[] {
   if (mine.length === 0) return []
-  return allergensFor(dish, options).filter(a => mine.includes(a))
+  // Те же правила, что у сервера: «орехи» предупреждают и про арахис
+  const eff = effectiveAllergies(mine)
+  return allergensFor(dish, options).filter(a => eff.includes(a))
 }
 
 /**

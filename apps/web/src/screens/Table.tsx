@@ -10,6 +10,7 @@ import { lineStage } from '../lineStage'
 import { sharersOf, splitRounded } from '@easypay/domain/money'
 import { artSet, dishPhoto, dishThumb } from '../guest/showcase'
 import type { SendAllergy } from '../api'
+import { SharedConsent } from './SharedConsent'
 import { AvatarStack, Slideshow } from '../guest/parts'
 
 /**
@@ -76,7 +77,11 @@ export function Table() {
       // отправки. После — «ваша доля» только тем, кто в sharedWith, и той же
       // функцией, что у сервера: иначе подсевший позже видел «ваша доля»
       // за стейк, за который не платит, а 490 на троих давали 489,99
-      if (!l.sent) return 'на всех · поделим при отправке'
+      if (!l.sent) {
+        // Кто сказал «я это не ем» — видно всем: и самому (с возможностью передумать), и заказавшему
+        const out = (l.optedOut ?? []).map(id => (id === me.id ? 'без вас' : `без ${nameOf(id)}`))
+        return out.length ? `на всех · ${out.join(', ')}` : 'на всех · поделим при отправке'
+      }
       const sharers = sharersOf(l as any, personaIds)
       const k = sharers.indexOf(me.id)
       if (k < 0) return `на всех ÷${sharers.length}`
@@ -228,6 +233,8 @@ export function Table() {
             <div className="mt-1 text-[13px] text-g-soft">{sub}</div>
           </div>
         </div>
+
+        <SharedConsent />
 
         {company && (
           <div className="flex justify-center gap-6 px-5 pt-4.5 pb-1.5" role="tablist">

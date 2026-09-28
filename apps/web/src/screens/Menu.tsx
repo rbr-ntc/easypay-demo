@@ -168,10 +168,22 @@ export function Menu() {
 
   const mineAllergies = me?.allergies ?? []
 
+  // Общее блюдо соседа ждёт моего решения по аллергену — говорим и в меню, а не только на «Столе»
+  const needsMe = !!me && (snap?.lines ?? []).some(l => l.personaId !== me.id && l.awaitingConsent?.includes(me.id))
+
   return (
     <div className="absolute inset-0">
       <div ref={scrollRef} onScroll={onScroll} className="g-noscroll absolute inset-0 overflow-y-auto">
         <Hero coll={coll} onOpen={openDish} />
+        {needsMe && (
+          <button
+            onClick={() => patch({ screen: 'table' })}
+            className="mx-4 mt-3 block w-[calc(100%-2rem)] rounded-[18px] px-4 py-3 text-left text-[14px] text-g-tan"
+            style={{ border: '1px solid rgba(232,120,100,.55)' }}
+          >
+            Общее блюдо на столе ждёт вашего решения: в нём ваш аллерген → к столу
+          </button>
+        )}
 
         {/* Над шапкой: кто за столом, стол, официант */}
         <div className="absolute top-4.5 right-4 left-4 z-[3] flex items-center gap-2.5">

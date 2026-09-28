@@ -3,7 +3,7 @@ import { passWait, ticketUrgency, ticketWait } from '@easypay/domain/kitchen'
 import type { KitchenTicket } from '@easypay/domain/kitchen'
 import { dismissCancelled, handOver, markReady, subscribeKitchen, takeToWork } from '../kitchenApi'
 import type { KitchenPayload } from '../kitchenApi'
-import { allergenAccusative } from '@easypay/domain/allergens'
+import { allergenAccusative, effectiveAllergies } from '@easypay/domain/allergens'
 import { ensureMenu, MENU, optionsLabel } from '../data'
 import { ensureSettings } from '../settings'
 import { useStore } from '../store'
@@ -143,7 +143,16 @@ export function KitchenPage({ station }: { station: 'kitchen' | 'bar' }) {
             </div>
           )
         })}
-        <StopPanel station={station} stop={data.stop ?? []} info={data.stopInfo} q={q} setQ={setQ} canStop={may('stop')} onToast={toast} />
+        <StopPanel
+          station={station}
+          stop={data.stop ?? []}
+          info={data.stopInfo}
+          inCarts={data.inCarts ?? {}}
+          q={q}
+          setQ={setQ}
+          canStop={may('stop')}
+          onToast={toast}
+        />
       </div>
     </div>
   )
@@ -201,8 +210,8 @@ function TicketCard({
         <div className="mt-2 rounded-lg bg-c-bad px-2.5 py-2 text-[14px] leading-snug font-bold text-white">
           ⚠ В БЛЮДЕ {t.allergyHits!.join(', ').toUpperCase()}
           {(() => {
-            const who = (t.guestAllergies ?? []).filter(g => g.allergies.some(a => t.allergyHits!.includes(a))).map(g => g.name)
-            return who.length ? ` — аллергия у ${who.join(', ')}` : ''
+            const who = (t.guestAllergies ?? []).filter(g => effectiveAllergies(g.allergies).some(a => t.allergyHits!.includes(a))).map(g => g.name)
+            return who.length ? ` — аллергия: ${who.join(', ')}` : ''
           })()}
           <div className="mt-0.5 text-[12px] font-normal">Гость предупреждён и согласился. Отдельная посуда, уточните у официанта.</div>
         </div>
@@ -213,7 +222,7 @@ function TicketCard({
         </div>
       ))}
       {(t.guestAllergies ?? [])
-        .filter(g => !g.allergies.some(a => (t.allergyHits ?? []).includes(a)))
+        .filter(g => !effectiveAllergies(g.allergies).some(a => (t.allergyHits ?? []).includes(a)))
         .map(g => (
           <div key={g.name} className="mt-1.5 rounded-lg border border-c-bad-line px-2.5 py-1 text-[12px] text-c-bad-ink">
             аллергия гостя · {g.name}: {g.allergies.join(', ')}
@@ -252,6 +261,7 @@ function StopPanel({
   station,
   stop,
   info,
+  inCarts,
   q,
   setQ,
   canStop,
@@ -261,6 +271,8 @@ function StopPanel({
   stop: string[]
   /** Кто и когда поставил в стоп. */
   info?: Record<string, { by: string | null; at: number | null; byMenu: boolean }>
+  /** В скольких неотправленных корзинах лежит снятое блюдо. */
+  inCarts: Record<string, number>
   q: string
   setQ: (v: string) => void
   canStop: boolean
@@ -319,6 +331,9 @@ function StopPanel({
                       ? 'в стопе по умолчанию (меню)'
                       : `в стопе${info[d.id].at ? ` с ${stopTime(info[d.id].at!)}` : ''}${info[d.id].by ? ` · ${info[d.id].by}` : ''}`}
                   </span>
+                )}
+                {off && (inCarts[d.id] ?? 0) > 0 && (
+                  <span className="block text-[11px] font-bold text-c-warn-ink">лежит в корзинах: {inCarts[d.id]} — гостям не уйдёт</span>
                 )}
               </span>
               <Toggle

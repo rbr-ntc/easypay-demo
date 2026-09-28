@@ -50,7 +50,8 @@ export function visitOf(tableId: string, t: TableSession, resolutions: Map<strin
         at: r.at,
         resolvedAt: res?.at ?? null,
         resolvedBy: res?.by ?? null,
-        resolution: res?.text ?? null
+        resolution: res?.text ?? null,
+        history: r.history ?? []
       }
     }),
     // Только вызовы, принятые человеком: снятые системой (гость заплатил) — не ожидание

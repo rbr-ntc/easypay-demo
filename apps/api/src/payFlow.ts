@@ -81,7 +81,8 @@ export function openIntent(
   if (inFlight) {
     // Создаётся прямо сейчас соседним запросом — не запускаем второй раз, клиент подождёт
     const create = !inFlight.providerId && inFlight.status === 'creating' && now - inFlight.at >= CREATING_MS
-    return ok({ ...pendingBody(inFlight, create), resumed: true })
+    // scope начатой оплаты — чтобы экран сказал «у вас уже начата оплата», а не молча подменил выбор (П6)
+    return ok({ ...pendingBody(inFlight, create), resumed: true, scope: inFlight.scope })
   }
 
   const intent: PayIntent = {

@@ -69,7 +69,7 @@ test('тикет кухни несёт аллергию гостя и отмеч
 
 test('общее блюдо проверяется на аллергии соседей и несёт их на кухню', async () => {
   const table = fresh()
-  await join(table, 'Марина', ['лактоза'])
+  const marina = (await join(table, 'Марина', ['лактоза'])).body.guestToken
   const katya = (await join(table, 'Катя')).body.guestToken
 
   const blocked = await post(`/api/t/${table}/lines`, { dishId: 'bruschetta', shared: true }, { guest: katya })
@@ -82,6 +82,10 @@ test('общее блюдо проверяется на аллергии сос�
   assert.equal((await post(`/api/t/${table}/lines`, { dishId: 'bruschetta' }, { guest: katya })).status, 200)
 
   await post(`/api/t/${table}/lines`, { dishId: 'bruschetta', shared: true, confirmAllergen: true }, { guest: katya })
+  // За Марину Катя не решает (смена №7): Марина соглашается сама
+  const snap = await fetch(`${base}/api/t/${table}`, { headers: { 'x-guest-token': marina } }).then(r => r.json())
+  const sharedDraft = snap.lines.find((l: any) => l.shared && !l.sent)
+  await post(`/api/t/${table}/sharedConsent`, { uid: sharedDraft.uid }, { guest: marina })
   await post(`/api/t/${table}/send`, { scope: 'mine' }, { guest: katya })
   const shared = (await kitchen()).tickets.find((t: any) => t.tableId === table && t.shared)
   assert.deepEqual(shared.sharedNames, ['Марина', 'Катя'])

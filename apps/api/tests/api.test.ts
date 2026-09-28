@@ -85,7 +85,7 @@ test('вместимость стола ограничена посадкой и
   await joinGuest(table, 'Первый', 'fox')
   await joinGuest(table, 'Второй', 'bear')
   const third = await post(table, 'join', { name: 'Третий', animal: 'panda', idemKey: 'x' })
-  assert.equal(third.status, 400)
+  assert.equal(third.status, 409)
   assert.equal((await third.json()).error, 'table full')
 })
 
