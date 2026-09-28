@@ -53,6 +53,8 @@ import {
   waiterOfTable
 } from './staff.ts'
 import { createRateLimiter } from './rateLimit.ts'
+import { paymentProvider } from './payments/index.ts'
+import { cancelIntent, equalInFlight, isReserving, openIntent, pendingPaysOf, reservedTotals, reservedView, settleIntent, startAtProvider, type PayFlowDeps } from './payFlow.ts'
 import type { Actor, AuditEntry, Call, MutationResult, PayMethod, Persona, TableSession } from './types.ts'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -203,6 +205,8 @@ function openSessionInPlace(t: TableSession) {
   t.callAcks = []
   t.ratings = []
   t.extraSeats = 0
+  // Поздние оплаты прошлой посадки новому столу не принадлежат: их заморозку снимет эквайер-поток
+  t.payIntents = []
   t.seq = 1
   t.overpaid = 0
   if (t.db) t.db.sessionUuid = null // в БД это будет новая строка сессии
@@ -279,6 +283,12 @@ function snapshot(t: TableSession, id: string) {
     acked: (t.callAcks ?? [])
       .filter(a => Date.now() - a.at < 15 * 60 * 1000)
       .map(a => ({ id: a.id, personaId: a.personaId, reason: a.reason, at: a.at, by: a.byName, reply: a.reply ?? null })),
+    // Кто сейчас платит через эквайера — сумма зарезервирована, стол ждёт
+    payPending: pendingPaysOf(t),
+    // Суммы «к оплате» с учётом оплат в пути — ими экран считает кнопку, как сервер
+    reserved: pendingPaysOf(t).length ? reservedView(t) : null,
+    // Эквайер подключён: оплата уходит на страницу ЮKassa, а не записывается сразу
+    acquiring: paymentProvider()?.name ?? null,
     // Кто уже оценил — чтобы не спрашивать дважды. Саму оценку соседям не показываем
     rated: (t.ratings ?? []).map(r => r.personaId),
     calls: t.calls.map(c => ({
@@ -545,7 +555,7 @@ const STAFF_ACTIONS = new Set([
   'serve', 'ready', 'start', 'close', 'reset', 'ack', 'dismiss', 'clean', 'cash', 'refund', 'removeGuest', 'addSeat', 'addLine'
 ])
 const GUEST_ACTIONS = new Set([
-  'lines', 'remove', 'send', 'pay', 'tip', 'call', 'cancelMine', 'cashIntent', 'cancelCash', 'leave', 'allergies', 'rate'
+  'lines', 'remove', 'send', 'pay', 'tip', 'call', 'cancelMine', 'cashIntent', 'cancelCash', 'leave', 'allergies', 'rate', 'cancelPay'
 ])
 const IDEMPOTENT_ACTIONS = new Set(['join', 'lines', 'pay', 'tip', 'refund', 'addLine'])
 const CALL_REASONS = new Set(['help', 'bill', 'water'])
@@ -726,9 +736,69 @@ function joinGuest(t: TableSession, tableId: string, body: any): MutationResult 
  * доля в общих блюдах переходит к остальным: он их не ел. Раньше такой
  * «призрак» навсегда входил в делёж и в число гостей смены.
  */
+/** После оплаты: снять «счёт» с расплатившегося, а когда закрыт весь стол — и просьбу о наличных. */
+function clearAfterPay(t: TableSession, persona: Persona | null): number {
+  const paidNow = computeTotals(t, priceOf)
+  const left = round2(paidNow.remaining)
+  // Гость расплатился за себя — его «счёт» снимаем сразу, не дожидаясь всего стола
+  if (persona && paidNow.remainingOf(persona.id) <= 0.01) {
+    t.calls = settleBillCalls(t.calls, c => c.personaId === persona!.id)
+  }
+  // Причина вызова исчезла — снимаем его сам, иначе официант идёт с папкой
+  // к гостю, который уже расплатился, а красный чип приучает игнорировать зал
+  if (left <= 0.01) {
+    t.calls = settleBillCalls(t.calls, () => true)
+    // И просьба о наличных тоже: гость передумал и заплатил телефоном,
+    // а официант всё ещё шёл к нему за купюрами, и стол горел красным
+    t.cashIntent = null
+  }
+  return left
+}
+
+/** Журнал мутации — только если транзакция прошла (см. маршрут стола). */
+async function withTableAudited(store: Store, tableId: string, apply: (t: TableSession) => MutationResult): Promise<MutationResult> {
+  let own: AuditEntry[] = []
+  const result = await store.withTable(tableId, session => {
+    const before = pendingAudit
+    pendingAudit = []
+    try {
+      return apply(session)
+    } finally {
+      own = pendingAudit
+      pendingAudit = before
+    }
+  })
+  for (const entry of own) await store.audit(entry)
+  return result
+}
+
+function payDeps(store: Store): PayFlowDeps {
+  return {
+    read: id => store.read(id),
+    withTable: (id, apply) => withTableAudited(store, id, apply),
+    after: async id => {
+      await flushAudit(store)
+      await broadcast(store, id)
+    },
+    onPaid: (t, persona) => void clearAfterPay(t, persona),
+    audit: (action, tableId, detail, amount, persona) => audit(null, action, tableId, detail, amount, persona)
+  }
+}
+
+/** Куда эквайер вернёт гостя после оплаты: адрес стенда, а не внутренний порт. */
+function publicUrlOf(req: any): string | null {
+  if (process.env.EASYPAY_PUBLIC_URL) return process.env.EASYPAY_PUBLIC_URL.replace(/\/$/, '')
+  // С эквайером адрес возврата берём только из настроек: Host присылает клиент,
+  // и чужой домен в return_url превратил бы нашу ссылку на оплату в фишинг
+  if (paymentProvider() && !process.env.EASYPAY_ALLOW_HOST_RETURN) return null
+  const host = String(req.headers['x-forwarded-host'] ?? req.headers.host ?? 'localhost')
+  const proto = String(req.headers['x-forwarded-proto'] ?? (req.socket.encrypted ? 'https' : 'http'))
+  return `${proto}://${host}`
+}
+
 /** Кто-то заплатил «поровну» — дальше только поровну или весь стол (правило 6), и наличными тоже. */
 function equalLocked(t: TableSession): boolean {
-  return t.payments.some(p => p.scope === 'equal')
+  return t.payments.some(p => p.scope === 'equal') || equalInFlight(t)
 }
 
 /**
@@ -766,6 +836,8 @@ function removePersona(t: TableSession, persona: Persona): string | null {
 }
 
 function guestAction(t: TableSession, tableId: string, action: string, body: any, persona: Persona): MutationResult {
+  if (action === 'cancelPay') return cancelIntent(t, tableId, persona, (a, tid, detail, amount, p) => audit(null, a, tid, detail, amount, p))
+
   if (action === 'rate') {
     // Оценка визита: раньше выбор на экране «Спасибо» никуда не уходил
     const rating = body.rating
@@ -984,9 +1056,17 @@ function guestAction(t: TableSession, tableId: string, action: string, body: any
     if (body.method !== undefined && !PHONE_METHODS.includes(body.method)) return fail(400, 'unknown method', { allowed: PHONE_METHODS })
     const method: PayMethod = PHONE_METHODS.includes(body.method) ? body.method : 'sbp'
     if (!phoneMethodAllowed(method)) return fail(409, 'method disabled')
-    const money = computeTotals(t, priceOf)
+    // С эквайером суммы считаются с учётом оплат в пути: сосед платит только остаток
+    const acquiring = !!paymentProvider()
+    const money = acquiring ? reservedTotals(t) : computeTotals(t, priceOf)
     const amount = round2(amountFor(money, persona.id, scope))
-    if (amount <= 0) return fail(400, 'nothing to pay')
+    if (amount <= 0) {
+      // «Нечего платить», потому что свой платёж уже в пути — отдаём его, а не ошибку
+      const mine = acquiring ? (t.payIntents ?? []).find(i => i.personaId === persona.id && isReserving(i)) : undefined
+      if (mine) return openIntent(t, tableId, persona, { amount: mine.amount, scope, method, idem, lines: mine.lines })
+      return fail(400, 'nothing to pay')
+    }
+    if (acquiring) return openIntent(t, tableId, persona, { amount, scope, method, idem, lines: receiptLines(t, money, persona, scope) })
     // Внесённое гостем ДО этого платежа: paidOf читает живой список платежей,
     // и после push первый же чек писал «ранее внесено» суммой текущей оплаты
     const mineBefore = round2(money.paidOf(persona.id))
@@ -1005,20 +1085,7 @@ function guestAction(t: TableSession, tableId: string, action: string, body: any
     t.payments.push(payment)
     audit(null, 'оплата', tableId, `${persona.name} · ${scope} · ${method}`, amount, persona)
 
-    const paidNow = computeTotals(t, priceOf)
-    const left = round2(paidNow.remaining)
-    // Гость расплатился за себя — его «счёт» снимаем сразу, не дожидаясь всего стола
-    if (paidNow.remainingOf(persona.id) <= 0.01) {
-      t.calls = settleBillCalls(t.calls, c => c.personaId === persona.id)
-    }
-    // Причина вызова исчезла — снимаем его сам, иначе официант идёт с папкой
-    // к гостю, который уже расплатился, а красный чип приучает игнорировать зал
-    if (left <= 0.01) {
-      t.calls = settleBillCalls(t.calls, () => true)
-      // И просьба о наличных тоже: гость передумал и заплатил телефоном,
-      // а официант всё ещё шёл к нему за купюрами, и стол горел красным
-      t.cashIntent = null
-    }
+    const left = clearAfterPay(t, persona)
 
     return ok({
       ok: true,
@@ -1115,8 +1182,11 @@ function guestAction(t: TableSession, tableId: string, action: string, body: any
     if (!currentSettings().pay.cash) return fail(409, 'method disabled')
     if (!currentSettings().pay.split && wanted !== 'full' && t.personas.length > 1) return fail(409, 'split disabled')
     if (wanted === 'own' && equalLocked(t)) return fail(409, 'equal split in progress', { allowed: ['equal', 'full'] })
+    // Гость уже на странице оплаты картой — наличными за то же самое не берём
+    if ((t.payIntents ?? []).some(i => i.personaId === persona.id && isReserving(i))) return fail(409, 'payment in progress')
 
-    const money = computeTotals(t, priceOf)
+    // Оплаты в пути уже зарезервированы — наличными только остаток
+    const money = paymentProvider() ? reservedTotals(t) : computeTotals(t, priceOf)
     const amount = round2(amountFor(money, persona.id, wanted as PayScope))
     if (amount <= 0) return fail(400, 'nothing to pay')
 
@@ -1358,7 +1428,8 @@ function staffAction(t: TableSession, tableId: string, action: string, body: any
     // Официант физически взял деньги. Только теперь они попадают в счёт —
     // и в отчёт по наличным, который вечером сверяют с ящиком кассы.
     if (t.status !== 'open') return fail(409, 'table closed')
-    const money = computeTotals(t, priceOf)
+    // Кто-то сейчас платит картой — его сумма зарезервирована, наличными берём только остаток
+    const money = paymentProvider() ? reservedTotals(t) : computeTotals(t, priceOf)
 
     const personaId = asId(body.personaId)
     const persona = personaId ? t.personas.find(p => p.id === personaId) : null
@@ -1459,6 +1530,10 @@ function staffAction(t: TableSession, tableId: string, action: string, body: any
     const closing = action === 'close'
     // Раньше отвечали ok, и менеджер оставался в уверенности, что закрыл он
     if (closing && t.status !== 'open') return fail(409, 'already closed', { closedAt: t.closedAt ?? null })
+    // Гость сейчас на странице оплаты — закрыть стол значит потерять его деньги из счёта
+    if (t.status === 'open' && (t.payIntents ?? []).some(i => isReserving(i)) && body.force !== true) {
+      return fail(409, 'payment in progress', { pending: pendingPaysOf(t) })
+    }
     if (t.status === 'open') {
       const money = computeTotals(t, priceOf)
       // Стол с долгом закрывается только осознанно: иначе выручка тихо исчезает.
@@ -1626,6 +1701,28 @@ function fromOutside(req: any): boolean {
 
 async function handleApi(req: any, res: any, url: URL) {
   const store = await getStore()
+
+  // Уведомление ЮKassa: только повод перечитать платёж из API — телу не верим
+  if (url.pathname === '/api/pay/yookassa/webhook') {
+    if (req.method !== 'POST') return json(res, 405, { error: 'method' })
+    const body = await readBody(req).catch(() => null)
+    const meta = body?.object?.metadata ?? {}
+    const tableId = typeof meta.tableId === 'string' ? meta.tableId : null
+    const intentId = asId(meta.intentId)
+    // Чужое или устаревшее уведомление — 200, чтобы эквайер не повторял его сутки
+    if (!tableId || !intentId || !isKnownTable(tableId)) return json(res, 200, { ok: true, ignored: true })
+    try {
+      const hint = typeof body?.object?.id === 'string' ? body.object.id : null
+      const out = await settleIntent(payDeps(store), tableId, intentId, { hintProviderId: hint, force: true })
+      // Деньги без стола — запись в журнале; 200, чтобы уведомление не повторялось сутки
+      if (out.status !== 200) console.error('уведомление ЮKassa:', out.status, JSON.stringify(out.body))
+      return json(res, 200, { ok: true })
+    } catch (err) {
+      // 5xx — эквайер повторит уведомление позже
+      console.error('уведомление ЮKassa не обработано:', err)
+      return json(res, 503, { error: 'retry' })
+    }
+  }
 
   if (url.pathname === '/api/staff/login') {
     if (req.method !== 'POST') return json(res, 405, { error: 'method' })
@@ -1847,6 +1944,30 @@ async function handleApi(req: any, res: any, url: URL) {
     return
   }
 
+  // Чем кончилась оплата у эквайера: гость вернулся со страницы оплаты и спрашивает
+  if (req.method === 'POST' && action === 'payStatus') {
+    // Каждая проверка — запрос к эквайеру: частоту режем, как у остальных гостевых действий
+    if (fromOutside(req)) {
+      const wait = guestLimiter.hit(`g:${asId(req.headers['x-guest-token']) ?? clientIp(req)}`)
+      if (wait > 0) return json(res, 429, { error: 'too many requests', retryAfterSec: wait })
+    }
+    const body = await readBody(req).catch(() => null)
+    const t = await store.read(tableId)
+    const persona = guestOf(t, req.headers['x-guest-token'])
+    if (!persona) return json(res, 401, { error: 'guest token required' })
+    const intentId = asId(body?.intentId)
+    const intent = (t.payIntents ?? []).find(i => i.id === intentId)
+    // Чужой платёж не показываем даже соседу по столу
+    if (!intent || intent.personaId !== persona.id) return json(res, 404, { error: 'payment not found' })
+    try {
+      const out = await settleIntent(payDeps(store), tableId, intent.id, { publicUrl: publicUrlOf(req) })
+      return json(res, out.status, out.body)
+    } catch (err) {
+      console.error('статус оплаты не получен:', err)
+      return json(res, 200, { ok: true, status: 'pending', retry: true })
+    }
+  }
+
   if (req.method !== 'POST') return json(res, 405, { error: 'method' })
   // Гость — не скрипт: минута его работы укладывается в десяток действий.
   // Персонал не ограничиваем — официант на запаре не должен упираться в 429
@@ -1905,25 +2026,23 @@ async function handleApi(req: any, res: any, url: URL) {
     }
   }
 
+  // Эквайер есть, а адреса возврата нет — не начинаем оплату, а не оставляем висящий резерв
+  if (action === 'pay' && paymentProvider() && !publicUrlOf(req)) return json(res, 503, { error: 'public url not configured' })
+
   const actor = actorFrom(req)
   const work = (async () => {
     // Записи журнала этой мутации ловим отдельно: мутация синхронна, так что всё,
     // что попало в журнал за её время, — её. Упала транзакция — записи выбрасываем,
     // а раньше они оставались в общей очереди и уезжали в журнал со следующим
     // чужим запросом: «чаевые 0 ₽», которых не было (смена №6, О3)
-    let own: AuditEntry[] = []
-    const result = await store.withTable(tableId, session => {
-      const before = pendingAudit
-      pendingAudit = []
-      try {
-        return mutate(session, tableId, action, body, actor, req)
-      } finally {
-        own = pendingAudit
-        pendingAudit = before
-      }
-    })
-    for (const entry of own) await store.audit(entry)
+    const result = await withTableAudited(store, tableId, session => mutate(session, tableId, action, body, actor, req))
     await flushAudit(store)
+    // Оплата через эквайера: намерение записано — теперь платёж у ЮKassa, вне транзакции стола
+    if (action === 'pay' && result.status === 200 && (result.body as any).create) {
+      const publicUrl = publicUrlOf(req)
+      if (!publicUrl) return { status: 503, body: { error: 'public url not configured' } }
+      return startAtProvider(payDeps(store), tableId, String((result.body as any).intentId), publicUrl)
+    }
     if (cacheKey && cacheable && result.status === 200) idemRemember(cacheKey, result.status, result.body)
     return result
   })()

@@ -67,11 +67,39 @@ export interface Payment {
   lines?: ReceiptLine[]
   /** Ключ намерения гостя: повтор оплаты после рестарта вернёт этот же чек. */
   idemKey?: string | null
+  /** Номер платежа у эквайера — по нему возврат и сверка с выпиской. */
+  providerId?: string | null
   id: string
   /** Наличные могут приниматься за стол целиком, без привязки к гостю. */
   personaId: string | null
   amount: number
   scope: string
+  at: number
+}
+
+/**
+ * Оплата через эквайера в пути: гость ушёл на страницу ЮKassa, денег в счёте ещё
+ * нет. Пока ждём ответа, сумма зарезервирована — сосед платит только остаток,
+ * и двух списаний за одно блюдо не бывает.
+ */
+export interface PayIntent {
+  /** Наш номер; он же ключ идемпотентности у эквайера. */
+  id: string
+  personaId: string
+  amount: number
+  scope: string
+  /** Что гость выбрал на экране; чем заплатил на деле — скажет эквайер. */
+  method: PayMethod
+  /** Ключ намерения гостя (`persona:ключ`): повтор кнопки не создаёт второй платёж. */
+  idemKey: string | null
+  providerId: string | null
+  confirmationUrl: string | null
+  /** authorized — деньги заморожены, сервер решил списать и списывает. */
+  status: 'creating' | 'pending' | 'authorized' | 'succeeded' | 'canceled'
+  cancelReason?: string | null
+  /** Состав чека фиксируется в момент оплаты, как и у мгновенной. */
+  lines: ReceiptLine[]
+  receiptNo: string
   at: number
 }
 
@@ -102,6 +130,8 @@ export interface TableSession {
   cleanedAt?: number | null
   /** Гость просит принять наличные — ждём подтверждения от официанта. */
   cashIntent?: { personaId: string; scope: string; amount: number; at: number } | null
+  /** Оплаты через эквайера, которые ещё в пути или только что закончились. */
+  payIntents?: PayIntent[]
   /** Приставленные стулья сверх плана зала — живут до конца посадки. */
   extraSeats?: number
   sessionId: string | null

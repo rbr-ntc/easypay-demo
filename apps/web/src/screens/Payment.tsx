@@ -8,6 +8,7 @@ import { fmt, listNames } from '../format'
 import { sharersOf } from '@easypay/domain/money'
 import { dishPhoto } from '../guest/showcase'
 import { SETTINGS } from '../settings'
+import { PayChecking } from './PayChecking'
 
 /**
  * Оплата: сумма, за кого, чем — и удержание кнопки.
@@ -75,7 +76,10 @@ const METHODS: { id: PayMethod; label: string; sub: string; glyph: string }[] = 
 const SCOPE_NAME: Record<PayScope, string> = { own: 'Своё', equal: 'Поровну', full: 'Весь стол' }
 
 /** Способы, включённые в настройках заведения: выключенный сервер всё равно не примет. */
-const allowedMethods = () => METHODS.filter(m => SETTINGS.pay[m.id as 'sbp' | 'card' | 'cash'])
+// С эквайером оплата двухстадийная (сначала заморозка), а СБП так не умеет: пока
+// тестовый магазин ЮKassa — карта и кошелёк. СБП вернётся с боевым эквайрингом
+const allowedMethods = (acquiring?: string | null) =>
+  METHODS.filter(m => SETTINGS.pay[m.id as 'sbp' | 'card' | 'cash'] && !(acquiring && m.id === 'sbp'))
 
 /**
  * Делёж выключен — за столом на нескольких платят только целиком. Кто-то уже
@@ -99,14 +103,14 @@ export function Payment() {
     if (cur && myPaidNow > cur.base + 0.01) finishAttempt()
   }, [myPaidNow])
   useEffect(() => {
-    const methods = allowedMethods().map(m => m.id)
+    const methods = allowedMethods(snap?.acquiring).map(m => m.id)
     const scopes = allowedScopes(alone, totals.equalMode)
     const fix: { payMethod?: PayMethod; payScope?: PayScope } = {}
     if (methods.length && !methods.includes(ui.payMethod)) fix.payMethod = methods[0]
     if (!scopes.includes(ui.payScope)) fix.payScope = scopes[0]
     if (fix.payMethod || fix.payScope) patch(fix)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ui.payMethod, ui.payScope, alone, menuRev, totals.equalMode])
+  }, [ui.payMethod, ui.payScope, alone, menuRev, totals.equalMode, snap?.acquiring])
   if (!me || !snap) return null
 
   const amount = totals.scopeAmount(ui.payScope)
@@ -115,6 +119,8 @@ export function Payment() {
     const attempt = attemptFor(paidBy(snap, me.id))
     patch({ payStage: 'processing', payError: null })
     const res = await pay(ui.payScope, attempt.key, ui.payMethod)
+    // Ушли на страницу эквайера — экран «Проводим оплату» остаётся до перехода
+    if (res.redirect) return
     if (res.paid > 0) {
       finishAttempt() // следующая оплата — новый ключ
       doneTimer.current = setTimeout(() => patch({ payStage: 'form', screen: 'done' }), 1400)
@@ -129,6 +135,8 @@ export function Payment() {
     patch({ payStage: 'failed', payError: res.error, payUnknown: res.unknown })
   }
 
+  if (ui.payStage === 'checking' && ui.payIntent) return <PayChecking intentId={ui.payIntent} />
+
   if (ui.payStage === 'processing') {
     return (
       <div className="g-anim-fade absolute inset-0 flex flex-col items-center justify-center gap-6 px-8 text-center">
@@ -137,7 +145,7 @@ export function Payment() {
           style={{ border: '4px solid rgba(255,255,255,.1)', borderTopColor: 'var(--g-acc)' }}
         />
         <div>
-          <div className="text-[20px] font-bold">Проводим оплату</div>
+          <div className="text-[20px] font-bold">{snap.acquiring ? 'Переходим к оплате' : 'Проводим оплату'}</div>
           <div className="mt-1.5 text-[15px] text-g-mute">Не закрывайте экран</div>
         </div>
       </div>
@@ -245,6 +253,11 @@ function PayForm({
               осталось {fmt(totals.remaining)}
             </div>
           )}
+          {(snap.payPending ?? []).filter(p => p.personaId !== me.id).length > 0 && (
+            <div className="g-num mt-2 text-[13px] text-g-tan">
+              сейчас платит: {snap.payPending!.filter(p => p.personaId !== me.id).map(p => `${nameOf(p.personaId)} ${fmt(p.amount)}`).join(', ')} — эта сумма уже учтена
+            </div>
+          )}
         </div>
 
         {scopes.length > 1 && (
@@ -267,7 +280,7 @@ function PayForm({
         )}
 
         <div className="mx-4 mt-7 overflow-hidden rounded-3xl bg-g-s1" role="radiogroup" aria-label="Способ оплаты">
-          {allowedMethods().map((m, i) => {
+          {allowedMethods(snap.acquiring).map((m, i) => {
             const on = ui.payMethod === m.id
             return (
               <button
@@ -327,7 +340,7 @@ function PayForm({
             disabled={amount <= 0}
             sbp={sbp}
             amount={amount}
-            onDone={() => (sbp ? patch({ payStage: 'qr' }) : onPay())}
+            onDone={() => (sbp && !snap.acquiring ? patch({ payStage: 'qr' }) : onPay())}
           />
         )}
       </div>

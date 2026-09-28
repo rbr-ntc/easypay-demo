@@ -129,6 +129,12 @@ export interface Snapshot {
   /** Принятые вызовы за 15 минут: кто идёт к гостю. */
   acked?: { id: string; personaId: string; reason: string; at: number; by: string | null; reply?: string | null }[]
   /** Оценки визита гостями стола. */
+  /** Эквайер стола (`yookassa`) или null — демо, где оплата записывается сразу. */
+  acquiring?: string | null
+  /** Кто сейчас на странице оплаты и сколько зарезервировано. */
+  payPending?: { personaId: string; amount: number; at: number }[]
+  /** Остатки с учётом оплат в пути — по ним считается сумма к оплате. */
+  reserved?: { remaining: number; byPersona: { personaId: string; paid: number; remaining: number }[] } | null
   /** Кто из гостей уже оценил визит (сама оценка — только управляющей). */
   rated?: string[]
   waiter: { id: string; name: string } | null
@@ -261,6 +267,17 @@ export interface Receipt {
   venue?: { name: string; address: string | null; legal: string | null; inn: string | null }
 }
 
+/** Передумал платить картой: резерв снимается, можно наличными. */
+export const apiCancelPay = (guest: string) => post<{ ok: true }>('cancelPay', {}, { guest })
+
+/** Чем кончилась оплата у эквайера: гость вернулся со страницы оплаты. */
+export const apiPayStatus = (guest: string, intentId: string) =>
+  post<{ ok: true; status: 'pending' | 'succeeded' | 'canceled'; amount?: number; receipt?: Receipt | null; reason?: string; confirmationUrl?: string | null }>(
+    'payStatus',
+    { intentId },
+    { guest }
+  )
+
 export const apiPay = (
   guest: string,
   scope: 'own' | 'equal' | 'full',
@@ -268,7 +285,16 @@ export const apiPay = (
   /** Чем именно платит гость — иначе в платеже осядет «СБП» на любой выбор. */
   method?: string
 ) =>
-  post<{ ok: true; amount: number; remaining: number; receipt?: Receipt }>(
+  post<{
+    ok: true
+    amount: number
+    remaining?: number
+    receipt?: Receipt
+    /** Эквайер подключён: платить идём на его страницу, в счёт — после подтверждения. */
+    pending?: boolean
+    intentId?: string
+    confirmationUrl?: string | null
+  }>(
     'pay',
     { scope, idemKey, method },
     { guest }

@@ -16,6 +16,8 @@ import {
   apiWhoami,
   apiJoin,
   apiPay,
+  apiPayStatus,
+  apiCancelPay,
   apiCancelMine,
   apiCancelCash,
   apiCashIntent,
@@ -47,7 +49,7 @@ import { amountFor, computeTotals as computeMoney } from '@easypay/domain/money'
 export type Screen = 'welcome' | 'menu' | 'table' | 'payment' | 'done'
 export type Sheet = null | 'dish' | 'name' | 'call' | 'allergies'
 /** `failed` — банк не подтвердил: деньги не списаны, повтор идёт тем же ключом. */
-export type PayStage = 'form' | 'qr' | 'processing' | 'failed'
+export type PayStage = 'form' | 'qr' | 'processing' | 'checking' | 'failed'
 export type PayScope = 'own' | 'equal' | 'full'
 // «cash» — такой же выбор способа, как остальные. Раньше наличные были не
 // выбором, а мгновенным действием: гость трогал строку, чтобы посмотреть, и
@@ -87,6 +89,8 @@ export interface UiState {
   payError: string | null
   /** Ответа не было вовсе: платёж мог пройти, и говорить обратное нельзя. */
   payUnknown: boolean
+  /** Оплата у эквайера, которую ждём: гость вернулся со страницы ЮKassa. */
+  payIntent: string | null
   /** Сегмент на экране «Стол»: свой заказ или весь стол. */
   tableTab: 'mine' | 'all'
   lastPaid: number
@@ -110,11 +114,42 @@ const initialUi: UiState = {
   payStage: 'form',
   payError: null,
   payUnknown: false,
+  payIntent: null,
   tableTab: 'mine',
   lastPaid: 0,
   lastReceipt: null,
   tip: 200,
   toast: null
+}
+
+const PAY_KEY = `easypay-pay-${tableId}`
+
+/** Номер оплаты у эквайера, которую ждём: из адреса возврата или из прошлой попытки. */
+function returningPayIntent(): string | null {
+  const params = new URLSearchParams(window.location.search)
+  const fromUrl = params.get('pay')
+  if (fromUrl) {
+    // Номер из адреса убираем: обновление страницы не должно перепроверять вечно
+    params.delete('pay')
+    const q = params.toString()
+    window.history.replaceState(null, '', `${window.location.pathname}${q ? `?${q}` : ''}${window.location.hash}`)
+    rememberPayIntent(fromUrl)
+    return fromUrl
+  }
+  try {
+    return localStorage.getItem(PAY_KEY)
+  } catch {
+    return null
+  }
+}
+
+function rememberPayIntent(id: string | null) {
+  try {
+    if (id) localStorage.setItem(PAY_KEY, id)
+    else localStorage.removeItem(PAY_KEY)
+  } catch {
+    /* приватный режим — просто не запомним */
+  }
 }
 
 const ID_KEY = `easypay-identity-${tableId}`
@@ -186,7 +221,16 @@ export function computeTotals(snap: Snapshot | null, myId: string | null): Total
    * Борис видел «Оплатить · 500 ₽», а списывалось 1 000 ₽.
    */
   // Те же числа, что у сервера: «поровну» — доля счёта минус уже внесённое
-  const moneyView = { remaining, tableTotal, participants, remainingOf: () => myRemaining, paidOf: () => myPaid } as any
+  // Сосед сейчас на странице оплаты — его сумма зарезервирована, кнопка считает от остатка
+  const res = snap?.reserved
+  const resMine = myId ? res?.byPersona.find(p => p.personaId === myId) : undefined
+  const moneyView = {
+    remaining: res?.remaining ?? remaining,
+    tableTotal,
+    participants,
+    remainingOf: () => resMine?.remaining ?? myRemaining,
+    paidOf: () => resMine?.paid ?? myPaid
+  } as any
   const scopeAmount = (scope: PayScope) => (participants > 0 ? amountFor(moneyView, myId, scope) : 0)
   const equalSplit = participants
   const equalMode = (snap?.payments ?? []).some(p => p.scope === 'equal')
@@ -253,6 +297,9 @@ export function humanError(err: ApiError): string {
     'bad qty': 'Можно заказать от 1 до 9 порций',
     'tip too large': 'Слишком большие чаевые для этого счёта',
     'bad amount': 'Сумма указана неверно — минимум 1 ₽',
+    'payment in progress': 'Оплата уже идёт — завершите её на странице банка или подождите пару минут',
+    'payment provider unavailable': 'Платёжный сервис не ответил — попробуйте ещё раз через минуту',
+    'public url not configured': 'Оплата с телефона временно недоступна — позовите официанта',
     'too many requests': 'Слишком много нажатий подряд — подождите минуту',
     'equal split in progress': 'Стол уже делит счёт поровну — выберите «поровну» или «весь стол»',
     'locked or missing': 'Позиция уже уехала на кухню — её не убрать',
@@ -279,6 +326,8 @@ export interface PayResult {
   paid: number
   error: string | null
   unknown: boolean
+  /** Ушли на страницу эквайера: результат узнаем после возврата. */
+  redirect?: boolean
   /** Код ошибки сервера: `stale key` — ключ попытки устарел, нужен новый. */
   code?: string | null
 }
@@ -335,6 +384,12 @@ interface Ctx {
    * случае деньги могли списаться.
    */
   pay: (scope: PayScope, idemKey: string, method?: PayMethod) => Promise<PayResult>
+  /** Спросить сервер, чем кончилась оплата у эквайера. `pending` — ещё ждём. */
+  /** Перестать ждать оплату: гость ушёл к столу — при перезагрузке не проверять заново. */
+  forgetPayIntent: () => void
+  /** Отменить свою оплату картой в пути — например, чтобы заплатить наличными. */
+  cancelPay: () => Promise<boolean>
+  checkPay: (intentId: string) => Promise<{ status: 'pending' | 'succeeded' | 'canceled' | 'unknown'; confirmationUrl?: string | null }>
   leaveTip: (amount: number, idemKey: string) => Promise<number>
   callWaiter: (reason: 'help' | 'bill' | 'water', note?: string) => Promise<void>
   forgetMe: () => void // «Я другой гость» — телефон передали новому человеку
@@ -366,7 +421,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   // Приветствие видит тот, кто за этим столом ещё никто. Вернувшийся гость
   // (личность в localStorage) сразу попадает в меню — второй раз «добро
   // пожаловать» после каждой перезагрузки только мешает.
-  const [ui, setUi] = useState<UiState>(() => ({ ...initialUi, screen: loadIdentity() ? 'menu' : 'welcome' }))
+  const [ui, setUi] = useState<UiState>(() => {
+    // Вернулись со страницы оплаты — сразу проверяем, чем кончилось
+    const intent = returningPayIntent()
+    if (intent && loadIdentity()) return { ...initialUi, screen: 'payment', payStage: 'checking', payIntent: intent }
+    return { ...initialUi, screen: loadIdentity() ? 'menu' : 'welcome' }
+  })
   const [snap, setSnap] = useState<Snapshot | null>(null)
   const [connected, setConnected] = useState(false)
   const [identity, setIdentity] = useState<Identity | null>(loadIdentity)
@@ -636,6 +696,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       if (!guestToken()) return { paid: 0, error: 'guest token required', unknown: false }
       try {
         const r = await apiPay(guestToken()!, scope, idemKey, method)
+        if (r.pending && r.intentId) {
+          rememberPayIntent(r.intentId)
+          // Кнопка «Назад» с сайта эквайера вернёт на проверку, а не на вечное «Проводим оплату»
+          patch({ payStage: 'checking', payIntent: r.intentId })
+          if (r.confirmationUrl) window.location.assign(r.confirmationUrl)
+          return { paid: 0, error: null, unknown: false, redirect: true }
+        }
         patch({ lastPaid: r.amount, lastReceipt: r.receipt ?? null })
         return { paid: r.amount, error: null, unknown: false }
       } catch (err) {
@@ -644,6 +711,36 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         // говорить «деньги не списаны» здесь было бы враньём про чужие деньги.
         const unknown = !api || api.status === 0 || api.status >= 500
         return { paid: 0, error: api ? humanError(api) : 'Не получилось — проверьте связь', unknown, code: api?.error ?? null }
+      }
+    },
+    forgetPayIntent: () => rememberPayIntent(null),
+    cancelPay: () =>
+      guard(async () => {
+        if (!guestToken()) return false
+        await apiCancelPay(guestToken()!)
+        rememberPayIntent(null)
+        patch({ payStage: 'form', payIntent: null })
+        return true
+      }, false),
+    checkPay: async intentId => {
+      if (!guestToken()) return { status: 'unknown' }
+      try {
+        const r = await apiPayStatus(guestToken()!, intentId)
+        if (r.status === 'succeeded') {
+          rememberPayIntent(null)
+          patch({ payStage: 'form', payIntent: null, screen: 'done', lastPaid: r.amount ?? 0, lastReceipt: r.receipt ?? null })
+        } else if (r.status === 'canceled') {
+          rememberPayIntent(null)
+          patch({ payStage: 'failed', payIntent: null, payError: `Платёж не прошёл: ${r.reason ?? 'банк отклонил'}. Деньги не списаны`, payUnknown: false })
+        }
+        return { status: r.status, confirmationUrl: r.confirmationUrl ?? null }
+      } catch (err) {
+        // Такой оплаты нет (стол пересел, чужой телефон) — забываем её, а не ждём вечно
+        if (err instanceof ApiError && (err.status === 404 || err.status === 401)) {
+          rememberPayIntent(null)
+          patch({ payStage: 'form', payIntent: null })
+        }
+        return { status: 'unknown' }
       }
     },
     leaveTip: (amount, idemKey) =>

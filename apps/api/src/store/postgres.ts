@@ -169,7 +169,7 @@ export async function createPostgresStore(url?: string): Promise<Store> {
       row = last
     }
 
-    const [guests, lines, payments, tips, calls, refunds, acked, ratings] = await Promise.all([
+    const [guests, lines, payments, tips, calls, refunds, acked, ratings, intents] = await Promise.all([
       tx`select * from guests where table_session_id = ${row.id} order by joined_at`,
       tx`select * from order_lines where table_session_id = ${row.id} order by seq`,
       tx`select * from payments where table_session_id = ${row.id} order by created_at`,
@@ -180,7 +180,9 @@ export async function createPostgresStore(url?: string): Promise<Store> {
       // Только принятые человеком: вызов, снятый системой (гость заплатил),
       // иначе показывал «Официант идёт к вам», когда никто не шёл
       tx`select * from calls where table_session_id = ${row.id} and (ack_by is not null or ack_name is not null) and ack_at > now() - interval '15 minutes' order by ack_at`,
-      tx`select * from guest_ratings where table_session_id = ${row.id} order by created_at`
+      tx`select * from guest_ratings where table_session_id = ${row.id} order by created_at`,
+      // Оплаты через эквайера за последние сутки: в пути и только что завершённые
+      tx`select * from payment_intents where table_session_id = ${row.id} and created_at > now() - interval '1 day' order by created_at`
     ])
 
     const ms = (v: any) => (v ? new Date(v).getTime() : null)
@@ -235,7 +237,23 @@ export async function createPostgresStore(url?: string): Promise<Store> {
         receiptNo: p.receipt_no ?? undefined,
         lines: p.receipt_lines ?? [],
         idemKey: p.idem_key ?? null,
+        providerId: p.provider_id ?? null,
         at: ms(p.created_at) ?? 0
+      })),
+      payIntents: intents.map((i: any) => ({
+        id: i.id,
+        personaId: i.guest_id,
+        amount: Number(i.amount),
+        scope: i.scope,
+        method: i.method,
+        idemKey: i.idem_key ?? null,
+        providerId: i.provider_id ?? null,
+        confirmationUrl: i.confirmation_url ?? null,
+        status: i.status,
+        cancelReason: i.cancel_reason ?? null,
+        lines: i.receipt_lines ?? [],
+        receiptNo: i.receipt_no,
+        at: ms(i.created_at) ?? 0
       })),
       tips: tips.map((t: any) => ({
         id: t.id,
@@ -392,11 +410,11 @@ export async function createPostgresStore(url?: string): Promise<Store> {
       await tx`
         insert into payments (
           id, table_session_id, guest_id, amount, scope, method, taken_by,
-          receipt_no, receipt_lines, idem_key, created_at
+          receipt_no, receipt_lines, idem_key, provider_id, created_at
         ) values (
           ${p.id}, ${sid}, ${p.personaId}, ${p.amount}, ${p.scope},
           ${p.method ?? "sbp"}, ${staffUuid(p.takenBy)},
-          ${p.receiptNo ?? null}, ${tx.json(p.lines ?? [])}, ${p.idemKey ?? null}, ${new Date(p.at)}
+          ${p.receiptNo ?? null}, ${tx.json(p.lines ?? [])}, ${p.idemKey ?? null}, ${p.providerId ?? null}, ${new Date(p.at)}
         )
         on conflict (id) do nothing
       `
@@ -417,6 +435,28 @@ export async function createPostgresStore(url?: string): Promise<Store> {
         update calls set ack_at = coalesce(ack_at, ${new Date(a.at)}), ack_by = coalesce(ack_by, ${staffUuid(a.byId)}),
                ack_reply = coalesce(ack_reply, ${a.reply ?? null}), ack_name = coalesce(ack_name, ${a.byName ?? null})
         where id = ${a.id} and table_session_id = ${sid}
+      `
+    }
+    for (const i of session.payIntents ?? []) {
+      await tx`
+        insert into payment_intents (
+          id, table_session_id, guest_id, amount, scope, method, idem_key, provider_id,
+          confirmation_url, status, cancel_reason, receipt_no, receipt_lines, created_at
+        ) values (
+          ${i.id}, ${sid}, ${i.personaId}, ${i.amount}, ${i.scope}, ${i.method}, ${i.idemKey ?? null}, ${i.providerId ?? null},
+          ${i.confirmationUrl ?? null}, ${i.status}, ${i.cancelReason ?? null}, ${i.receiptNo}, ${tx.json(i.lines ?? [])}, ${new Date(i.at)}
+        )
+        on conflict (id) do update set
+          provider_id = coalesce(payment_intents.provider_id, excluded.provider_id),
+          confirmation_url = coalesce(payment_intents.confirmation_url, excluded.confirmation_url),
+          -- Итог не откатывается: завершённое намерение не станет снова «в пути»
+          -- (отказ может смениться списанием: сбой при создании, а гость всё-таки заплатил)
+          status = case
+            when payment_intents.status = 'succeeded' then payment_intents.status
+            when payment_intents.status = 'canceled' and excluded.status <> 'succeeded' then payment_intents.status
+            else excluded.status end,
+          cancel_reason = case when payment_intents.status = 'canceled' and excluded.status <> 'succeeded' then payment_intents.cancel_reason else excluded.cancel_reason end,
+          updated_at = now()
       `
     }
     for (const r of session.ratings ?? []) {
