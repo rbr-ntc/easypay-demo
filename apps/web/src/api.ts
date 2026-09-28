@@ -13,6 +13,34 @@ export const requestedTable = requested // как есть — чтобы пок
 
 const API = tableId ? `/api/t/${encodeURIComponent(tableId)}` : null
 
+/**
+ * Подпись стола из QR (`&k=…`): без неё сесть за стол нельзя — номер в ссылке
+ * угадывается. Запоминаем и убираем из адреса, чтобы ссылка, пересланная
+ * в мессенджер, не усаживала за стол из дома.
+ */
+const KEY_STORE = tableId ? `easypay-key-${tableId}` : null
+/** Подпись живёт ужин, а не вечно: иначе бывший гость садился бы за стол из дома. */
+const KEY_TTL_MS = 12 * 60 * 60 * 1000
+export const tableKey: string | null = (() => {
+  if (!KEY_STORE) return null
+  const params = new URLSearchParams(window.location.search)
+  const fromUrl = params.get('k')
+  try {
+    if (fromUrl) {
+      localStorage.setItem(KEY_STORE, JSON.stringify({ k: fromUrl, at: Date.now() }))
+      params.delete('k')
+      window.history.replaceState(null, '', `${window.location.pathname}?${params.toString()}${window.location.hash}`)
+      return fromUrl
+    }
+    const saved = JSON.parse(localStorage.getItem(KEY_STORE) ?? 'null') as { k?: string; at?: number } | null
+    if (saved?.k && saved.at && Date.now() - saved.at < KEY_TTL_MS) return saved.k
+    localStorage.removeItem(KEY_STORE)
+    return null
+  } catch {
+    return fromUrl
+  }
+})()
+
 export class ApiError extends Error {
   readonly status: number
   /** Сырой код ошибки сервера: по нему клиент отличает «аллерген» от «нет связи». */
@@ -129,6 +157,8 @@ export interface Snapshot {
   /** Принятые вызовы за 15 минут: кто идёт к гостю. */
   acked?: { id: string; personaId: string; reason: string; at: number; by: string | null; reply?: string | null }[]
   /** Оценки визита гостями стола. */
+  /** За стол садятся только с подписью из QR (у гостя без неё — «отсканируйте QR»). */
+  keyRequired?: boolean
   /** Эквайер стола (`yookassa`) или null — демо, где оплата записывается сразу. */
   acquiring?: string | null
   /** Кто сейчас на странице оплаты и сколько зарезервировано. */
@@ -203,7 +233,8 @@ export const apiJoin = (name: string, animal: Animal, idemKey: string, allergies
     animal,
     // Аллергии гостя: дальше система предупреждает сама, а не ждёт комментария
     allergies,
-    idemKey
+    idemKey,
+    ...(tableKey ? { tableKey } : {})
   })
 
 export const apiAddLine = (

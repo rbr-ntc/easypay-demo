@@ -1,5 +1,23 @@
+import { useEffect, useState } from 'react'
 import { HALL, seatsOfTable } from '../hallConfig'
 import { requestedTable } from '../api'
+import { ScanQr } from './ScanQr'
+
+/** Нужна ли подпись стола из QR: тогда выбирать стол руками бессмысленно — не посадит. */
+function useQrRequired(): boolean | null {
+  const [required, setRequired] = useState<boolean | null>(null)
+  useEffect(() => {
+    let live = true
+    fetch('/api/qr/required')
+      .then(r => r.json())
+      .then(b => live && setRequired(!!b.required))
+      .catch(() => live && setRequired(false))
+    return () => {
+      live = false
+    }
+  }, [])
+  return required
+}
 
 /**
  * Экран «какой у вас стол». Показывается, когда в адресе нет ?t=… или стол неизвестен:
@@ -7,6 +25,15 @@ import { requestedTable } from '../api'
  */
 export function TablePicker() {
   const unknown = requestedTable && seatsOfTable(requestedTable) === null
+  const qrRequired = useQrRequired()
+  if (qrRequired === null) return null
+  if (qrRequired) {
+    return (
+      <div className="ep-guest g4 relative h-dvh">
+        <ScanQr />
+      </div>
+    )
+  }
 
   return (
     <div className="ep-screen ep-forest">

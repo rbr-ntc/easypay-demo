@@ -1,7 +1,9 @@
+import { useEffect, useState } from 'react'
 import QRCode from 'react-qr-code'
 import { RESTAURANT } from './data'
 import { HALL } from './hallConfig'
 import { tableId } from './api'
+import { getStaffToken } from './staff'
 import { SEASON_MENU, currentSeason, seasonVars } from './guest/showcase'
 
 /**
@@ -15,14 +17,51 @@ import { SEASON_MENU, currentSeason, seasonVars } from './guest/showcase'
  * вместе с меню.
  */
 
-function tableUrl(id: string): string {
-  return `${window.location.origin}${window.location.pathname}?t=${encodeURIComponent(id)}`
+/** Подписи столов с сервера — только персоналу: это ключи от всех столов зала. */
+type Keys = { state: 'loading' } | { state: 'login' } | { state: 'ok'; keys: Record<string, string> }
+
+function useKeys(): Keys {
+  const [keys, setKeys] = useState<Keys>({ state: 'loading' })
+  useEffect(() => {
+    let live = true
+    fetch('/api/qr', { headers: { 'x-staff-token': getStaffToken() } })
+      .then(async r => {
+        if (!live) return
+        if (r.status === 401 || r.status === 403) return setKeys({ state: 'login' })
+        const body = await r.json()
+        setKeys({ state: 'ok', keys: body.keys ?? {} })
+      })
+      .catch(() => live && setKeys({ state: 'login' }))
+    return () => {
+      live = false
+    }
+  }, [])
+  return keys
+}
+
+function tableUrl(id: string, key?: string): string {
+  return `${window.location.origin}${window.location.pathname}?t=${encodeURIComponent(id)}${key ? `&k=${encodeURIComponent(key)}` : ''}`
+}
+
+/** Без входа персонала тент не напечатать: без подписи QR не сажает за стол. */
+function NeedLogin() {
+  return (
+    <div className="flex min-h-full flex-col items-center justify-center gap-3 px-6 text-center" style={{ background: '#E9E6E0', color: '#1B1A17' }}>
+      <div style={{ fontFamily: SERIF, fontWeight: 600, fontSize: 32 }}>QR-коды — для персонала</div>
+      <p className="max-w-md text-[15px]" style={{ color: '#3E3C37' }}>
+        В коде стола — его подпись: без неё гость не сядет за стол по ссылке. Войдите в смену, чтобы распечатать тенты.
+      </p>
+      <a className="underline" href="#/hall">
+        войти →
+      </a>
+    </div>
+  )
 }
 
 const QR_FG = '#000000'
 const SERIF = "'Cormorant Garamond', Georgia, serif"
 
-function Tent({ id, scale = 1 }: { id: string; scale?: number }) {
+function Tent({ id, url, scale = 1 }: { id: string; url: string; scale?: number }) {
   const season = currentSeason()
   const v = seasonVars(season)
   return (
@@ -45,7 +84,7 @@ function Tent({ id, scale = 1 }: { id: string; scale?: number }) {
       <div style={{ fontFamily: SERIF, fontWeight: 600, fontSize: 40 * scale, lineHeight: 1 }}>{RESTAURANT}</div>
       <div style={{ marginTop: 6 * scale, fontSize: 13 * scale, color: v['--g-ink'] }}>{SEASON_MENU[season]}</div>
       <div style={{ marginTop: 26 * scale, padding: 14 * scale, borderRadius: 24 * scale, background: '#FFFFFF' }}>
-        <QRCode value={tableUrl(id)} size={200 * scale} fgColor={QR_FG} />
+        <QRCode value={url} size={200 * scale} fgColor={QR_FG} />
       </div>
       <div className="flex items-baseline" style={{ marginTop: 22 * scale, gap: 10 * scale }}>
         <span style={{ fontSize: 15 * scale, color: '#A8A298' }}>стол</span>
@@ -73,14 +112,14 @@ function Tent({ id, scale = 1 }: { id: string; scale?: number }) {
   )
 }
 
-function SingleTent({ id }: { id: string }) {
+function SingleTent({ id, keys }: { id: string; keys: Record<string, string> }) {
   return (
     <div className="min-h-full px-6 py-12" style={{ background: '#E9E6E0' }}>
       <div className="flex justify-center">
-        <Tent id={id} />
+        <Tent id={id} url={tableUrl(id, keys[id])} />
       </div>
       <div className="mt-8 flex justify-center gap-5 text-[14px] print:hidden" style={{ color: '#3E3C37' }}>
-        <a className="underline" href={`?t=${encodeURIComponent(id)}`}>
+        <a className="underline" href={tableUrl(id, keys[id])}>
           открыть гостевой экран здесь →
         </a>
         <a className="underline" href="#/qr">
@@ -92,7 +131,7 @@ function SingleTent({ id }: { id: string }) {
 }
 
 /** Лист тентов на все столы зала: распечатать и расставить. */
-function AllTents() {
+function AllTents({ keys }: { keys: Record<string, string> }) {
   return (
     <div className="min-h-full px-6 pt-8 pb-12" style={{ background: '#E9E6E0', color: '#1B1A17' }}>
       <div className="print:hidden">
@@ -111,7 +150,7 @@ function AllTents() {
           <div className="flex flex-wrap gap-6">
             {zone.tables.map(t => (
               <a key={t.id} href={`?t=${encodeURIComponent(t.id)}#/qr`} aria-label={`Тент стола ${t.id} крупно`}>
-                <Tent id={t.id} scale={0.5} />
+                <Tent id={t.id} url={tableUrl(t.id, keys[t.id])} scale={0.5} />
               </a>
             ))}
           </div>
@@ -126,5 +165,8 @@ function AllTents() {
 }
 
 export function QrTent() {
-  return tableId ? <SingleTent id={tableId} /> : <AllTents />
+  const k = useKeys()
+  if (k.state === 'loading') return null
+  if (k.state === 'login') return <NeedLogin />
+  return tableId ? <SingleTent id={tableId} keys={k.keys} /> : <AllTents keys={k.keys} />
 }

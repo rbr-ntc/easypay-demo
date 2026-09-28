@@ -12,7 +12,8 @@ import { AllergySheet } from './sheets/AllergySheet'
 import { Cabinet } from './cabinet/Cabinet'
 import { parseRoute } from './cabinet/route'
 import { TablePicker } from './screens/TablePicker'
-import { tableId } from './api'
+import { ScanQr } from './screens/ScanQr'
+import { tableId, tableKey } from './api'
 import { seatsOfTable } from './hallConfig'
 import { QrTent } from './QrTent'
 import { currentSeason, seasonVars } from './guest/showcase'
@@ -63,12 +64,22 @@ function useAutoNav() {
 }
 
 function Guest() {
-  const { ui, connected, snap } = useStore()
+  const { ui, connected, snap, me } = useStore()
   useAutoNav()
   // Сезон и гамма — переменные корня: фон, акцент и кнопки меняют тон вместе
   const vars = useMemo(() => seasonVars(currentSeason()), [])
   return (
     <div className="ep-guest g4" data-screen={ui.screen} style={vars as React.CSSProperties}>
+      {/* Без подписи из QR за стол не сесть — говорим сразу; кто уже сидит, работает как раньше */}
+      {!me && snap?.keyRequired && !tableKey ? <ScanQr /> : <GuestScreens />}
+    </div>
+  )
+}
+
+function GuestScreens() {
+  const { ui, connected, snap } = useStore()
+  return (
+    <>
       {ui.screen === 'welcome' && <Welcome />}
       {ui.screen === 'menu' && <Menu />}
       {ui.screen === 'table' && <Table />}
@@ -92,7 +103,7 @@ function Guest() {
       )}
 
       {ui.toast && <GToast msg={ui.toast} />}
-    </div>
+    </>
   )
 }
 

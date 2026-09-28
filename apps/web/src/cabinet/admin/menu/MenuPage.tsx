@@ -3,6 +3,7 @@ import { fmt } from '../../../format'
 import { HALL } from '../../../hallConfig'
 import { useStore } from '../../../store'
 import { setStop } from '../../staffApi'
+import { getStaffToken } from '../../../staff'
 import { Confirm, Empty, Toggle } from '../../ui'
 import { Loading } from '../parts'
 import { DishEditor } from './DishEditor'
@@ -42,6 +43,21 @@ function stable(v: unknown): string {
 }
 
 export function MenuPage() {
+  // Предпросмотр гостя — с подписью стола: без неё при включённой защите QR гость не сядет
+  const previewTable = HALL.zones[0]?.tables[0]?.id ?? '1'
+  const [previewKey, setPreviewKey] = useState<string | null>(null)
+  useEffect(() => {
+    let live = true
+    fetch('/api/qr', { headers: { 'x-staff-token': getStaffToken() } })
+      .then(r => (r.ok ? r.json() : null))
+      .then(b => live && setPreviewKey(b?.keys?.[previewTable] ?? null))
+      .catch(() => undefined)
+    return () => {
+      live = false
+    }
+  }, [previewTable])
+  const previewUrl = `/?t=${encodeURIComponent(previewTable)}${previewKey ? `&k=${encodeURIComponent(previewKey)}` : ''}`
+
   const { toast } = useStore()
   const [data, setData] = useState<EditorPayload | null>(null)
   const [failed, setFailed] = useState(false)
@@ -215,7 +231,7 @@ export function MenuPage() {
           </button>
         )}
         <a
-          href={`/?t=${encodeURIComponent(HALL.zones[0]?.tables[0]?.id ?? '1')}`}
+          href={previewUrl}
           target="_blank"
           rel="noreferrer"
           className="flex h-10 items-center rounded-xl border border-c-line bg-c-card px-3.5 text-[14px]">

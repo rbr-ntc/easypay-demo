@@ -29,7 +29,8 @@ import {
   stopList
 } from './menu.ts'
 import { ALLERGENS } from '@easypay/domain/allergens'
-import { isKnownTable, seatsOf } from './hallplan.ts'
+import { isKnownTable, planTables, seatsOf } from './hallplan.ts'
+import { describeQrCheck, keyMatches, qrRequired, tableKey } from './tableKey.ts'
 import { hallPayload, kitchenPayload } from './feeds.ts'
 import { createStore, type Store } from './store/index.ts'
 import { createShiftRoutes } from './shiftApi.ts'
@@ -367,6 +368,8 @@ function publicStub(t: TableSession, id: string) {
   return {
     tableId: id,
     sessionId: null,
+    // Сесть можно только с подписью из QR — гость без неё сразу видит «отсканируйте QR»
+    keyRequired: qrRequired(),
     // Меню смотрят и до того, как представились: «закончилось» нужно и им
     stop: stopList(),
     menuVersion: menuVersion(),
@@ -686,6 +689,8 @@ export function mutate(
 
 function joinGuest(t: TableSession, tableId: string, body: any): MutationResult {
   if (!isKnownTable(tableId)) return fail(404, 'unknown table')
+  // Сесть — только отсканировав QR на столе: номер стола в ссылке угадывается
+  if (!keyMatches(tableId, body.tableKey)) return fail(403, 'table key required')
 
   // Сначала все проверки, только потом открытие сессии: упавший join не должен
   // оставлять ресторану «занятый» стол без единого гостя
@@ -1707,6 +1712,18 @@ function fromOutside(req: any): boolean {
 async function handleApi(req: any, res: any, url: URL) {
   const store = await getStore()
 
+  // Нужна ли подпись — знать должен и гость без стола: вместо выбора стола — «отсканируйте QR»
+  if (url.pathname === '/api/qr/required') return json(res, 200, { required: qrRequired() })
+
+  // Подписи столов для QR-тентов — только персоналу: это ключи от всех столов
+  if (url.pathname === '/api/qr') {
+    const actor = actorFrom(req)
+    if (!actor) return json(res, 401, staffUnauthorized(req))
+    if (!allowed(actor, 'hall')) return json(res, 403, { error: 'role not allowed' })
+    const keys = qrRequired() ? Object.fromEntries(planTables().map(t => [t.id, tableKey(t.id)])) : {}
+    return json(res, 200, { required: qrRequired(), keys })
+  }
+
   // Уведомление ЮKassa: только повод перечитать платёж из API — телу не верим
   if (url.pathname === '/api/pay/yookassa/webhook') {
     if (req.method !== 'POST') return json(res, 405, { error: 'method' })
@@ -2011,7 +2028,10 @@ async function handleApi(req: any, res: any, url: URL) {
   const idemKey = IDEMPOTENT_ACTIONS.has(action) ? asId(body.idemKey) : null
   // Ключ — чей-то: сосед по столу с тем же ключом получал чужой ответ, а его
   // действие молча не выполнялось. Кто спрашивает — часть ключа кэша
-  const who = String(req.headers['x-guest-token'] ?? body.guestToken ?? req.headers['x-staff-token'] ?? 'anon')
+  // Для посадки в ключ кэша входит подпись стола: повтор чужого idemKey без подписи не получит чужой ответ
+  const who = String(
+    req.headers['x-guest-token'] ?? body.guestToken ?? req.headers['x-staff-token'] ?? (action === 'join' ? `anon:${String(body.tableKey ?? '')}` : 'anon')
+  )
   const cacheKey = idemKey && `${tableId}:${action}:${hashToken(who).slice(0, 16)}:${idemKey}`
   // Оплату кэш не отвечает: повтор решает сам платёж (ключ хранится в нём) —
   // под блокировкой стола и с проверкой, что счёт с тех пор не менялся.
@@ -2152,6 +2172,7 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
   const store = await getStore()
   createServer().listen(PORT, () => {
     console.log(`EasyPay API on :${PORT} · хранилище: ${store.kind}`)
+    console.log(describeQrCheck())
     console.log(
       process.env.EASYPAY_MANAGER_TOKEN
         ? 'Manager token: из EASYPAY_MANAGER_TOKEN'

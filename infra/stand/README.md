@@ -23,3 +23,10 @@ sudo -u postgres createdb -O easypay easypay_restore
 gunzip -c /root/backups/daily/easypay-2026-09-27.sql.gz | sudo -u postgres psql easypay_restore
 # проверить данные, затем поменять DATABASE_URL службы на easypay_restore и перезапустить
 ```
+
+## Секрет столов в QR
+
+`EASYPAY_QR_SECRET` (≥ 32 символов) и `EASYPAY_QR_VERSION` — в `/etc/systemd/system/easypay.service.d/qr.conf`.
+С секретом за стол садятся только по QR с подписью: старые ссылки `?t=5` без `&k=` новых гостей не сажают.
+Порядок включения: задать секрет → распечатать тенты на `#/qr` (под входом персонала) → расставить.
+Сменить все подписи (утёк снимок QR): поднять `EASYPAY_QR_VERSION`, перезапустить службу, перепечатать тенты.
